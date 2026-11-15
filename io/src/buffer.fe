@@ -1,0 +1,107 @@
+use core::marker::Copy
+use core::num::IntDowncast
+use core::ptr::MemSpan
+use ingot::cursor::{IoError, IoErrorKind}
+
+const fn word_count(_ bytes: usize) -> usize {
+    bytes / 32 + if bytes % 32 == 0 { 0 } else { 1 }
+}
+
+/// A fixed-capacity byte buffer. Each word holds 32 bytes in big-endian order.
+pub struct BoundedBuffer<const N: usize> { words: [u256; word_count(N)], length: usize }
+
+impl<const N: usize> Copy for BoundedBuffer<N> {}
+
+impl<const N: usize> BoundedBuffer<N> {
+    pub const fn empty() -> Self {
+        Self { words: [0; word_count(N)], length: 0 }
+    }
+
+    pub const fn from_array(_ bytes: [u8; N]) -> Self {
+        Self::pack(bytes)
+    }
+
+    pub const fn from_prefix<const M: usize>(_ bytes: [u8; M]) -> Option<Self> {
+        if M > N {
+            return Option::None
+        }
+        Option::Some(Self::pack(bytes))
+    }
+
+    /// Copies only the initialized bytes of a caller-provided span.
+    pub fn from_span(_ bytes: MemSpan) -> Result<IoError, Self> {
+        if bytes.len() > N {
+            return Result::Err(IoError { kind: IoErrorKind::CapacityExceeded, offset: N })
+        }
+        var result = Self::empty()
+        var index: usize = 0
+        while index < bytes.len() {
+            result.append_unchecked(bytes.byte_at(index))
+            index += 1
+        }
+        Result::Ok(result)
+    }
+
+    /// Returns the initialized prefix length and leaves excess space untouched.
+    pub fn copy_to(self, _ output: mut MemSpan) -> Result<IoError, usize> {
+        if output.len() < self.length {
+            return Result::Err(
+                IoError { kind: IoErrorKind::CapacityExceeded, offset: output.len() },
+            )
+        }
+        var index: usize = 0
+        while index < self.length {
+            output[index] = self.byte_at(index).unwrap()
+            index += 1
+        }
+        Result::Ok(self.length)
+    }
+
+    const fn pack<const M: usize>(_ bytes: [u8; M]) -> Self {
+        var result = Self::empty()
+        var index: usize = 0
+        while index < M {
+            result.append_unchecked(bytes[index])
+            index += 1
+        }
+        result
+    }
+
+    pub const fn len(self) -> usize {
+        self.length
+    }
+
+    pub const fn capacity(self) -> usize {
+        N
+    }
+
+    pub fn byte_at(self, _ index: usize) -> Option<u8> {
+        if index >= self.length {
+            return Option::None
+        }
+        let word = self.words[index / 32]
+        let shift = ((31 - index % 32) * 8) as u256
+        Option::Some((word >> shift).downcast_truncate())
+    }
+
+    pub fn equals<const M: usize>(self, _ other: BoundedBuffer<M>) -> bool {
+        if self.length != other.length {
+            return false
+        }
+        var index: usize = 0
+        // Unused tail bytes are always zero, so the last words compare directly.
+        while index < word_count(self.length) {
+            if self.words[index] != other.words[index] {
+                return false
+            }
+            index += 1
+        }
+        true
+    }
+
+    pub(ingot) const fn append_unchecked(mut self, _ byte: u8) {
+        let shift = ((31 - self.length % 32) * 8) as u256
+        self.words[self.length / 32] |= (byte as u256) << shift
+        self.length += 1
+    }
+}

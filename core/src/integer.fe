@@ -1,0 +1,27 @@
+use ingot::error::{CodecError, CodecResult, ErrorKind}
+
+pub fn checked_unsigned(_ value: u64, _ bits: u8, _ offset: usize) -> CodecResult<u64> {
+    check_width(bits, offset)?
+    if bits < 64 && value >= ((1 as u64) << (bits as u64)) {
+        return Result::Err(CodecError::at(kind: ErrorKind::IntegerOutOfRange, offset))
+    }
+    Result::Ok(value)
+}
+
+pub fn checked_signed(_ value: i64, _ bits: u8, _ offset: usize) -> CodecResult<i64> {
+    check_width(bits, offset)?
+    if bits < 64 {
+        let limit: i64 = 1 << ((bits - 1) as i64)
+        if value < -limit || value >= limit {
+            return Result::Err(CodecError::at(kind: ErrorKind::IntegerOutOfRange, offset))
+        }
+    }
+    Result::Ok(value)
+}
+
+fn check_width(_ bits: u8, _ offset: usize) -> CodecResult<()> {
+    if bits != 8 && bits != 16 && bits != 32 && bits != 64 {
+        return Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset))
+    }
+    Result::Ok(())
+}

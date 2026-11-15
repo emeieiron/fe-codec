@@ -1,0 +1,8 @@
+[ingot]
+name = "codec_transfer_wasm"
+version = "0.1.0"
+target = "wasm"
+
+[dependencies]
+codec_transfer = "../shared"
+fe_codec_core = "../../../core"

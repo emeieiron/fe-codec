@@ -1,0 +1,4 @@
+[workspace]
+name = "fe_codec"
+version = "0.1.0"
+members = ["io", "core", "formats/json", "formats/cbor"]

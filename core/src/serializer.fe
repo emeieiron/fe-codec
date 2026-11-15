@@ -1,0 +1,74 @@
+use ingot::descriptor::{FieldDescriptor, SerialDescriptor, VariantDescriptor}
+use ingot::error::CodecResult
+use ingot::text::Text
+
+/// The field selected by a decoder, with its declaration index and key offset.
+pub struct Field { pub index: usize, pub offset: usize }
+
+/// A statically selected traversal shared by all formats.
+pub trait Serializer<T>: SerialDescriptor {
+    fn encode<E: Encoder>(_ value: T, _ encoder: mut E) -> CodecResult<()>
+    fn decode<D: Decoder>(_ decoder: mut D) -> CodecResult<T>
+}
+
+/// A document calls one value operation at the root and one after each
+/// field or element. Format implementations own wire framing and validation.
+pub trait Encoder {
+    /// Formats with canonical numeric keys can request ascending field ID order.
+    const RECORD_FIELDS_BY_ID: bool = false
+
+    type Record
+    type Sequence
+
+    fn offset(self) -> usize
+    fn write_bool(mut self, _ value: bool) -> CodecResult<()>
+    fn write_unsigned(mut self, _ value: u64, _ bits: u8) -> CodecResult<()>
+    fn write_signed(mut self, _ value: i64, _ bits: u8) -> CodecResult<()>
+    fn write_text<const N: usize>(mut self, _ value: Text<N>) -> CodecResult<()>
+    fn write_null(mut self) -> CodecResult<()>
+    fn write_variant<S: SerialDescriptor>(
+        mut self,
+        _ node: usize,
+        _ variant: VariantDescriptor,
+    ) -> CodecResult<()>
+
+    /// `present` counts fields that the serializer will actually visit.
+    fn begin_record<S: SerialDescriptor>(mut self, _ node: usize, _ present: usize) -> CodecResult<
+        Self::Record,
+    >
+    fn field(mut self, _ record: mut Self::Record, _ field: FieldDescriptor) -> CodecResult<()>
+    fn end_record(mut self, _ record: own Self::Record) -> CodecResult<()>
+
+    fn begin_sequence(mut self, _ length: usize) -> CodecResult<Self::Sequence>
+    fn element(mut self, _ sequence: mut Self::Sequence) -> CodecResult<()>
+    fn end_sequence(mut self, _ sequence: own Self::Sequence) -> CodecResult<()>
+}
+
+/// Calls mirror an encoder, with a format deciding which record field comes
+/// next. Serializers track duplicate assignments and required fields.
+pub trait Decoder {
+    type Record
+    type Sequence
+
+    fn offset(self) -> usize
+    fn read_bool(mut self) -> CodecResult<bool>
+    fn read_unsigned(mut self, _ bits: u8) -> CodecResult<u64>
+    fn read_signed(mut self, _ bits: u8) -> CodecResult<i64>
+    fn read_text<const N: usize>(mut self) -> CodecResult<Text<N>>
+    /// Consume a null if present and leave a non-null value unread.
+    fn take_null(mut self) -> CodecResult<bool>
+    fn read_variant<S: SerialDescriptor>(mut self, _ node: usize) -> CodecResult<usize>
+
+    fn begin_record<S: SerialDescriptor>(mut self, _ node: usize) -> CodecResult<Self::Record>
+    /// Return the next field and position the decoder at its value, or signal the record end.
+    fn next_field<S: SerialDescriptor>(
+        mut self,
+        _ node: usize,
+        _ record: mut Self::Record,
+    ) -> CodecResult<Option<Field>>
+    fn end_record(mut self, _ record: own Self::Record) -> CodecResult<()>
+
+    fn begin_sequence(mut self, _ length: usize) -> CodecResult<Self::Sequence>
+    fn element(mut self, _ sequence: mut Self::Sequence) -> CodecResult<()>
+    fn end_sequence(mut self, _ sequence: own Self::Sequence) -> CodecResult<()>
+}

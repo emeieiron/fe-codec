@@ -1,0 +1,83 @@
+use ingot::{BoundedBuffer, ByteReader, ByteWriter, IoErrorKind}
+
+#[test]
+fn byte_cursors_stop_at_the_initialized_length() {
+    var writer = ByteWriter<2>::new()
+    assert!(writer.offset() == 0)
+    assert!(writer.write(11).is_ok())
+    assert!(writer.write(22).is_ok())
+    match writer.write(33) {
+        Result::Err(error) => {
+            assert!(error.offset == 2)
+            assert!(
+                match error.kind {
+                    IoErrorKind::CapacityExceeded => true,
+                    _ => false,
+                },
+            )
+        },
+        Result::Ok(_) => assert!(false),
+    }
+    let buffer = writer.finish()
+    assert!(buffer.equals(BoundedBuffer<2>::from_array([11, 22])))
+    assert!(buffer.byte_at(2).is_none())
+
+    var reader = ByteReader<2>::new(buffer)
+    assert!(reader.peek() == Option::Some(11))
+    assert!(reader.offset() == 0)
+    assert!(reader.read().ok() == Option::Some(11))
+    assert!(reader.read().ok() == Option::Some(22))
+    match reader.read() {
+        Result::Err(error) => {
+            assert!(error.offset == 2)
+            assert!(
+                match error.kind {
+                    IoErrorKind::UnexpectedEnd => true,
+                    _ => false,
+                },
+            )
+        },
+        Result::Ok(_) => assert!(false),
+    }
+    assert!(reader.offset() == 2 && reader.remaining() == 0)
+}
+
+#[test]
+fn zero_capacity_buffer_is_empty() {
+    var writer = ByteWriter<0>::new()
+    assert!(writer.write(0).is_err())
+    let buffer = writer.finish()
+    assert!(buffer.len() == 0)
+    assert!(buffer.capacity() == 0)
+    assert!(buffer.byte_at(0).is_none())
+}
+
+#[test]
+fn packed_buffers_preserve_bytes_across_word_boundaries() {
+    let bytes: [u8; 33] = "0123456789abcdefghijklmnopqrstuvw"
+    let buffer = BoundedBuffer<65>::from_prefix(bytes).unwrap()
+    assert!(buffer.len() == 33)
+    assert!(buffer.byte_at(0) == Option::Some(b'0'))
+    assert!(buffer.byte_at(31) == Option::Some(b'v'))
+    assert!(buffer.byte_at(32) == Option::Some(b'w'))
+    assert!(buffer.byte_at(33).is_none())
+    assert!(buffer.equals(BoundedBuffer<33>::from_array(bytes)))
+    assert!(BoundedBuffer<32>::from_prefix(bytes).is_none())
+}
+
+#[test]
+fn span_copy_uses_only_the_initialized_prefix() {
+    let input = core::MemBuffer::new(3)
+    let raw = match BoundedBuffer<8>::from_span(input.slice(offset: 0, len: 3)) {
+        Result::Ok(buffer) => buffer,
+        Result::Err(_) => core::panic(),
+    }
+    assert!(raw.len() == 3)
+    var output = core::MemBuffer::new(4)
+    output[3] = 99
+    assert!(raw.copy_to(mut output.slice(offset: 0, len: 2)).is_err())
+    assert!(
+        raw.copy_to(mut output.slice(offset: 0, len: 4)).ok() == Option::Some(3),
+    )
+    assert!(output[3] == 99)
+}

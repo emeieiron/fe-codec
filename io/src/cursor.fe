@@ -1,0 +1,67 @@
+use core::marker::Copy
+use ingot::buffer::BoundedBuffer
+
+pub enum IoErrorKind {
+    UnexpectedEnd,
+    CapacityExceeded,
+}
+impl Copy for IoErrorKind {}
+
+pub struct IoError { pub kind: IoErrorKind, pub offset: usize }
+impl Copy for IoError {}
+
+pub struct ByteReader<const N: usize> { input: BoundedBuffer<N>, position: usize }
+
+impl<const N: usize> ByteReader<N> {
+    pub fn new(_ input: own BoundedBuffer<N>) -> Self {
+        Self { input, position: 0 }
+    }
+
+    pub fn offset(self) -> usize {
+        self.position
+    }
+
+    pub fn remaining(self) -> usize {
+        self.input.len() - self.position
+    }
+
+    pub fn peek(self) -> Option<u8> {
+        self.input.byte_at(self.position)
+    }
+
+    pub fn read(mut self) -> Result<IoError, u8> {
+        match self.peek() {
+            Option::Some(byte) => {
+                self.position += 1
+                Result::Ok(byte)
+            },
+            Option::None => Result::Err(
+                IoError { kind: IoErrorKind::UnexpectedEnd, offset: self.position },
+            ),
+        }
+    }
+}
+
+pub struct ByteWriter<const N: usize> { output: BoundedBuffer<N> }
+
+impl<const N: usize> ByteWriter<N> {
+    pub fn new() -> Self {
+        Self { output: BoundedBuffer<N>::empty() }
+    }
+
+    pub fn offset(self) -> usize {
+        self.output.len()
+    }
+
+    pub fn write(mut self, _ byte: u8) -> Result<IoError, ()> {
+        if self.output.len() == N {
+            return Result::Err(IoError { kind: IoErrorKind::CapacityExceeded, offset: N })
+        }
+        self.output.append_unchecked(byte)
+        Result::Ok(())
+    }
+
+    pub fn finish(own self) -> BoundedBuffer<N> {
+        self.output
+    }
+}

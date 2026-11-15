@@ -1,0 +1,41 @@
+[project]
+name = "codec_transfer"
+version = "0.1.0"
+
+[toolchain]
+fe = "26.6.0"
+
+[modules.io]
+path = "../../io"
+
+[modules.core]
+path = "../../core"
+
+[modules.json]
+path = "../../formats/json"
+
+[modules.cbor]
+path = "../../formats/cbor"
+
+[modules.shared]
+path = "shared"
+
+[modules.shared.generate.serializers]
+command = [
+    "cargo", "run", "--quiet", "--locked",
+    "--manifest-path", "../../../Cargo.toml", "--bin", "fe-codec-gen", "--",
+    "--source", "src/models.fe", "--type", "Batch", "--type", "Sample", "--type", "StableTransfer", "--stdout",
+]
+output = "src/serializers.fe"
+
+[modules.contract]
+path = "evm"
+platform = "evm"
+
+[modules.cli]
+path = "native"
+platform = "native"
+
+[modules.web]
+path = "wasm"
+platform = "wasm"

@@ -1,0 +1,6 @@
+/target/
+**/build/
+**/dist/
+**/out/
+
+/examples/transfer/shared/src/serializers.fe

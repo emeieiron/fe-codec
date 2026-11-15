@@ -1,0 +1,21 @@
+use fe_codec_core::{BoundedBuffer, CodecResult, Limits, Serializer}
+use ingot::encoder::JsonEncoder
+use ingot::decoder::JsonDecoder
+
+pub fn encode<T, S: Serializer<T>, const N: usize>(_ value: T, _ limits: Limits) -> CodecResult<
+    BoundedBuffer<N>,
+> {
+    var encoder = JsonEncoder<N>::new(limits)
+    S::encode(value, mut encoder)?
+    encoder.finish()
+}
+
+pub fn decode<T, S: Serializer<T>, const N: usize>(
+    _ input: own BoundedBuffer<N>,
+    _ limits: Limits,
+) -> CodecResult<T> {
+    var decoder = JsonDecoder<N>::new(input, limits)
+    let value = S::decode(mut decoder)?
+    decoder.finish()?
+    Result::Ok(value)
+}

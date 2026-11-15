@@ -1,0 +1,61 @@
+use ingot::{BoundedBuffer, CodecResult, ErrorKind, Text, TextWriter}
+
+#[test]
+fn valid_text_keeps_nul_and_multibyte_sequences() {
+    let bytes = BoundedBuffer<6>::from_array([0, 0xc2, 0xa2, 0xe2, 0x82, 0xac])
+    match Text<6>::from_bytes(bytes) {
+        Result::Ok(text) => {
+            assert!(text.len() == 6)
+            assert!(text.byte_at(0) == Option::Some(0))
+            assert!(text.byte_at(5) == Option::Some(0xac))
+        },
+        Result::Err(_) => assert!(false),
+    }
+}
+
+#[test]
+fn text_rejects_overlong_surrogate_and_truncated_utf8() {
+    invalid(
+        Text<2>::from_bytes(BoundedBuffer<2>::from_array([0xc0, 0x80])),
+        0,
+    )
+    invalid(
+        Text<3>::from_bytes(BoundedBuffer<3>::from_array([0xed, 0xa0, 0x80])),
+        1,
+    )
+    invalid(
+        Text<4>::from_bytes(BoundedBuffer<4>::from_array([0xf4, 0x90, 0x80, 0x80])),
+        1,
+    )
+    invalid(
+        Text<1>::from_bytes(BoundedBuffer<1>::from_array([0xe2])),
+        1,
+    )
+}
+
+#[test]
+fn text_writer_uses_source_offsets() {
+    var writer = TextWriter<2>::new()
+    assert!(writer.write(0xc2, 10).is_ok())
+    invalid(writer.write(b'a', 15), 15)
+    assert!(writer.write(0xa2, 16).is_ok())
+    match writer.write(b'x', 19) {
+        Result::Err(error) => assert!(
+            error.kind == ErrorKind::CapacityExceeded && error.offset == 19,
+        ),
+        Result::Ok(_) => assert!(false),
+    }
+    match writer.finish(20) {
+        Result::Ok(text) => assert!(text.len() == 2),
+        Result::Err(_) => assert!(false),
+    }
+}
+
+fn invalid<T>(_ result: own CodecResult<T>, _ offset: usize) {
+    match result {
+        Result::Err(error) => assert!(
+            error.kind == ErrorKind::InvalidUtf8 && error.offset == offset,
+        ),
+        Result::Ok(_) => assert!(false),
+    }
+}

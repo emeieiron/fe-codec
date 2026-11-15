@@ -1,0 +1,75 @@
+use core::num::IntDowncast
+use ingot::error::{CodecError, CodecResult, ErrorKind, Limits}
+
+/// Tracks the common traversal protocol for formats that consume one root value.
+/// A field or element opens a value position. Starting a container consumes
+/// that position and invites the format to open positions for its children.
+pub struct Structure { limits: Limits, depth: usize, needs_value: bool }
+
+impl Structure {
+    pub fn new(_ limits: Limits) -> Self {
+        Self { limits, depth: 0, needs_value: true }
+    }
+
+    pub fn value(mut self, _ offset: usize) -> CodecResult<()> {
+        if !self.needs_value {
+            return Result::Err(invalid_state(offset))
+        }
+        self.needs_value = false
+        Result::Ok(())
+    }
+
+    pub fn begin(mut self, _ offset: usize) -> CodecResult<()> {
+        if self.depth >= self.limits.max_depth {
+            return Result::Err(CodecError::at(kind: ErrorKind::DepthLimit, offset))
+        }
+        self.value(offset)?
+        self.depth += 1
+        Result::Ok(())
+    }
+
+    pub fn member(mut self, _ offset: usize) -> CodecResult<()> {
+        if self.depth == 0 || self.needs_value {
+            return Result::Err(invalid_state(offset))
+        }
+        self.needs_value = true
+        Result::Ok(())
+    }
+
+    pub fn end(mut self, _ offset: usize) -> CodecResult<()> {
+        if self.depth == 0 || self.needs_value {
+            return Result::Err(invalid_state(offset))
+        }
+        self.depth -= 1
+        Result::Ok(())
+    }
+
+    pub fn finish(self, _ offset: usize) -> CodecResult<()> {
+        if self.depth != 0 || self.needs_value {
+            return Result::Err(invalid_state(offset))
+        }
+        Result::Ok(())
+    }
+
+    pub fn check_items(self, _ count: usize, _ offset: usize) -> CodecResult<()> {
+        if count > self.limits.max_items {
+            return Result::Err(collection_limit(offset))
+        }
+        Result::Ok(())
+    }
+
+    pub fn wire_items(self, _ count: u64, _ offset: usize) -> CodecResult<usize> {
+        if (count as u256) > (self.limits.max_items as u256) {
+            return Result::Err(collection_limit(offset))
+        }
+        Result::Ok(count.downcast_unchecked())
+    }
+}
+
+fn invalid_state(_ offset: usize) -> CodecError {
+    CodecError::at(kind: ErrorKind::InvalidState, offset)
+}
+
+fn collection_limit(_ offset: usize) -> CodecError {
+    CodecError::at(kind: ErrorKind::CollectionLimit, offset)
+}

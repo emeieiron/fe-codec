@@ -1,0 +1,108 @@
+use core::marker::Copy
+use core::num::IntDowncast
+use core::ops::Eq
+use fe_codec_io::{IoError, IoErrorKind}
+
+pub enum ErrorKind {
+    UnexpectedEnd,
+    CapacityExceeded,
+    InvalidSyntax,
+    InvalidUtf8,
+    TypeMismatch,
+    IntegerOutOfRange,
+    UnknownField,
+    DuplicateField,
+    MissingField,
+    UnknownVariant,
+    InvalidLength,
+    InvalidState,
+    TrailingData,
+    DepthLimit,
+    CollectionLimit,
+    Unsupported,
+    NonCanonical,
+}
+
+impl Copy for ErrorKind {}
+
+impl ErrorKind {
+    /// Stable nonzero code for platform boundaries.
+    pub fn code(self) -> u32 {
+        match self {
+            Self::UnexpectedEnd => 1,
+            Self::CapacityExceeded => 2,
+            Self::InvalidSyntax => 3,
+            Self::InvalidUtf8 => 4,
+            Self::TypeMismatch => 5,
+            Self::IntegerOutOfRange => 6,
+            Self::UnknownField => 7,
+            Self::DuplicateField => 8,
+            Self::MissingField => 9,
+            Self::UnknownVariant => 10,
+            Self::InvalidLength => 11,
+            Self::InvalidState => 12,
+            Self::TrailingData => 13,
+            Self::DepthLimit => 14,
+            Self::CollectionLimit => 15,
+            Self::Unsupported => 16,
+            Self::NonCanonical => 17,
+        }
+    }
+}
+
+impl Eq for ErrorKind {
+    fn eq(self, _ other: Self) -> bool {
+        self.code() == other.code()
+    }
+}
+
+pub struct FieldContext { pub node: usize, pub index: usize }
+impl Copy for FieldContext {}
+
+pub struct CodecError { pub kind: ErrorKind, pub offset: usize, context: u64 }
+impl Copy for CodecError {}
+
+pub type CodecResult<T> = Result<CodecError, T>
+
+impl CodecError {
+    pub fn at(kind: ErrorKind, offset: usize) -> Self {
+        Self { kind, offset, context: 0 }
+    }
+
+    pub fn at_field(self, _ node: usize, _ index: usize) -> Self {
+        // Zero denotes absence. The schema graph and its fields are indexed
+        // by their declaration positions, which fit into two 32-bit halves.
+        if (node as u256) >= 0xffffffff || (index as u256) > 0xffffffff {
+            return self
+        }
+        let record: u64 = node.downcast_unchecked()
+        let member: u64 = index.downcast_unchecked()
+        Self { kind: self.kind, offset: self.offset, context: ((record + 1) << 32) | member }
+    }
+
+    pub fn field(self) -> Option<FieldContext> {
+        if self.context == 0 {
+            return Option::None
+        }
+        let node: usize = ((self.context >> 32) - 1).downcast_unchecked()
+        let index: usize = (self.context & 0xffffffff).downcast_unchecked()
+        Option::Some(FieldContext { node, index })
+    }
+
+    pub fn from_io(_ error: own IoError) -> Self {
+        let kind = match error.kind {
+            IoErrorKind::UnexpectedEnd => ErrorKind::UnexpectedEnd,
+            IoErrorKind::CapacityExceeded => ErrorKind::CapacityExceeded,
+        }
+        Self::at(kind, offset: error.offset)
+    }
+}
+
+pub struct Limits { pub max_depth: usize, pub max_items: usize }
+impl Copy for Limits {}
+
+impl Limits {
+    pub fn standard() -> Self {
+        Self { max_depth: 32, max_items: 256 }
+    }
+}

@@ -1,0 +1,178 @@
+use core::num::IntDowncast
+use fe_codec_core::{
+    CodecError,
+    CodecResult,
+    Encoder,
+    ErrorKind,
+    FieldDescriptor,
+    Limits,
+    Structure,
+    SerialDescriptor,
+    Text,
+    VariantDescriptor,
+    checked_signed,
+    checked_unsigned,
+}
+use fe_codec_io::{BoundedBuffer, ByteWriter}
+use ingot::frame::Frame
+
+pub struct CborEncoder<const N: usize> { output: ByteWriter<N>, structure: Structure }
+
+impl<const N: usize> CborEncoder<N> {
+    pub fn new(_ limits: Limits) -> Self {
+        Self { output: ByteWriter<N>::new(), structure: Structure::new(limits) }
+    }
+
+    pub fn finish(own self) -> CodecResult<BoundedBuffer<N>> {
+        self.structure.finish(self.offset())?
+        Result::Ok(self.output.finish())
+    }
+
+    fn byte(mut self, _ byte: u8) -> CodecResult<()> {
+        self.output.write(byte).map_err(CodecError::from_io)
+    }
+
+    fn length(self, _ length: usize) -> CodecResult<u64> {
+        match length.downcast() {
+            Option::Some(value) => Result::Ok(value),
+            Option::None => Result::Err(
+                CodecError::at(kind: ErrorKind::InvalidLength, offset: self.offset()),
+            ),
+        }
+    }
+
+    fn header(mut self, _ major: u8, _ argument: u64) -> CodecResult<()> {
+        let tag = major << 5
+        if argument < 24 {
+            return self.byte(tag | argument.downcast_unchecked())
+        }
+        let width: u8 = if argument <= 0xff {
+            1
+        } else if argument <= 0xffff {
+            2
+        } else if argument <= 0xffffffff { 4 } else { 8 }
+        let additional: u8 = if width == 1 {
+            24
+        } else if width == 2 {
+            25
+        } else if width == 4 { 26 } else { 27 }
+        self.byte(tag | additional)?
+        var remaining = width
+        while remaining != 0 {
+            remaining -= 1
+            self.byte(
+                (argument >> ((remaining * 8) as u64)).downcast_truncate(),
+            )?
+        }
+        Result::Ok(())
+    }
+
+    fn begin(mut self, _ major: u8, _ count: usize) -> CodecResult<Frame> {
+        let offset = self.offset()
+        self.structure.check_items(count, offset)?
+        self.structure.begin(offset)?
+        let argument = self.length(count)?
+        self.header(major, argument)?
+        Result::Ok(Frame::new(count))
+    }
+
+    fn end(mut self, _ frame: own Frame) -> CodecResult<()> {
+        let offset = self.offset()
+        frame.complete(offset)?
+        self.structure.end(offset)
+    }
+}
+
+impl<const N: usize> Encoder for CborEncoder<N> {
+    const RECORD_FIELDS_BY_ID: bool = true
+    type Record = Frame
+    type Sequence = Frame
+
+    fn offset(self) -> usize {
+        self.output.offset()
+    }
+
+    fn write_bool(mut self, _ value: bool) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        self.byte(if value { 0xf5 } else { 0xf4 })
+    }
+
+    fn write_unsigned(mut self, _ value: u64, _ bits: u8) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        checked_unsigned(value, bits, offset)?
+        self.header(0, value)
+    }
+
+    fn write_signed(mut self, _ value: i64, _ bits: u8) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        checked_signed(value, bits, offset)?
+        if value < 0 {
+            self.header(1, (-(value + 1)).downcast_unchecked())
+        } else {
+            self.header(0, value.downcast_unchecked())
+        }
+    }
+
+    fn write_text<const M: usize>(mut self, _ value: Text<M>) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        let length = self.length(value.len())?
+        self.header(3, length)?
+        var index: usize = 0
+        while index < value.len() {
+            self.byte(value.byte_at(index).unwrap())?
+            index += 1
+        }
+        Result::Ok(())
+    }
+
+    fn write_null(mut self) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        self.byte(0xf6)
+    }
+
+    fn write_variant<S: SerialDescriptor>(
+        mut self,
+        _ node: usize,
+        _ variant: VariantDescriptor,
+    ) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        self.header(0, variant.id)
+    }
+
+    fn begin_record<S: SerialDescriptor>(mut self, _ node: usize, _ present: usize) -> CodecResult<
+        Frame,
+    > {
+        self.begin(5, present)
+    }
+
+    fn field(mut self, _ record: mut Frame, _ field: FieldDescriptor) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.member(offset)?
+        record.key(field.id, offset)?
+        self.header(0, field.id)
+    }
+
+    fn end_record(mut self, _ record: own Frame) -> CodecResult<()> {
+        self.end(record)
+    }
+
+    fn begin_sequence(mut self, _ length: usize) -> CodecResult<Frame> {
+        self.begin(4, length)
+    }
+
+    fn element(mut self, _ sequence: mut Frame) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.member(offset)?
+        sequence.take(offset)
+    }
+
+    fn end_sequence(mut self, _ sequence: own Frame) -> CodecResult<()> {
+        self.end(sequence)
+    }
+}

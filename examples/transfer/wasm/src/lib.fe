@@ -1,0 +1,23 @@
+use fe_codec_core::{BoundedBuffer, ErrorKind}
+use std::wasm::{HostText, Reply}
+
+pub fn verify_formats() -> bool {
+    codec_transfer::verify_formats()
+}
+
+pub fn decode_json_value(_ input: HostText) -> Reply {
+    if input.len() > 256 {
+        return Reply::error(ErrorKind::CapacityExceeded.code())
+    }
+    let text = input.copy()
+    let bytes = match BoundedBuffer<256>::from_span(text.span()) {
+        Result::Ok(buffer) => buffer,
+        Result::Err(_) => {
+            return Reply::error(ErrorKind::CapacityExceeded.code())
+        },
+    }
+    match codec_transfer::decode_sample(bytes) {
+        Result::Ok(sample) => Reply::ok(sample.value as u32),
+        Result::Err(error) => Reply::error(error.kind.code()),
+    }
+}

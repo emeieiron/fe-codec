@@ -1,0 +1,238 @@
+use core::num::IntDowncast
+use fe_codec_core::{
+    CodecError,
+    CodecResult,
+    Encoder,
+    ErrorKind,
+    FieldDescriptor,
+    Limits,
+    MAX_NAME_BYTES,
+    Structure,
+    SchemaName,
+    SerialDescriptor,
+    Text,
+    TextWriter,
+    VariantDescriptor,
+    checked_signed,
+    checked_unsigned,
+}
+use fe_codec_io::{BoundedBuffer, ByteWriter}
+
+pub struct Frame { expected: usize, seen: usize }
+
+pub struct JsonEncoder<const N: usize> { output: ByteWriter<N>, structure: Structure }
+
+impl<const N: usize> JsonEncoder<N> {
+    pub fn new(_ limits: Limits) -> Self {
+        Self { output: ByteWriter<N>::new(), structure: Structure::new(limits) }
+    }
+
+    pub fn finish(own self) -> CodecResult<BoundedBuffer<N>> {
+        self.structure.finish(self.offset())?
+        Result::Ok(self.output.finish())
+    }
+
+    fn error(self, _ kind: ErrorKind) -> CodecError {
+        CodecError::at(kind, offset: self.offset())
+    }
+
+    fn byte(mut self, _ byte: u8) -> CodecResult<()> {
+        self.output.write(byte).map_err(CodecError::from_io)
+    }
+
+    fn bytes<const M: usize>(mut self, _ bytes: [u8; M]) -> CodecResult<()> {
+        var index: usize = 0
+        while index < M {
+            self.byte(bytes[index])?
+            index += 1
+        }
+        Result::Ok(())
+    }
+
+    fn decimal(mut self, _ number: u64) -> CodecResult<()> {
+        var digits: [u8; 20] = [0; 20]
+        var at: usize = 20
+        var remaining = number
+        loop {
+            at -= 1
+            let digit: u8 = (remaining % 10).downcast_unchecked()
+            digits[at] = b'0' + digit
+            remaining /= 10
+            if remaining == 0 { break }
+        }
+        while at < 20 {
+            self.byte(digits[at])?
+            at += 1
+        }
+        Result::Ok(())
+    }
+
+    fn name(mut self, _ name: SchemaName) -> CodecResult<()> {
+        var text = TextWriter<MAX_NAME_BYTES>::new()
+        var index: usize = 0
+        let offset = self.offset()
+        while index < name.len() {
+            text.write(name.byte_at(index).unwrap(), offset)?
+            index += 1
+        }
+        self.string(text.finish(offset)?)
+    }
+
+    fn string<const M: usize>(mut self, _ value: Text<M>) -> CodecResult<()> {
+        self.byte(b'"')?
+        var index: usize = 0
+        while index < value.len() {
+            self.escaped(value.byte_at(index).unwrap())?
+            index += 1
+        }
+        self.byte(b'"')
+    }
+
+    fn escaped(mut self, _ byte: u8) -> CodecResult<()> {
+        match byte {
+            b'"' => self.bytes<2>("\\\""),
+            b'\\' => self.bytes<2>("\\\\"),
+            8 => self.bytes<2>("\\b"),
+            9 => self.bytes<2>("\\t"),
+            10 => self.bytes<2>("\\n"),
+            12 => self.bytes<2>("\\f"),
+            13 => self.bytes<2>("\\r"),
+            _ => {
+                if byte < 32 {
+                    self.bytes<4>("\\u00")?
+                    self.byte(hex(byte >> 4))?
+                    self.byte(hex(byte & 15))
+                } else {
+                    self.byte(byte)
+                }
+            },
+        }
+    }
+
+    fn begin(mut self, _ marker: u8, _ expected: usize) -> CodecResult<Frame> {
+        let offset = self.offset()
+        self.structure.check_items(expected, offset)?
+        self.structure.begin(offset)?
+        self.byte(marker)?
+        Result::Ok(Frame { expected, seen: 0 })
+    }
+
+    fn step(mut self, _ frame: mut Frame) -> CodecResult<()> {
+        if frame.seen == frame.expected {
+            return Result::Err(self.error(ErrorKind::InvalidLength))
+        }
+        let offset = self.offset()
+        self.structure.member(offset)?
+        if frame.seen != 0 {
+            self.byte(b',')?
+        }
+        frame.seen += 1
+        Result::Ok(())
+    }
+
+    fn end(mut self, _ marker: u8, _ frame: own Frame) -> CodecResult<()> {
+        if frame.seen != frame.expected {
+            return Result::Err(self.error(ErrorKind::InvalidLength))
+        }
+        let offset = self.offset()
+        self.structure.end(offset)?
+        self.byte(marker)
+    }
+}
+
+impl<const N: usize> Encoder for JsonEncoder<N> {
+    type Record = Frame
+    type Sequence = Frame
+
+    fn offset(self) -> usize {
+        self.output.offset()
+    }
+
+    fn write_bool(mut self, _ value: bool) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        if value {
+            self.bytes<4>("true")
+        } else {
+            self.bytes<5>("false")
+        }
+    }
+
+    fn write_unsigned(mut self, _ value: u64, _ bits: u8) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        checked_unsigned(value, bits, offset)?
+        self.decimal(value)
+    }
+
+    fn write_signed(mut self, _ value: i64, _ bits: u8) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        checked_signed(value, bits, offset)?
+        if value < 0 {
+            self.byte(b'-')?
+            let magnitude_minus_one: u64 = (-(value + 1)).downcast_unchecked()
+            self.decimal(magnitude_minus_one + 1)
+        } else {
+            self.decimal(value.downcast_unchecked())
+        }
+    }
+
+    fn write_text<const M: usize>(mut self, _ value: Text<M>) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        self.string(value)
+    }
+
+    fn write_null(mut self) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        self.bytes<4>("null")
+    }
+
+    fn write_variant<S: SerialDescriptor>(
+        mut self,
+        _ node: usize,
+        _ variant: VariantDescriptor,
+    ) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        self.name(variant.name)
+    }
+
+    fn begin_record<S: SerialDescriptor>(mut self, _ node: usize, _ present: usize) -> CodecResult<
+        Frame,
+    > {
+        self.begin(b'{', present)
+    }
+
+    fn field(mut self, _ record: mut Frame, _ field: FieldDescriptor) -> CodecResult<()> {
+        self.step(mut record)?
+        self.name(field.name)?
+        self.byte(b':')
+    }
+
+    fn end_record(mut self, _ record: own Frame) -> CodecResult<()> {
+        self.end(b'}', record)
+    }
+
+    fn begin_sequence(mut self, _ length: usize) -> CodecResult<Frame> {
+        self.begin(b'[', length)
+    }
+
+    fn element(mut self, _ sequence: mut Frame) -> CodecResult<()> {
+        self.step(mut sequence)
+    }
+
+    fn end_sequence(mut self, _ sequence: own Frame) -> CodecResult<()> {
+        self.end(b']', sequence)
+    }
+}
+
+fn hex(_ digit: u8) -> u8 {
+    if digit < 10 {
+        b'0' + digit
+    } else {
+        b'a' + (digit - 10)
+    }
+}

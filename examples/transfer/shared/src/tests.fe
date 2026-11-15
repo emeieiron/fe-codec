@@ -1,0 +1,600 @@
+use ingot::models::{StableStatus, StableTransfer}
+use ingot::serializers::StableTransferSerializer
+use fe_codec_core::{
+    BoundedBuffer,
+    CodecResult,
+    Decoder,
+    Encoder,
+    ErrorKind,
+    Limits,
+    SerialDescriptor,
+    SerialKind,
+    Serializer,
+    Text,
+    TextWriter,
+    TypeDescriptor,
+    schema_name,
+}
+use ingot::demo::verify_formats
+use ingot::models::{Batch, Recipient, Sample, Status, Transfer}
+use ingot::serializers::{BatchSerializer, SampleSerializer, StatusSerializer}
+
+const JSON: [u8; 165] = "{\"transfers\":[{\"recipient\":{\"active\":true,\"label\":\"\\u0000é\"},\"amount\":18446744073709551615,\"delta\":-9223372036854775808,\"status\":\"Sent\",\"hops\":[1,255],\"flags\":[]}]}"
+const CBOR: [u8; 42] = [
+    0xa1,
+    0x01,
+    0x81,
+    0xa6,
+    // Batch and its one Transfer.
+    0x01,
+    0xa2,
+    0x01,
+    0xf5,
+    0x02,
+    0x63,
+    0x00,
+    0xc3,
+    0xa9,
+    // Recipient.
+    0x02,
+    0x1b,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0x03,
+    0x3b,
+    0x7f,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0x04,
+    0x01,
+    0x05,
+    0x82,
+    0x01,
+    0x18,
+    0xff,
+    0x06,
+    0x80,
+]
+
+fn label() -> CodecResult<Text<8>> {
+    var text = TextWriter<8>::new()
+    text.write(0, 0)?
+    text.write(0xc3, 1)?
+    text.write(0xa9, 2)?
+    text.finish(3)
+}
+
+fn batch() -> CodecResult<Batch> {
+    let transfer = Transfer {
+        recipient: Recipient { active: true, label: label()? },
+        amount: 18446744073709551615,
+        delta: -9223372036854775808,
+        status: Status::Sent,
+        hops: [1, 255],
+        flags: [],
+        nonce: Option::None,
+    }
+    Result::Ok(Batch { transfers: [transfer] })
+}
+
+fn check_batch(_ value: Batch) {
+    let transfer = ref value.transfers[0]
+    assert!(transfer.recipient.active)
+    assert!(transfer.recipient.label.equals(must(label())))
+    assert!(transfer.amount == 18446744073709551615)
+    assert!(transfer.delta == -9223372036854775808)
+    assert!(
+        match transfer.status {
+            Status::Sent => true,
+            _ => false,
+        },
+    )
+    assert!(transfer.hops == [1, 255] && transfer.flags == [])
+    assert!(transfer.nonce.is_none())
+}
+
+fn must<T>(_ result: own CodecResult<T>) -> T {
+    match result {
+        Result::Ok(value) => value,
+        Result::Err(_) => core::panic(),
+    }
+}
+
+fn expect_error<T>(_ result: own CodecResult<T>, _ kind: ErrorKind, _ offset: usize) {
+    match result {
+        Result::Err(error) => {
+            assert!(error.kind == kind)
+            assert!(error.offset == offset)
+        },
+        Result::Ok(_) => assert!(false),
+    }
+}
+
+#[test]
+fn example_uses_both_formats() {
+    assert!(verify_formats())
+}
+
+#[test]
+fn json_matches_golden_and_decodes_every_field() {
+    let limits = Limits::standard()
+    let value = must(batch())
+    let encoded = must(
+        fe_codec_json::encode<Batch, BatchSerializer, 192>(value, limits),
+    )
+    let golden = BoundedBuffer<165>::from_array(JSON)
+    assert!(encoded.equals(golden))
+    check_batch(
+        must(
+            fe_codec_json::decode<Batch, BatchSerializer, 165>(golden, limits),
+        ),
+    )
+}
+
+#[test]
+fn cbor_matches_golden_and_decodes_every_field() {
+    let limits = Limits::standard()
+    let value = must(batch())
+    let encoded = must(
+        fe_codec_cbor::encode<Batch, BatchSerializer, 64>(value, limits),
+    )
+    let golden = BoundedBuffer<42>::from_array(CBOR)
+    assert!(encoded.equals(golden))
+    check_batch(
+        must(
+            fe_codec_cbor::decode<Batch, BatchSerializer, 42>(golden, limits),
+        ),
+    )
+}
+
+#[test]
+fn descriptors_link_nested_field_and_element_types() {
+    let root = BatchSerializer::root()
+    let array = BatchSerializer::field(root, 0).unwrap()
+    assert!(array.index == 0 && array.id == 1 && !array.optional)
+    let sequence = BatchSerializer::node(array.value_node).unwrap()
+    assert!(sequence.count == 1)
+    assert!(
+        match sequence.kind {
+            SerialKind::Sequence => true,
+            _ => false,
+        },
+    )
+    let transfer = sequence.element.unwrap()
+    let nonce = BatchSerializer::field(transfer, 6).unwrap()
+    assert!(nonce.index == 6 && nonce.id == 7 && nonce.optional)
+    let ty = BatchSerializer::node(nonce.value_node).unwrap()
+    assert!(
+        match ty.kind {
+            SerialKind::Unsigned(16) => true,
+            _ => false,
+        },
+    )
+    let variant = StatusSerializer::variant(StatusSerializer::root(), 1).unwrap()
+    assert!(
+        variant.index == 1 && variant.id == 1 && variant.name.len() == 4,
+    )
+}
+
+struct CounterSerializer {}
+
+impl SerialDescriptor for CounterSerializer {
+    fn root() -> usize {
+        0
+    }
+
+    fn node(_ index: usize) -> Option<TypeDescriptor> {
+        if index != 0 {
+            return Option::None
+        }
+        Option::Some(
+            TypeDescriptor {
+                name: schema_name<7>("Counter"),
+                kind: SerialKind::Unsigned(64),
+                count: 0,
+                element: Option::None,
+            },
+        )
+    }
+}
+
+impl Serializer<u64> for CounterSerializer {
+    fn encode<E: Encoder>(_ value: u64, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_unsigned(value, 64)
+    }
+
+    fn decode<D: Decoder>(_ decoder: mut D) -> CodecResult<u64> {
+        decoder.read_unsigned(64)
+    }
+}
+
+#[test]
+fn manual_serializer_can_round_trip_a_root_scalar() {
+    let limits = Limits { max_depth: 0, max_items: 0 }
+    let expected_json: [u8; 3] = "256"
+    let expected_cbor: [u8; 3] = [0x19, 0x01, 0x00]
+    let json = must(
+        fe_codec_json::encode<u64, CounterSerializer, 4>(256, limits),
+    )
+    let cbor = must(
+        fe_codec_cbor::encode<u64, CounterSerializer, 4>(256, limits),
+    )
+    assert!(json.equals(BoundedBuffer<3>::from_array(expected_json)))
+    assert!(cbor.equals(BoundedBuffer<3>::from_array(expected_cbor)))
+    assert!(
+        must(
+                fe_codec_json::decode<u64, CounterSerializer, 4>(json, limits),
+            ) == 256,
+    )
+    assert!(
+        must(
+                fe_codec_cbor::decode<u64, CounterSerializer, 4>(cbor, limits),
+            ) == 256,
+    )
+    let overflow: [u8; 20] = "18446744073709551616"
+    expect_error(
+        fe_codec_json::decode<u64, CounterSerializer, 20>(
+            BoundedBuffer<20>::from_array(overflow),
+            limits,
+        ),
+        ErrorKind::IntegerOutOfRange,
+        19,
+    )
+}
+
+#[test]
+fn writers_report_the_first_byte_that_does_not_fit() {
+    let sample = Sample { value: 24, note: Option::None }
+    let limits = Limits::standard()
+    expect_error(
+        fe_codec_json::encode<Sample, SampleSerializer, 2>(sample, limits),
+        ErrorKind::CapacityExceeded,
+        2,
+    )
+    expect_error(
+        fe_codec_cbor::encode<Sample, SampleSerializer, 2>(sample, limits),
+        ErrorKind::CapacityExceeded,
+        2,
+    )
+}
+
+fn json_sample<const N: usize>(_ input: [u8; N], _ limits: Limits) -> CodecResult<Sample> {
+    fe_codec_json::decode<Sample, SampleSerializer, N>(BoundedBuffer<N>::from_array(input), limits)
+}
+
+fn cbor_sample<const N: usize>(_ input: [u8; N], _ limits: Limits) -> CodecResult<Sample> {
+    fe_codec_cbor::decode<Sample, SampleSerializer, N>(BoundedBuffer<N>::from_array(input), limits)
+}
+
+#[test]
+fn accepts_reordered_json_escaped_keys_and_explicit_null() {
+    let limits = Limits::standard()
+    let decoded = must(
+        json_sample<55>(
+            " {\n \"note\": \"\\u0000\\uD83D\\uDE00\", \"\\u0076alue\": 255 } \t",
+            limits,
+        ),
+    )
+    assert!(decoded.value == 255)
+    let expected = must(
+        Text<5>::from_bytes(BoundedBuffer<5>::from_array([0, 0xf0, 0x9f, 0x98, 0x80])),
+    )
+    assert!(decoded.note.unwrap().equals(expected))
+    let json_null = must(json_sample<25>("{\"value\":255,\"note\":null}", limits))
+    let cbor_null = must(
+        cbor_sample<6>([0xa2, 0x01, 0x18, 0xff, 0x02, 0xf6], limits),
+    )
+    assert!(json_null.value == 255 && json_null.note.is_none())
+    assert!(cbor_null.value == 255 && cbor_null.note.is_none())
+    let json = must(
+        fe_codec_json::encode<Sample, SampleSerializer, 48>(decoded, limits),
+    )
+    let cbor = must(
+        fe_codec_cbor::encode<Sample, SampleSerializer, 16>(decoded, limits),
+    )
+    let present: [u8; 33] = "{\"value\":255,\"note\":\"\\u0000😀\"}"
+    assert!(json.equals(BoundedBuffer<33>::from_array(present)))
+    assert!(
+        cbor.equals(
+            BoundedBuffer<11>::from_array(
+                [0xa2, 1, 0x18, 0xff, 2, 0x65, 0, 0xf0, 0x9f, 0x98, 0x80],
+            ),
+        ),
+    )
+}
+
+#[test]
+fn json_reports_bad_syntax_and_numeric_ranges() {
+    let limits = Limits::standard()
+    expect_error(
+        json_sample<9>("{\"value\":", limits),
+        ErrorKind::UnexpectedEnd,
+        9,
+    )
+    expect_error(
+        json_sample<11>("{\"value\" 1}", limits),
+        ErrorKind::InvalidSyntax,
+        9,
+    )
+    expect_error(
+        json_sample<12>("{\"value\":01}", limits),
+        ErrorKind::InvalidSyntax,
+        10,
+    )
+    expect_error(
+        json_sample<13>("{\"value\":1.0}", limits),
+        ErrorKind::Unsupported,
+        10,
+    )
+    expect_error(
+        json_sample<13>("{\"value\":1e0}", limits),
+        ErrorKind::Unsupported,
+        10,
+    )
+    expect_error(
+        json_sample<13>("{\"value\":256}", limits),
+        ErrorKind::IntegerOutOfRange,
+        9,
+    )
+    expect_error(
+        json_sample<17>("{\"value\":1} false", limits),
+        ErrorKind::TrailingData,
+        12,
+    )
+}
+
+#[test]
+fn json_reports_schema_and_text_errors() {
+    let limits = Limits::standard()
+    expect_error(
+        json_sample<26>("{\"value\":1,\"\\u0076alue\":2}", limits),
+        ErrorKind::DuplicateField,
+        11,
+    )
+    expect_error(
+        json_sample<11>("{\"other\":1}", limits),
+        ErrorKind::UnknownField,
+        1,
+    )
+    expect_error(json_sample<2>("{}", limits), ErrorKind::MissingField, 2)
+    expect_error(
+        json_sample<30>("{\"value\":1,\"note\":\"123456789\"}", limits),
+        ErrorKind::CapacityExceeded,
+        27,
+    )
+    expect_error(
+        json_sample<27>("{\"value\":1,\"note\":\"\\udc00\"}", limits),
+        ErrorKind::InvalidUtf8,
+        19,
+    )
+}
+
+#[test]
+fn cbor_reports_bad_headers_and_numeric_ranges() {
+    let limits = Limits::standard()
+    expect_error(
+        cbor_sample<3>([0xa1, 0x01, 0x18], limits),
+        ErrorKind::UnexpectedEnd,
+        3,
+    )
+    expect_error(
+        cbor_sample<3>([0xa1, 0x01, 0xf4], limits),
+        ErrorKind::TypeMismatch,
+        2,
+    )
+    expect_error(
+        cbor_sample<4>([0xa1, 0x01, 0x18, 0x17], limits),
+        ErrorKind::NonCanonical,
+        2,
+    )
+    expect_error(
+        cbor_sample<4>([0xbf, 0x01, 0x01, 0xff], limits),
+        ErrorKind::NonCanonical,
+        0,
+    )
+    expect_error(
+        cbor_sample<5>([0xa1, 0x01, 0x19, 0x01, 0x00], limits),
+        ErrorKind::IntegerOutOfRange,
+        2,
+    )
+    expect_error(
+        cbor_sample<4>([0xa1, 0x01, 0x01, 0x00], limits),
+        ErrorKind::TrailingData,
+        3,
+    )
+}
+
+#[test]
+fn cbor_reports_schema_and_text_errors() {
+    let limits = Limits::standard()
+    expect_error(
+        cbor_sample<5>([0xa2, 0x01, 0x01, 0x01, 0x02], limits),
+        ErrorKind::DuplicateField,
+        3,
+    )
+    expect_error(
+        cbor_sample<5>([0xa2, 0x02, 0xf6, 0x01, 0x01], limits),
+        ErrorKind::NonCanonical,
+        3,
+    )
+    expect_error(
+        cbor_sample<3>([0xa1, 0x03, 0x01], limits),
+        ErrorKind::UnknownField,
+        1,
+    )
+    expect_error(cbor_sample<1>([0xa0], limits), ErrorKind::MissingField, 1)
+    expect_error(
+        cbor_sample<6>([0xa2, 0x01, 0x01, 0x02, 0x61, 0xc0], limits),
+        ErrorKind::InvalidUtf8,
+        5,
+    )
+    expect_error(
+        cbor_sample<5>([0xa2, 0x01, 0x01, 0x02, 0x69], limits),
+        ErrorKind::CapacityExceeded,
+        4,
+    )
+}
+
+#[test]
+fn rejects_invalid_lengths_and_respects_container_limits() {
+    let limits = Limits::standard()
+    let shallow = Limits { max_depth: 1, max_items: 256 }
+    let single = Limits { max_depth: 32, max_items: 1 }
+    let json: [u8; 16] = "{\"transfers\":[]}"
+    let cbor = BoundedBuffer<3>::from_array([0xa1, 0x01, 0x80])
+    expect_error(
+        fe_codec_json::decode<Batch, BatchSerializer, 16>(
+            BoundedBuffer<16>::from_array(json),
+            limits,
+        ),
+        ErrorKind::InvalidLength,
+        14,
+    )
+    expect_error(
+        fe_codec_cbor::decode<Batch, BatchSerializer, 3>(cbor, limits),
+        ErrorKind::InvalidLength,
+        2,
+    )
+    expect_error(
+        fe_codec_json::decode<Batch, BatchSerializer, 16>(
+            BoundedBuffer<16>::from_array(json),
+            shallow,
+        ),
+        ErrorKind::DepthLimit,
+        13,
+    )
+    expect_error(
+        fe_codec_cbor::decode<Batch, BatchSerializer, 3>(cbor, shallow),
+        ErrorKind::DepthLimit,
+        2,
+    )
+    expect_error(
+        json_sample<23>("{\"value\":1,\"note\":null}", single),
+        ErrorKind::CollectionLimit,
+        11,
+    )
+    expect_error(
+        cbor_sample<5>([0xa2, 0x01, 0x01, 0x02, 0xf6], single),
+        ErrorKind::CollectionLimit,
+        0,
+    )
+    expect_error(
+        cbor_sample<3>([0xb9, 0x01, 0x01], limits),
+        ErrorKind::CollectionLimit,
+        0,
+    )
+}
+
+struct BrokenSerializer {}
+
+impl SerialDescriptor for BrokenSerializer {
+    fn root() -> usize {
+        CounterSerializer::root()
+    }
+    fn node(_ index: usize) -> Option<TypeDescriptor> {
+        CounterSerializer::node(index)
+    }
+}
+
+impl Serializer<u64> for BrokenSerializer {
+    fn encode<E: Encoder>(_ value: u64, _ encoder: mut E) -> CodecResult<()> {
+        if value != 0 {
+            encoder.write_unsigned(value, 64)?
+            encoder.write_unsigned(value, 64)?
+        }
+        Result::Ok(())
+    }
+
+    fn decode<D: Decoder>(_ decoder: mut D) -> CodecResult<u64> {
+        Result::Ok(0)
+    }
+}
+
+#[test]
+fn incomplete_or_multiple_root_values_are_rejected() {
+    let limits = Limits::standard()
+    expect_error(
+        fe_codec_json::encode<u64, BrokenSerializer, 4>(0, limits),
+        ErrorKind::InvalidState,
+        0,
+    )
+    expect_error(
+        fe_codec_cbor::encode<u64, BrokenSerializer, 4>(0, limits),
+        ErrorKind::InvalidState,
+        0,
+    )
+    expect_error(
+        fe_codec_json::encode<u64, BrokenSerializer, 4>(1, limits),
+        ErrorKind::InvalidState,
+        1,
+    )
+    expect_error(
+        fe_codec_cbor::encode<u64, BrokenSerializer, 4>(1, limits),
+        ErrorKind::InvalidState,
+        1,
+    )
+    let empty = BoundedBuffer<4>::empty()
+    expect_error(
+        fe_codec_json::decode<u64, BrokenSerializer, 4>(empty, limits),
+        ErrorKind::InvalidState,
+        0,
+    )
+    expect_error(
+        fe_codec_cbor::decode<u64, BrokenSerializer, 4>(empty, limits),
+        ErrorKind::InvalidState,
+        0,
+    )
+}
+
+#[test]
+fn explicit_ids_drive_cbor_without_changing_json_field_order() {
+    let value = StableTransfer { amount: 42, status: StableStatus::Ready }
+    let limits = Limits::standard()
+    let cbor = must(
+        fe_codec_cbor::encode<StableTransfer, StableTransferSerializer, 16>(value, limits),
+    )
+    let expected = BoundedBuffer<7>::from_array([0xa2, 0x02, 0x18, 0x3e, 0x09, 0x18, 0x2a])
+    assert!(cbor.equals(expected))
+    let decoded = must(
+        fe_codec_cbor::decode<StableTransfer, StableTransferSerializer, 7>(expected, limits),
+    )
+    assert!(decoded.amount == 42)
+    assert!(
+        match decoded.status {
+            StableStatus::Ready => true,
+            _ => false,
+        },
+    )
+    let json = must(
+        fe_codec_json::encode<StableTransfer, StableTransferSerializer, 48>(value, limits),
+    )
+    let expected_json: [u8; 30] = "{\"amount\":42,\"status\":\"Ready\"}"
+    assert!(json.equals(BoundedBuffer<30>::from_array(expected_json)))
+}
+
+#[test]
+fn missing_fields_include_the_schema_field() {
+    let input: [u8; 2] = "{}"
+    match json_sample<2>(input, Limits::standard()) {
+        Result::Err(error) => {
+            assert!(error.kind == ErrorKind::MissingField)
+            let field = ingot::demo::sample_error_field(error).unwrap()
+            let name: [u8; 5] = "value"
+            assert!(
+                field.as_bytes().equals(BoundedBuffer<5>::from_array(name)),
+            )
+        },
+        Result::Ok(_) => assert!(false),
+    }
+}

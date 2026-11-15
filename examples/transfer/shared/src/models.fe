@@ -1,0 +1,36 @@
+use fe_codec_core::Text
+
+pub struct Recipient { pub active: bool, pub label: Text<8> }
+
+pub enum Status {
+    Pending,
+    Sent,
+}
+
+pub struct Transfer {
+    pub recipient: Recipient,
+    pub amount: u64,
+    pub delta: i64,
+    pub status: Status,
+    pub hops: [u8; 2],
+    pub flags: [bool; 0],
+    pub nonce: Option<u16>,
+}
+
+pub struct Batch { pub transfers: [Transfer; 1] }
+
+pub struct Sample { pub value: u8, pub note: Option<Text<8>> }
+
+pub enum StableStatus {
+    #[codec_id = 62]
+    Ready,
+    #[codec_id = 0]
+    Waiting,
+}
+
+pub struct StableTransfer {
+    #[codec_id = 9]
+    pub amount: u8,
+    #[codec_id = 2]
+    pub status: StableStatus,
+}

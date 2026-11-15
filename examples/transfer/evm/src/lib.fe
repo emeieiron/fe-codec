@@ -1,0 +1,25 @@
+msg CodecMsg {
+    #[selector = sol("verifyFormats()")]
+    VerifyFormats -> bool,
+}
+
+pub contract TransferCodec {
+    recv CodecMsg {
+        VerifyFormats -> bool {
+            codec_transfer::verify_formats()
+        }
+    }
+}
+
+#[test]
+fn contract_verifies_both_formats() uses (evm: mut std::evm::Evm) {
+    let contract_address = evm.create2<TransferCodec>(value: Wei::zero(), args: (), salt: 0)
+    assert!(
+        evm.call(
+            addr: contract_address,
+            gas: 2000000,
+            value: Wei::zero(),
+            message: CodecMsg::VerifyFormats {},
+        ),
+    )
+}

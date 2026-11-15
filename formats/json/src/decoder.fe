@@ -1,0 +1,428 @@
+use core::num::IntDowncast
+use fe_codec_core::{
+    CodecError,
+    CodecResult,
+    Decoder,
+    ErrorKind,
+    Field,
+    Limits,
+    MAX_NAME_BYTES,
+    Structure,
+    SerialDescriptor,
+    Text,
+    TextWriter,
+    checked_signed,
+    checked_unsigned,
+}
+use fe_codec_io::{BoundedBuffer, ByteReader}
+
+const MAX_UNSIGNED: u64 = 0xffffffffffffffff
+const MAX_SIGNED: u64 = 0x7fffffffffffffff
+
+pub struct Record { seen: usize }
+pub struct Sequence { expected: usize, seen: usize }
+
+pub struct JsonDecoder<const N: usize> { input: ByteReader<N>, structure: Structure }
+
+impl<const N: usize> JsonDecoder<N> {
+    pub fn new(_ input: own BoundedBuffer<N>, _ limits: Limits) -> Self {
+        Self { input: ByteReader<N>::new(input), structure: Structure::new(limits) }
+    }
+
+    pub fn finish(mut self) -> CodecResult<()> {
+        self.structure.finish(self.offset())?
+        self.whitespace()?
+        if self.input.remaining() != 0 {
+            return Result::Err(self.error(ErrorKind::TrailingData))
+        }
+        Result::Ok(())
+    }
+
+    fn error(self, _ kind: ErrorKind) -> CodecError {
+        CodecError::at(kind, offset: self.offset())
+    }
+
+    fn byte(mut self) -> CodecResult<u8> {
+        self.input.read().map_err(CodecError::from_io)
+    }
+
+    fn peek(self) -> CodecResult<u8> {
+        match self.input.peek() {
+            Option::Some(byte) => Result::Ok(byte),
+            Option::None => Result::Err(self.error(ErrorKind::UnexpectedEnd)),
+        }
+    }
+
+    fn whitespace(mut self) -> CodecResult<()> {
+        while let Option::Some(byte) = self.input.peek() {
+            if !is_whitespace(byte) {
+                break
+            }
+            self.byte()?
+        }
+        Result::Ok(())
+    }
+
+    fn expect(mut self, _ marker: u8, _ kind: ErrorKind) -> CodecResult<()> {
+        if self.peek()? != marker {
+            return Result::Err(self.error(kind))
+        }
+        self.byte()?
+        Result::Ok(())
+    }
+
+    fn word<const M: usize>(mut self, _ value: [u8; M]) -> CodecResult<()> {
+        var index: usize = 0
+        while index < M {
+            self.expect(value[index], ErrorKind::InvalidSyntax)?
+            index += 1
+        }
+        self.scalar_end()
+    }
+
+    fn scalar_end(self) -> CodecResult<()> {
+        if let Option::Some(byte) = self.input.peek() {
+            if !is_whitespace(byte) && byte != b',' && byte != b']' && byte != b'}' {
+                return Result::Err(self.error(ErrorKind::InvalidSyntax))
+            }
+        }
+        Result::Ok(())
+    }
+
+    fn integer(mut self) -> CodecResult<(bool, u64)> {
+        let negative = self.peek()? == b'-'
+        if negative { self.byte()? }
+        let first = self.peek()?
+        if !is_digit(first) {
+            let kind = if negative {
+                ErrorKind::InvalidSyntax
+            } else {
+                ErrorKind::TypeMismatch
+            }
+            return Result::Err(self.error(kind))
+        }
+        self.byte()?
+        var value: u64 = (first - b'0') as u64
+        while let Option::Some(byte) = self.input.peek() {
+            if !is_digit(byte) { break }
+            if first == b'0' {
+                return Result::Err(self.error(ErrorKind::InvalidSyntax))
+            }
+            let digit = (byte - b'0') as u64
+            if value > (MAX_UNSIGNED - digit) / 10 {
+                return Result::Err(self.error(ErrorKind::IntegerOutOfRange))
+            }
+            self.byte()?
+            value = value * 10 + digit
+        }
+        if let Option::Some(byte) = self.input.peek() {
+            if byte == b'.' || byte == b'e' || byte == b'E' {
+                return Result::Err(self.error(ErrorKind::Unsupported))
+            }
+        }
+        self.scalar_end()?
+        Result::Ok((negative, value))
+    }
+
+    fn hex_quad(mut self) -> CodecResult<u32> {
+        var value: u32 = 0
+        var index: usize = 0
+        while index < 4 {
+            let offset = self.offset()
+            let byte = self.byte()?
+            let digit = if is_digit(byte) {
+                byte - b'0'
+            } else if byte >= b'a' && byte <= b'f' {
+                byte - b'a' + 10
+            } else if byte >= b'A' && byte <= b'F' {
+                byte - b'A' + 10
+            } else {
+                return Result::Err(CodecError::at(kind: ErrorKind::InvalidSyntax, offset))
+            }
+            value = (value << 4) | (digit as u32)
+            index += 1
+        }
+        Result::Ok(value)
+    }
+
+    fn codepoint(mut self, _ offset: usize) -> CodecResult<u32> {
+        let first = self.hex_quad()?
+        if first >= 0xd800 && first <= 0xdbff {
+            let second_offset = self.offset()
+            self.expect(b'\\', ErrorKind::InvalidUtf8)?
+            self.expect(b'u', ErrorKind::InvalidUtf8)?
+            let second = self.hex_quad()?
+            if second < 0xdc00 || second > 0xdfff {
+                return Result::Err(
+                    CodecError::at(kind: ErrorKind::InvalidUtf8, offset: second_offset),
+                )
+            }
+            return Result::Ok(0x10000 + ((first - 0xd800) << 10) + (second - 0xdc00))
+        }
+        if first >= 0xdc00 && first <= 0xdfff {
+            return Result::Err(CodecError::at(kind: ErrorKind::InvalidUtf8, offset))
+        }
+        Result::Ok(first)
+    }
+
+    fn escape<const M: usize>(mut self, _ text: mut TextWriter<M>, _ offset: usize) -> CodecResult<
+        (),
+    > {
+        let marker_offset = self.offset()
+        let byte = match self.byte()? {
+            b'"' => b'"',
+            b'\\' => b'\\',
+            b'/' => b'/',
+            b'b' => 8,
+            b'f' => 12,
+            b'n' => 10,
+            b'r' => 13,
+            b't' => 9,
+            b'u' => {
+                let codepoint = self.codepoint(offset)?
+                return write_codepoint(mut text, codepoint, offset)
+            },
+            _ => {
+                return Result::Err(
+                    CodecError::at(kind: ErrorKind::InvalidSyntax, offset: marker_offset),
+                )
+            },
+        }
+        text.write(byte, offset)
+    }
+
+    fn string<const M: usize>(mut self) -> CodecResult<Text<M>> {
+        self.expect(b'"', ErrorKind::TypeMismatch)?
+        var text = TextWriter<M>::new()
+        loop {
+            let offset = self.offset()
+            let byte = self.byte()?
+            if byte == b'"' {
+                return text.finish(offset)
+            }
+            if byte == b'\\' {
+                text.boundary(offset)?
+                self.escape(mut text, offset)?
+            } else {
+                if byte < 32 {
+                    return Result::Err(CodecError::at(kind: ErrorKind::InvalidSyntax, offset))
+                }
+                text.write(byte, offset)?
+            }
+        }
+    }
+
+    fn begin(mut self, _ marker: u8) -> CodecResult<()> {
+        self.whitespace()?
+        let offset = self.offset()
+        self.structure.begin(offset)?
+        self.expect(marker, ErrorKind::TypeMismatch)
+    }
+
+    fn end(mut self, _ marker: u8, _ kind: ErrorKind) -> CodecResult<()> {
+        self.whitespace()?
+        let offset = self.offset()
+        self.expect(marker, kind)?
+        self.structure.end(offset)
+    }
+
+    fn separator(mut self, _ seen: usize) -> CodecResult<()> {
+        if seen != 0 {
+            self.expect(b',', ErrorKind::InvalidSyntax)?
+            self.whitespace()?
+        }
+        let offset = self.offset()
+        self.structure.check_items(seen + 1, offset)
+    }
+}
+
+impl<const N: usize> Decoder for JsonDecoder<N> {
+    type Record = Record
+    type Sequence = Sequence
+
+    fn offset(self) -> usize {
+        self.input.offset()
+    }
+
+    fn read_bool(mut self) -> CodecResult<bool> {
+        self.whitespace()?
+        let offset = self.offset()
+        self.structure.value(offset)?
+        match self.peek()? {
+            b't' => {
+                self.word<4>("true")?
+                Result::Ok(true)
+            },
+            b'f' => {
+                self.word<5>("false")?
+                Result::Ok(false)
+            },
+            _ => Result::Err(self.error(ErrorKind::TypeMismatch)),
+        }
+    }
+
+    fn read_unsigned(mut self, _ bits: u8) -> CodecResult<u64> {
+        self.whitespace()?
+        let offset = self.offset()
+        self.structure.value(offset)?
+        let (negative, value) = self.integer()?
+        if negative {
+            return Result::Err(CodecError::at(kind: ErrorKind::IntegerOutOfRange, offset))
+        }
+        checked_unsigned(value, bits, offset)
+    }
+
+    fn read_signed(mut self, _ bits: u8) -> CodecResult<i64> {
+        self.whitespace()?
+        let offset = self.offset()
+        self.structure.value(offset)?
+        let (negative, magnitude) = self.integer()?
+        if magnitude > MAX_SIGNED + (negative as u64) {
+            return Result::Err(CodecError::at(kind: ErrorKind::IntegerOutOfRange, offset))
+        }
+        let value: i64 = if negative && magnitude != 0 {
+            let magnitude_minus_one: i64 = (magnitude - 1).downcast_unchecked()
+            (-magnitude_minus_one) - 1
+        } else {
+            magnitude.downcast_unchecked()
+        }
+        checked_signed(value, bits, offset)
+    }
+
+    fn read_text<const M: usize>(mut self) -> CodecResult<Text<M>> {
+        self.whitespace()?
+        let offset = self.offset()
+        self.structure.value(offset)?
+        self.string<M>()
+    }
+
+    fn take_null(mut self) -> CodecResult<bool> {
+        self.whitespace()?
+        if self.input.peek() == Option::Some(b'n') {
+            let offset = self.offset()
+            self.structure.value(offset)?
+            self.word<4>("null")?
+            return Result::Ok(true)
+        }
+        Result::Ok(false)
+    }
+
+    fn read_variant<S: SerialDescriptor>(mut self, _ node: usize) -> CodecResult<usize> {
+        self.whitespace()?
+        let offset = self.offset()
+        self.structure.value(offset)?
+        let name = self.string<MAX_NAME_BYTES>()?
+        var index: usize = 0
+        while let Option::Some(variant) = S::variant(node, index) {
+            if variant.name.equals(name) {
+                return Result::Ok(variant.index)
+            }
+            index += 1
+        }
+        Result::Err(CodecError::at(kind: ErrorKind::UnknownVariant, offset))
+    }
+
+    fn begin_record<S: SerialDescriptor>(mut self, _ node: usize) -> CodecResult<Record> {
+        self.begin(b'{')?
+        Result::Ok(Record { seen: 0 })
+    }
+
+    fn next_field<S: SerialDescriptor>(
+        mut self,
+        _ node: usize,
+        _ record: mut Record,
+    ) -> CodecResult<Option<Field>> {
+        self.whitespace()?
+        if self.peek()? == b'}' {
+            return Result::Ok(Option::None)
+        }
+        self.separator(record.seen)?
+        let offset = self.offset()
+        let name = self.string<MAX_NAME_BYTES>()?
+        self.whitespace()?
+        self.expect(b':', ErrorKind::InvalidSyntax)?
+        self.structure.member(offset)?
+        record.seen += 1
+
+        var index: usize = 0
+        while let Option::Some(field) = S::field(node, index) {
+            if field.name.equals(name) {
+                return Result::Ok(Option::Some(Field { index: field.index, offset }))
+            }
+            index += 1
+        }
+        Result::Err(CodecError::at(kind: ErrorKind::UnknownField, offset))
+    }
+
+    fn end_record(mut self, _ record: own Record) -> CodecResult<()> {
+        self.end(b'}', ErrorKind::InvalidSyntax)
+    }
+
+    fn begin_sequence(mut self, _ length: usize) -> CodecResult<Sequence> {
+        self.begin(b'[')?
+        Result::Ok(Sequence { expected: length, seen: 0 })
+    }
+
+    fn element(mut self, _ sequence: mut Sequence) -> CodecResult<()> {
+        self.whitespace()?
+        if self.peek()? == b']' || sequence.seen == sequence.expected {
+            return Result::Err(self.error(ErrorKind::InvalidLength))
+        }
+        self.separator(sequence.seen)?
+        if self.peek()? == b']' {
+            return Result::Err(self.error(ErrorKind::InvalidLength))
+        }
+        let offset = self.offset()
+        self.structure.member(offset)?
+        sequence.seen += 1
+        Result::Ok(())
+    }
+
+    fn end_sequence(mut self, _ sequence: own Sequence) -> CodecResult<()> {
+        if sequence.seen != sequence.expected {
+            return Result::Err(self.error(ErrorKind::InvalidLength))
+        }
+        self.end(b']', ErrorKind::InvalidLength)
+    }
+}
+
+fn is_whitespace(_ byte: u8) -> bool {
+    byte == b' ' || byte == 9 || byte == 10 || byte == 13
+}
+
+fn is_digit(_ byte: u8) -> bool {
+    byte >= b'0' && byte <= b'9'
+}
+
+fn continuation<const N: usize>(
+    _ text: mut TextWriter<N>,
+    _ value: u32,
+    _ offset: usize,
+) -> CodecResult<()> {
+    let byte: u8 = (value & 0x3f).downcast_unchecked()
+    text.write(0x80 | byte, offset)
+}
+
+fn write_codepoint<const N: usize>(
+    _ text: mut TextWriter<N>,
+    _ value: u32,
+    _ offset: usize,
+) -> CodecResult<()> {
+    if value < 0x80 {
+        return text.write(value.downcast_unchecked(), offset)
+    }
+    if value < 0x800 {
+        let leading: u8 = (value >> 6).downcast_unchecked()
+        text.write(0xc0 | leading, offset)?
+    } else if value < 0x10000 {
+        let leading: u8 = (value >> 12).downcast_unchecked()
+        text.write(0xe0 | leading, offset)?
+        continuation(mut text, value >> 6, offset)?
+    } else {
+        let leading: u8 = (value >> 18).downcast_unchecked()
+        text.write(0xf0 | leading, offset)?
+        continuation(mut text, value >> 12, offset)?
+        continuation(mut text, value >> 6, offset)?
+    }
+    continuation(mut text, value, offset)
+}

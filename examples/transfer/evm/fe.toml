@@ -1,0 +1,7 @@
+[ingot]
+name = "codec_transfer_evm"
+version = "0.1.0"
+target = "evm"
+
+[dependencies]
+codec_transfer = "../shared"

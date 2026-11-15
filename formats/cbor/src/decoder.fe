@@ -1,0 +1,227 @@
+use core::num::IntDowncast
+use fe_codec_core::{
+    CodecError,
+    CodecResult,
+    Decoder,
+    ErrorKind,
+    Field,
+    Limits,
+    Structure,
+    SerialDescriptor,
+    Text,
+    TextWriter,
+    checked_signed,
+    checked_unsigned,
+}
+use fe_codec_io::{BoundedBuffer, ByteReader}
+use ingot::frame::Frame
+
+const MAX_SIGNED: u64 = 0x7fffffffffffffff
+
+pub struct CborDecoder<const N: usize> { input: ByteReader<N>, structure: Structure }
+
+impl<const N: usize> CborDecoder<N> {
+    pub fn new(_ input: own BoundedBuffer<N>, _ limits: Limits) -> Self {
+        Self { input: ByteReader<N>::new(input), structure: Structure::new(limits) }
+    }
+
+    pub fn finish(self) -> CodecResult<()> {
+        self.structure.finish(self.offset())?
+        if self.input.remaining() != 0 {
+            return Result::Err(self.error(ErrorKind::TrailingData))
+        }
+        Result::Ok(())
+    }
+
+    fn error(self, _ kind: ErrorKind) -> CodecError {
+        CodecError::at(kind, offset: self.offset())
+    }
+
+    fn byte(mut self) -> CodecResult<u8> {
+        self.input.read().map_err(CodecError::from_io)
+    }
+
+    fn argument(mut self, _ additional: u8, _ offset: usize) -> CodecResult<u64> {
+        if additional < 24 {
+            return Result::Ok(additional as u64)
+        }
+        if additional > 27 {
+            let kind = if additional == 31 {
+                ErrorKind::NonCanonical
+            } else {
+                ErrorKind::InvalidSyntax
+            }
+            return Result::Err(CodecError::at(kind, offset))
+        }
+        let width: u8 = 1 << (additional - 24)
+        var value: u64 = 0
+        var index: u8 = 0
+        while index < width {
+            value = (value << 8) | (self.byte()? as u64)
+            index += 1
+        }
+        let minimum: u64 = if width == 1 {
+            24
+        } else if width == 2 {
+            0x100
+        } else if width == 4 { 0x10000 } else { 0x100000000 }
+        if value < minimum {
+            return Result::Err(CodecError::at(kind: ErrorKind::NonCanonical, offset))
+        }
+        Result::Ok(value)
+    }
+
+    fn header(mut self, _ major: u8) -> CodecResult<u64> {
+        let offset = self.offset()
+        let tag = self.byte()?
+        if tag >> 5 != major {
+            return Result::Err(CodecError::at(kind: ErrorKind::TypeMismatch, offset))
+        }
+        self.argument(tag & 31, offset)
+    }
+
+    fn begin(mut self, _ major: u8) -> CodecResult<Frame> {
+        let offset = self.offset()
+        self.structure.begin(offset)?
+        let count = self.header(major)?
+        Result::Ok(Frame::new(self.structure.wire_items(count, offset)?))
+    }
+
+    fn end(mut self, _ frame: own Frame) -> CodecResult<()> {
+        let offset = self.offset()
+        frame.complete(offset)?
+        self.structure.end(offset)
+    }
+}
+
+impl<const N: usize> Decoder for CborDecoder<N> {
+    type Record = Frame
+    type Sequence = Frame
+
+    fn offset(self) -> usize {
+        self.input.offset()
+    }
+
+    fn read_bool(mut self) -> CodecResult<bool> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        match self.byte()? {
+            0xf4 => Result::Ok(false),
+            0xf5 => Result::Ok(true),
+            _ => Result::Err(CodecError::at(kind: ErrorKind::TypeMismatch, offset)),
+        }
+    }
+
+    fn read_unsigned(mut self, _ bits: u8) -> CodecResult<u64> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        let value = self.header(0)?
+        checked_unsigned(value, bits, offset)
+    }
+
+    fn read_signed(mut self, _ bits: u8) -> CodecResult<i64> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        let tag = self.byte()?
+        let major = tag >> 5
+        if major > 1 {
+            return Result::Err(CodecError::at(kind: ErrorKind::TypeMismatch, offset))
+        }
+        let argument = self.argument(tag & 31, offset)?
+        if argument > MAX_SIGNED {
+            return Result::Err(CodecError::at(kind: ErrorKind::IntegerOutOfRange, offset))
+        }
+        let positive: i64 = argument.downcast_unchecked()
+        let value = if major == 0 { positive } else { -1 - positive }
+        checked_signed(value, bits, offset)
+    }
+
+    fn read_text<const M: usize>(mut self) -> CodecResult<Text<M>> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        let length = self.header(3)?
+        if (length as u256) > (M as u256) {
+            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset))
+        }
+        var text = TextWriter<M>::new()
+        var index: u64 = 0
+        while index < length {
+            let at = self.offset()
+            let byte = self.byte()?
+            text.write(byte, at)?
+            index += 1
+        }
+        text.finish(self.offset())
+    }
+
+    fn take_null(mut self) -> CodecResult<bool> {
+        if self.input.peek() == Option::Some(0xf6) {
+            let offset = self.offset()
+            self.structure.value(offset)?
+            self.byte()?
+            return Result::Ok(true)
+        }
+        Result::Ok(false)
+    }
+
+    fn read_variant<S: SerialDescriptor>(mut self, _ node: usize) -> CodecResult<usize> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        let id = self.header(0)?
+        var index: usize = 0
+        while let Option::Some(variant) = S::variant(node, index) {
+            if variant.id == id {
+                return Result::Ok(variant.index)
+            }
+            index += 1
+        }
+        Result::Err(CodecError::at(kind: ErrorKind::UnknownVariant, offset))
+    }
+
+    fn begin_record<S: SerialDescriptor>(mut self, _ node: usize) -> CodecResult<Frame> {
+        self.begin(5)
+    }
+
+    fn next_field<S: SerialDescriptor>(mut self, _ node: usize, _ record: mut Frame) -> CodecResult<
+        Option<Field>,
+    > {
+        if record.remaining == 0 {
+            return Result::Ok(Option::None)
+        }
+        let offset = self.offset()
+        let id = self.header(0)?
+        record.key(id, offset)?
+        self.structure.member(offset)?
+        var index: usize = 0
+        while let Option::Some(field) = S::field(node, index) {
+            if field.id == id {
+                return Result::Ok(Option::Some(Field { index: field.index, offset }))
+            }
+            index += 1
+        }
+        Result::Err(CodecError::at(kind: ErrorKind::UnknownField, offset))
+    }
+
+    fn end_record(mut self, _ record: own Frame) -> CodecResult<()> {
+        self.end(record)
+    }
+
+    fn begin_sequence(mut self, _ length: usize) -> CodecResult<Frame> {
+        let offset = self.offset()
+        let frame = self.begin(4)?
+        if frame.remaining != length {
+            return Result::Err(CodecError::at(kind: ErrorKind::InvalidLength, offset))
+        }
+        Result::Ok(frame)
+    }
+
+    fn element(mut self, _ sequence: mut Frame) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.member(offset)?
+        sequence.take(offset)
+    }
+
+    fn end_sequence(mut self, _ sequence: own Frame) -> CodecResult<()> {
+        self.end(sequence)
+    }
+}

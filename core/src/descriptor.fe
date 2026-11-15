@@ -1,0 +1,92 @@
+use core::marker::Copy
+use fe_codec_io::BoundedBuffer
+use ingot::text::Text
+
+pub const MAX_NAME_BYTES: usize = 64
+
+/// Schema identifiers are UTF-8 bytes with an explicit length.
+pub struct SchemaName { bytes: BoundedBuffer<MAX_NAME_BYTES> }
+impl Copy for SchemaName {}
+
+impl SchemaName {
+    pub fn as_bytes(self) -> BoundedBuffer<MAX_NAME_BYTES> {
+        self.bytes
+    }
+
+    pub fn len(self) -> usize {
+        self.bytes.len()
+    }
+
+    pub fn byte_at(self, _ index: usize) -> Option<u8> {
+        self.bytes.byte_at(index)
+    }
+
+    pub fn equals<const N: usize>(self, _ other: Text<N>) -> bool {
+        if self.len() != other.len() {
+            return false
+        }
+        var index: usize = 0
+        while index < self.len() {
+            if self.byte_at(index) != other.byte_at(index) {
+                return false
+            }
+            index += 1
+        }
+        true
+    }
+}
+
+/// Use a UTF-8 literal that fits in MAX_NAME_BYTES.
+pub const fn schema_name<const N: usize>(_ bytes: [u8; N]) -> SchemaName {
+    assert!(N <= MAX_NAME_BYTES)
+    let stored = match BoundedBuffer<MAX_NAME_BYTES>::from_prefix(bytes) {
+        Option::Some(stored) => stored,
+        Option::None => BoundedBuffer<MAX_NAME_BYTES>::empty(),
+    }
+    SchemaName { bytes: stored }
+}
+
+pub enum SerialKind {
+    Bool,
+    Unsigned(u8),
+    Signed(u8),
+    Text(usize),
+    Record,
+    UnitEnum,
+    Sequence,
+}
+impl Copy for SerialKind {}
+
+pub struct TypeDescriptor {
+    pub name: SchemaName,
+    pub kind: SerialKind,
+    /// Field count, variant count, or fixed sequence length.
+    pub count: usize,
+    /// Element node for sequences within this descriptor's schema.
+    pub element: Option<usize>,
+}
+impl Copy for TypeDescriptor {}
+
+pub struct FieldDescriptor {
+    pub name: SchemaName,
+    pub index: usize,
+    pub id: u64,
+    pub optional: bool,
+    pub value_node: usize,
+}
+impl Copy for FieldDescriptor {}
+
+pub struct VariantDescriptor { pub name: SchemaName, pub index: usize, pub id: u64 }
+impl Copy for VariantDescriptor {}
+
+/// Static graph of type shapes. Node identities are local to this graph.
+pub trait SerialDescriptor {
+    fn root() -> usize
+    fn node(_ index: usize) -> Option<TypeDescriptor>
+    fn field(_ node: usize, _ index: usize) -> Option<FieldDescriptor> {
+        Option::None
+    }
+    fn variant(_ node: usize, _ index: usize) -> Option<VariantDescriptor> {
+        Option::None
+    }
+}
