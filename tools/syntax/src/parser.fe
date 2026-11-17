@@ -95,8 +95,10 @@ fn is_item_kw(_ c: u8) -> bool {
         || c == K_EXTERN || c == K_TYPE
 }
 
+/// fe-parser's `is_path_segment`: a `<` counts as a segment (a qualified type is told apart
+/// separately).
 fn is_path_seg(_ c: u8) -> bool {
-    c == K_IDENT || c == K_SELFTY || c == K_SELF || c == K_INGOT || c == K_SUPER
+    c == K_IDENT || c == K_SELFTY || c == K_SELF || c == K_INGOT || c == K_SUPER || c == K_LT
 }
 
 fn is_literal_leaf(_ c: u8) -> bool {
@@ -309,7 +311,11 @@ impl Parser {
         self.code_at(self.skip(self.i))
     }
 
+    /// The start of token `index`, or the end of the source past the last token.
     fn start_of(self, _ index: usize) -> usize {
+        if index >= self.codes.len() {
+            return self.file.lexed.source.len()
+        }
         self.file.lexed.token(index).start
     }
 
@@ -375,18 +381,11 @@ impl Parser {
         self.error(self.cur_pos, text)
     }
 
-    /// The error fe-parser reports first when the next token is not what it expects: at the end
-    /// of the previous token if the next one stops recovery (or input ends), otherwise at the
-    /// start of the unexpected token. `extra` adds the recovery tokens of the current scope.
+    /// The error fe-parser reports without recovery (what `fe check` prints): at its
+    /// `current_pos`, the end of the last consumed token unless trivia were consumed since.
+    /// `extra` is unused; callers pass the recovery tokens of their scope.
     fn fail<const N: usize>(self, _ extra: u64, _ text: [u8; N]) -> SyntaxError {
-        let p = self.skip(self.i)
-        if p >= self.codes.len() {
-            return self.error(self.cur_pos, text)
-        }
-        if in_set(item_mask() | self.ctx | extra, self.codes[p]) {
-            return self.error(self.cur_pos, text)
-        }
-        self.error(self.start_of(p), text)
+        self.error(self.cur_pos, text)
     }
 
     // ---- file and items ----
@@ -667,6 +666,7 @@ impl Parser {
                         let nc = self.code_at(q)
                         cont = nc == K_PLUS || nc == K_STAR || nc == K_PUNCT || nc == K_DOT
                             || nc == K_PIPE || nc == K_QUEST || nc == K_AS || nc == K_STAR2
+                            || nc == K_LT || nc == K_GT || nc == K_EQ
                     }
                 }
                 if !cont {
@@ -737,46 +737,21 @@ impl Parser {
             self.eat()
             wrapped = true
         }
-        if !is_path_seg(self.code()) {
-            return Result::Err(self.error(self.end_prev, "expected an attribute path"))
-        }
-        let first_path = self.bump()
-        while self.code() == K_COLON2 {
-            self.eat()
-            if !is_path_seg(self.code()) {
-                return Result::Err(self.error(self.end_prev, "expected a path segment"))
-            }
-            self.eat()
-        }
+        let first_path = self.skip(self.i)
+        let _segments = self.parse_path()?
+        self.nl = false
         let path = Span { first: first_path, last: self.last }
         var has_args = false
         var value: Option<Span> = Option::None
         let c = self.code()
         if c == K_LPAREN {
             has_args = true
-            self.skip_group()?
+            self.skip_attr_args()?
         } else if c == K_EQ {
             self.eat()
             self.nl = true
             let first = self.skip(self.i)
-            var depth: usize = 0
-            var seen = false
-            while true {
-                let d = self.code()
-                if d == K_EOF {
-                    break
-                }
-                if d == K_LPAREN || d == K_LBRACK || d == K_LBRACE {
-                    depth += 1
-                } else if d == K_RPAREN || d == K_RBRACK || d == K_RBRACE {
-                    if depth == 0 {
-                        break
-                    }
-                    depth -= 1
-                }
-                self.eat()
-                seen = true
-            }
+            let seen = self.skip_expr_run()
             if !seen {
                 return Result::Err(self.error(self.end_prev, "expected an attribute value"))
             }
@@ -1264,28 +1239,102 @@ impl Parser {
         Result::Ok(())
     }
 
+    /// An attribute's `( ... )`: comma separated expressions or `key = value` pairs, which are
+    /// skipped as token runs (see `skip_expr_run`).
+    fn skip_attr_args(mut self) -> Result<SyntaxError, ()> {
+        let saved = self.nl
+        self.nl = true
+        self.eat()
+        while true {
+            if self.code() == K_RPAREN {
+                break
+            }
+            if self.code() == K_EQ {
+                return Result::Err(self.error(self.cur_pos, "expected a path segment"))
+            }
+            if !self.skip_expr_run() {
+                return Result::Err(self.error(self.cur_pos, "expected an expression"))
+            }
+            if self.code() == K_COMMA {
+                self.eat()
+            } else if self.code() != K_RPAREN {
+                return Result::Err(self.error(self.cur_pos, "expected `)` to close the attribute arguments"))
+            }
+        }
+        self.eat()
+        self.nl = saved
+        Result::Ok(())
+    }
+
+    /// Skips the tokens of an expression whose value the parser does not need (an attribute
+    /// value, an array length), up to where fe-parser's expression parser would stop: at a
+    /// closing bracket, a `,`, `;`, `:`, `#` or unknown byte, or at an operand that follows another operand with no
+    /// operator between. Returns whether any token was consumed.
+    fn skip_expr_run(mut self) -> bool {
+        var depth: usize = 0
+        var seen = false
+        var operand = false
+        // Newlines are trivia inside brackets; at the top level they follow the caller's mode.
+        let outer_nl = self.nl
+        while true {
+            self.nl = outer_nl || depth > 0
+            let d = self.code()
+            if d == K_EOF || (depth == 0 && d == K_NL) {
+                break
+            }
+            let opener = d == K_LPAREN || d == K_LBRACK || d == K_LBRACE
+            let closer = d == K_RPAREN || d == K_RBRACK || d == K_RBRACE
+            // A word or literal: it starts an operand, or is one.
+            let leaf = d == K_IDENT || d == K_INT || d == K_STR || d == K_BYTE || d == K_UNDERSCORE
+                || (d >= K_MOD && d <= K_KW && d != K_AS) || (d == K_LT && !operand)
+            if depth == 0 {
+                if closer || d == K_COMMA || d == K_SEMI || d == K_POUND || d == K_UNK || d == K_COLON {
+                    break
+                }
+                if operand && (leaf || d == K_LBRACE) {
+                    break
+                }
+            }
+            if opener {
+                depth += 1
+            } else if closer {
+                depth -= 1
+            }
+            self.eat()
+            seen = true
+            if depth == 0 {
+                if closer || leaf {
+                    operand = true
+                } else if d != K_QUEST {
+                    operand = false
+                }
+            }
+        }
+        self.nl = outer_nl
+        seen
+    }
+
     /// A const generic expression: a block, a literal or a path with an optional call.
     fn skip_const_expr(mut self) -> Result<SyntaxError, ()> {
         let c = self.code()
-        if c == K_LBRACE {
-            return self.skip_group()
-        }
-        if is_literal_leaf(c) {
+        if c == K_LBRACE || c == K_LBRACK {
+            self.skip_group()?
+        } else if is_literal_leaf(c) {
             self.eat()
-            return Result::Ok(())
-        }
-        if !is_path_seg(c) {
+        } else if is_path_seg(c) {
+            self.eat()
+            while self.code() == K_COLON2 {
+                self.eat()
+                if !is_path_seg(self.code()) {
+                    return Result::Err(self.error(self.end_prev, "expected a path segment"))
+                }
+                self.eat()
+            }
+        } else {
             return Result::Err(self.error(self.end_prev, "expected a const expression"))
         }
-        self.eat()
-        while self.code() == K_COLON2 {
-            self.eat()
-            if !is_path_seg(self.code()) {
-                return Result::Err(self.error(self.end_prev, "expected a path segment"))
-            }
-            self.eat()
-        }
-        if self.code() == K_LPAREN {
+        // Calls and indexing on the value.
+        while self.code() == K_LPAREN || self.code() == K_LBRACK {
             self.skip_group()?
         }
         Result::Ok(())
@@ -1295,6 +1344,9 @@ impl Parser {
     fn parse_bound_list(mut self) -> Result<SyntaxError, Span> {
         let saved_ctx = self.ctx
         self.ctx = self.ctx | bit(K_PLUS)
+        // fe-parser's `TypeBoundListScope` treats newlines as trivia throughout.
+        let saved_nl = self.nl
+        self.nl = true
         self.eat()
         self.bump_trivia()
         let first = self.i
@@ -1303,6 +1355,7 @@ impl Parser {
             self.eat()
             self.parse_bound()?
         }
+        self.nl = saved_nl
         self.ctx = saved_ctx
         Result::Ok(Span { first, last: self.last })
     }
@@ -1559,26 +1612,10 @@ impl Parser {
                 return Result::Err(self.fail(0, "expected `;` in the array type"))
             }
             self.eat()
-            self.nl = true
+            // fe-parser starts the length expression without newline trivia.
+            self.nl = false
             let lfirst = self.skip(self.i)
-            var depth: usize = 0
-            var any = false
-            while true {
-                let d = self.code()
-                if d == K_EOF {
-                    break
-                }
-                if d == K_LPAREN || d == K_LBRACK || d == K_LBRACE {
-                    depth += 1
-                } else if d == K_RPAREN || d == K_RBRACK || d == K_RBRACE {
-                    if depth == 0 {
-                        break
-                    }
-                    depth -= 1
-                }
-                self.eat()
-                any = true
-            }
+            let any = self.skip_expr_run()
             if !any {
                 return Result::Err(self.error(self.end_prev, "expected the array length"))
             }
@@ -1595,6 +1632,11 @@ impl Parser {
             result = self.push_type(TypeKind::Other, first, none_run, false, Option::None, Option::None)
         } else {
             let (segments, parent_args) = self.parse_path()?
+            if self.code() == K_LT {
+                // fe-parser parses a generic list left after the path for real, which
+                // reports why the segment did not take it.
+                let _extra = self.parse_generic_args()?
+            }
             result = self.push_type(TypeKind::Path, first, segments, parent_args, Option::None, Option::None)
         }
         self.nl = saved_nl
@@ -1633,33 +1675,145 @@ impl Parser {
         Result::Ok((Run { start, len: found.len() }, parent_args))
     }
 
+    /// The classes of the next two tokens that are not trivia, newlines included.
+    fn peek_two(self) -> (u8, u8) {
+        var j = self.i
+        let n = self.codes.len()
+        var first: u8 = K_EOF
+        while j < n {
+            let c = self.codes[j]
+            if !(c == K_WS || c == K_LC || c == K_NL) {
+                if first == K_EOF {
+                    first = c
+                } else {
+                    return (first, c)
+                }
+            }
+            j += 1
+        }
+        (first, K_EOF)
+    }
+
+    /// With the parser at a `::` followed by a `<`: whether the `<` touches the `::`. fe check
+    /// reports a turbofish only then.
+    fn turbofish_adjacent(self) -> bool {
+        let colons = self.skip(self.i)
+        let lt = self.skip_all(colons + 1)
+        lt == colons + 1
+    }
+
+    /// The first token at or after `from` that is not whitespace, a comment or a newline.
+    fn skip_all(self, _ from: usize) -> usize {
+        var j = from
+        let n = self.codes.len()
+        while j < n {
+            let c = self.codes[j]
+            if c == K_WS || c == K_LC || c == K_NL {
+                j += 1
+            } else {
+                return j
+            }
+        }
+        n
+    }
+
+    /// With the parser at a `<`: whether `< type as Trait>` follows (fe-parser's probe).
+    fn qualified_ahead(mut self) -> bool {
+        let saved = self.snap()
+        self.eat()
+        var ok = false
+        match self.parse_type() {
+            Result::Ok(_) => ok = self.code() == K_AS,
+            Result::Err(_) => {},
+        }
+        self.restore(saved)
+        ok
+    }
+
+    /// With the parser at a `<`: consumes a complete `< type as Trait>` and says whether there
+    /// was one. The caller restores the position.
+    fn skip_qualified(mut self) -> bool {
+        self.eat()
+        match self.parse_type() {
+            Result::Ok(_) => {
+                if self.code() != K_AS {
+                    return false
+                }
+                self.eat()
+                match self.parse_trait_ref() {
+                    Result::Ok(_) => {},
+                    Result::Err(_) => return false,
+                }
+                if self.code() != K_GT {
+                    return false
+                }
+                self.eat()
+                true
+            },
+            Result::Err(_) => false,
+        }
+    }
+
+    /// One path segment, as fe-parser's `PathSegmentScope`: newlines are trivia up to the
+    /// segment's first token. A `<` is a qualified type only when `type as` follows it, and
+    /// generic arguments are taken only if they parse without error (otherwise the caller
+    /// sees the `<`).
     fn parse_segment(mut self) -> Result<SyntaxError, Segment> {
-        self.nl = false
+        self.nl = true
         let c = self.code()
-        if c == K_LT {
-            // A qualified type `<T as Trait>`.
+        if c == K_LT && self.qualified_ahead() {
             let first = self.bump()
             let _t = self.parse_type()?
-            self.nl = false
             if self.code() != K_AS {
                 return Result::Err(self.error(self.end_prev, "expected `as`"))
             }
             self.eat()
             let _r = self.parse_trait_ref()?
-            self.nl = false
             if self.code() != K_GT {
                 return Result::Err(self.error(self.end_prev, "expected `>`"))
             }
             self.eat()
+            self.nl = false
             return Result::Ok(Segment { first, last: self.last, name: Option::None, args: Option::None })
         }
-        if !is_path_seg(c) {
+        if !is_path_seg(c) && c != K_LT {
             return Result::Err(self.error(self.end_prev, "expected a path segment"))
         }
         let name = self.bump()
+        self.nl = false
         var args: Option<Run> = Option::None
-        if self.code() == K_LT {
-            args = Option::Some(self.parse_generic_args()?)
+        let (a, b) = self.peek_two()
+        if self.code() == K_LT && a == K_LT && b == K_LT {
+            // `<<`: generic arguments that start with a qualified type, or no arguments.
+            let saved = self.snap()
+            self.eat()
+            var opens = false
+            if self.code() == K_LT && self.skip_qualified() {
+                opens = self.code() == K_COLON2
+            }
+            self.restore(saved)
+            if opens {
+                args = Option::Some(self.parse_generic_args()?)
+            }
+        } else if self.code() == K_COLON2 && a == K_COLON2 && b == K_LT && self.turbofish_adjacent() {
+            let saved = self.snap()
+            let at = self.start_of(self.skip(self.i))
+            self.eat()
+            var ok = false
+            match self.parse_generic_args() {
+                Result::Ok(_) => ok = true,
+                Result::Err(_) => {},
+            }
+            self.restore(saved)
+            if ok {
+                return Result::Err(self.error(at, "unexpected turbofish syntax `::<`; remove the double colons"))
+            }
+        } else if self.code() == K_LT && !(a == K_LT && b == K_EQ) {
+            let saved = self.snap()
+            match self.parse_generic_args() {
+                Result::Ok(run) => args = Option::Some(run),
+                Result::Err(_) => self.restore(saved),
+            }
         }
         Result::Ok(Segment { first: name, last: self.last, name: Option::Some(name), args })
     }

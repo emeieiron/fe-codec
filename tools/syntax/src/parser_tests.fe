@@ -165,7 +165,7 @@ fn parses_enums_and_use_trees() {
 }
 
 #[test]
-fn reports_syntax_errors_where_fe_parser_does() {
+fn reports_syntax_errors_where_fe_check_does() {
     // A block comment is not a token.
     assert!(error_offset("/* c */\nstruct S {}") == 0)
     // An attribute followed by its field on the same line: right after the attribute.
@@ -182,4 +182,52 @@ fn reports_syntax_errors_where_fe_parser_does() {
     assert!(error_offset("struct S {}\n@") == 12)
     // The end of input, unclosed.
     assert!(error_offset("struct S {\n    pub id: u8") == 25)
+}
+
+/// `fe check` does not recover from errors, so each error sits at fe-parser's `current_pos`:
+/// the end of the last token consumed, before any blanks that follow it. Every offset here
+/// was confirmed with `fe check`.
+#[test]
+fn reports_the_end_of_the_previous_token() {
+    // Input ends right after a body's `{`, or after a comma: used to crash the parser.
+    assert!(error_offset("struct S {") == 10)
+    assert!(error_offset("enum E {\n") == 9)
+    assert!(error_offset("struct S {\n    pub a: u8,") == 25)
+    // The offending token follows blanks: the error is where the blanks start.
+    assert!(error_offset("struct S { a u8 }") == 12)
+    assert!(error_offset("pub  A") == 3)
+    assert!(error_offset("struct S<T T>{}") == 10)
+    // Attribute values and arguments end where an expression would.
+    assert!(error_offset("#[a = 1 b]\nstruct S {}") == 7)
+    assert!(error_offset("#[a(b c)]\nstruct S {}") == 5)
+    assert!(error_offset("struct S { a: [u8; 2 3] }") == 20)
+    // A `<` that does not start `<T as Trait>` is an ordinary path segment.
+    assert!(error_offset("struct S { a: <T }") == 15)
+    assert!(error_offset("struct S { a: Option<<T }") == 22)
+    // Generic arguments that do not parse are left for the caller to report; an attribute
+    // path has no such caller.
+    assert!(error_offset("#[a<b]\nstruct S {}") == 3)
+    assert!(error_offset("struct S { a: core::<u8> }") == 18)
+    // A turbofish is only one when the `<` touches the `::`.
+    assert!(error_offset("struct S { a: core:: <u8> }") == 22)
+    // A character is one column but several bytes; the offset stays a byte offset.
+    assert!(error_offset("struct S { a: é }") == 13)
+}
+
+/// Newlines are trivia at the start of a path segment and inside a bound list.
+#[test]
+fn accepts_newlines_where_fe_parser_does() {
+    assert!(error_offset("struct S { a:\n    u8 }") == 999999)
+    assert!(error_offset("struct S<T: A\n + B> {}") == 999999)
+    // After a field's colon, after `[` of an array type, after a bound's colon, after a const
+    // parameter's colon, and after `#[`.
+    assert!(error_offset("pub struct A { pub x:\nu8 }") == 999999)
+    assert!(error_offset("pub struct A { pub x: [\nu8; 2] }") == 999999)
+    assert!(error_offset("pub struct A<T:\nCopy> { pub x: T }") == 999999)
+    assert!(error_offset("pub struct A<const N:\nusize> { pub x: [u8; N] }") == 999999)
+    assert!(error_offset("#[\nserializable]\npub struct A { pub x: u8 }") == 999999)
+    // Not trivia: before a field's colon, after `;` in an array type, after `use a::`.
+    assert!(error_offset("pub struct A { pub x\n: u8 }") == 20)
+    assert!(error_offset("pub struct A { pub x: [u8;\n2] }") == 26)
+    assert!(error_offset("use a::\nb\n") == 8)
 }

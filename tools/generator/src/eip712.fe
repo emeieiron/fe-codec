@@ -98,40 +98,20 @@ fn find_definition(_ structs: ref MemVec<Definition>, _ name: ref MemBuffer, _ p
     Option::None
 }
 
-/// `uintN` or `intN` for a name like `u64`, as `integer` in `eip712.rs` reads it: Rust's `u16`
-/// parse accepts an optional `+` and then digits of any count, so `u08` is `uint8`.
+/// `uintN` or `intN` for the names `u8`, `u16`, `u32`, `u64`, `u128` and `u256`, and the same
+/// widths of `i`; any other spelling is not an integer here.
 fn integer(_ name: ref MemBuffer) -> Option<MemBuffer> {
-    if name.len() < 2 {
+    if name.len() < 2 || (name[0] != b'u' && name[0] != b'i') {
         return Option::None
     }
-    var i: usize = 1
-    if name[1] == b'+' {
-        i = 2
-    }
-    if i >= name.len() {
-        return Option::None
-    }
-    var bits: u64 = 0
-    while i < name.len() {
-        let b = name[i]
-        if b < b'0' || b > b'9' {
-            return Option::None
-        }
-        bits = bits * 10 + (b - b'0') as u64
-        if bits > 65535 {
-            return Option::None
-        }
-        i += 1
-    }
-    if !(bits == 8 || bits == 16 || bits == 32 || bits == 64 || bits == 128 || bits == 256) {
+    let bits = part(name, 1, name.len())
+    if !(bits == "8" || bits == "16" || bits == "32" || bits == "64" || bits == "128" || bits == "256") {
         return Option::None
     }
     if name[0] == b'u' {
         Option::Some(format!("uint", bits))
-    } else if name[0] == b'i' {
-        Option::Some(format!("int", bits))
     } else {
-        Option::None
+        Option::Some(format!("int", bits))
     }
 }
 

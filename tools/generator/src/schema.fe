@@ -114,23 +114,28 @@ pub struct Program {
     locals: MemVec<Local>,
 }
 
-/// The 1-based line and column (counted in bytes) of byte `offset` of `text`.
+/// The 1-based line and column of byte `offset` of `text`. The line is 1 plus the number of
+/// `\n` bytes before the offset; the column counts characters (UTF-8 code points, that is the
+/// bytes that are not continuation bytes `0x80..=0xBF`) since the last `\n`, as `fe check` does.
 pub fn line_col(_ text: ref MemBuffer, _ offset: usize) -> (usize, usize) {
     var end = offset
     if end > text.len() {
         end = text.len()
     }
     var line: usize = 1
-    var line_start: usize = 0
+    var column: usize = 1
     var i: usize = 0
     while i < end {
-        if text[i] == b'\n' {
+        let b = text[i]
+        if b == b'\n' {
             line += 1
-            line_start = i + 1
+            column = 1
+        } else if b < 0x80 || b >= 0xC0 {
+            column += 1
         }
         i += 1
     }
-    (line, end - line_start + 1)
+    (line, column)
 }
 
 /// Which parts of a field type the checks inspect.
@@ -252,6 +257,26 @@ fn mark_copy(_ file: ref File, _ generics: mut MemVec<Generic>, _ name: ref MemB
             generics.set(i, generic)
         }
         i += 1
+    }
+}
+
+/// Records that decoding builds arrays of every type parameter inside `ty` through `Option`
+/// and nested arrays, as `Option<T>` and `[T; 2]` need `T: Copy` when they are array elements.
+fn mark_copy_params(_ file: ref File, _ generics: mut MemVec<Generic>, _ ty: usize) {
+    match ty_kind(file, ty) {
+        TyKind::Path => {
+            let name = ty_name(file, ty)
+            if is_parameter(file, generics, name) {
+                mark_copy(file, mut generics, name)
+                return
+            }
+            match option_payload(file, ty) {
+                Option::Some(inner) => mark_copy_params(file, mut generics, inner),
+                Option::None => {},
+            }
+        },
+        TyKind::Array => mark_copy_params(file, mut generics, array_elem(file, ty)),
+        TyKind::Other => {},
     }
 }
 
@@ -616,7 +641,7 @@ impl Program {
                 d += 1
             }
             let site = file.types[field.ty].start
-            self.check(source, field.ty, name, site, generics)?
+            self.check(source, field.ty, name, site, generics, false)?
             let optional = option_payload(file, field.ty).is_some()
             var unrolled = false
             var unrolled_element: usize = 0
@@ -870,6 +895,7 @@ impl Program {
         _ model: ref MemBuffer,
         _ site: usize,
         _ generics: ref MemVec<Generic>,
+        _ nested: bool,
     ) -> Result<Diagnostic, ()> {
         let file = ref self.files[source]
         match ty_kind(file, ty) {
@@ -914,14 +940,30 @@ impl Program {
                 var i: usize = 0
                 while i < arg_run(file, ty).len {
                     match arg_ty(file, ty, i) {
-                        Option::Some(arg) => self.check(source, arg, model, site, generics)?,
+                        Option::Some(arg) => self.check(source, arg, model, site, generics, true)?,
                         Option::None => {},
                     }
                     i += 1
                 }
                 Result::Ok(())
             },
-            TyKind::Array => self.check(source, array_elem(file, ty), model, site, generics),
+            TyKind::Array => {
+                if nested {
+                    match array_len(file, ty) {
+                        Option::Some(length) => {
+                            if length == 0 {
+                                return fail(
+                                    source,
+                                    site,
+                                    format!("an empty array decodes only as a field's whole type; core cannot decode one inside another type"),
+                                )
+                            }
+                        },
+                        Option::None => {},
+                    }
+                }
+                self.check(source, array_elem(file, ty), model, site, generics, true)
+            },
             TyKind::Other => Result::Ok(()),
         }
     }
@@ -992,7 +1034,11 @@ impl Program {
             },
             _ => {},
         }
-        if self.copyness(source, element, generics) == COPY_NO {
+        let copyness = self.copyness(source, element, generics)
+        if copyness == COPY_UNKNOWN {
+            mark_copy_params(file, mut generics, element)
+        }
+        if copyness == COPY_NO {
             return fail(
                 source,
                 site,
