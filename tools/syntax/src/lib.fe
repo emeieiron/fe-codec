@@ -1,4 +1,10 @@
-//! A lexer for Fe source files, with helpers for token text, integer literals, source
-//! positions and compacted token text. It knows nothing about any generator.
+//! A lexer and a parser for Fe source files, with helpers for token text, integer literals,
+//! source positions and compacted token text. It knows nothing about any generator.
 
 pub use lexer::{Lexed, Token, TokenKind, lex}
+pub use ast::{
+    ArgKind, Attribute, EnumItem, Field, FieldsKind, File, GenericArg, GenericKind, GenericParam,
+    ImplItem, Item, ItemKind, Modifiers, Run, Segment, Span, StructItem, SyntaxError, TypeKind,
+    TypeNode, UseItem, Variant, VariantKind,
+}
+pub use parser::parse

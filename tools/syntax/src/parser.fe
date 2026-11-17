@@ -1,0 +1,1768 @@
+use core::marker::Copy
+use core::{MemBuffer, MemVec, Option, Result}
+use ingot::ast::{
+    ArgKind, Attribute, EnumItem, Field, FieldsKind, File, GenericArg, GenericKind, GenericParam,
+    ImplItem, Item, ItemKind, Modifiers, Run, Segment, Span, StructItem, SyntaxError, TypeKind,
+    TypeNode, UseItem, Variant, VariantKind,
+}
+use ingot::lexer::{Lexed, TokenKind}
+
+// Token classes. Every token gets one; punctuation and keywords are told apart here so the
+// parser only compares small numbers. Classes stay below 64 so sets of them fit in a `u64`.
+const K_IDENT: u8 = 0
+const K_INT: u8 = 1
+const K_STR: u8 = 2
+const K_BYTE: u8 = 3
+const K_WS: u8 = 4
+const K_NL: u8 = 5
+const K_LC: u8 = 6
+const K_DOC: u8 = 7
+const K_UNK: u8 = 8
+const K_LPAREN: u8 = 9
+const K_RPAREN: u8 = 10
+const K_LBRACE: u8 = 11
+const K_RBRACE: u8 = 12
+const K_LBRACK: u8 = 13
+const K_RBRACK: u8 = 14
+const K_LT: u8 = 15
+const K_GT: u8 = 16
+const K_COLON: u8 = 17
+const K_COLON2: u8 = 18
+const K_COMMA: u8 = 19
+const K_SEMI: u8 = 20
+const K_EQ: u8 = 21
+const K_PLUS: u8 = 22
+const K_STAR: u8 = 23
+const K_POUND: u8 = 24
+const K_BANG: u8 = 25
+const K_ARROW: u8 = 26
+const K_PIPE: u8 = 27
+const K_STAR2: u8 = 28
+const K_PUNCT: u8 = 29
+const K_MOD: u8 = 30
+const K_FN: u8 = 31
+const K_STRUCT: u8 = 32
+const K_CONTRACT: u8 = 33
+const K_MSG: u8 = 34
+const K_ENUM: u8 = 35
+const K_TRAIT: u8 = 36
+const K_IMPL: u8 = 37
+const K_USE: u8 = 38
+const K_CONST: u8 = 39
+const K_STATIC_ASSERT: u8 = 40
+const K_EXTERN: u8 = 41
+const K_TYPE: u8 = 42
+const K_PUB: u8 = 43
+const K_UNSAFE: u8 = 44
+const K_FOR: u8 = 45
+const K_WHERE: u8 = 46
+const K_USES: u8 = 47
+const K_AS: u8 = 48
+const K_INGOT: u8 = 49
+const K_SUPER: u8 = 50
+const K_IN: u8 = 51
+const K_SELF: u8 = 52
+const K_SELFTY: u8 = 53
+const K_MUT: u8 = 54
+const K_REF: u8 = 55
+const K_OWN: u8 = 56
+const K_TRUE: u8 = 57
+const K_FALSE: u8 = 58
+const K_KW: u8 = 59
+const K_QUEST: u8 = 60
+const K_DOT: u8 = 61
+const K_UNDERSCORE: u8 = 62
+const K_EOF: u8 = 255
+
+fn bit(_ c: u8) -> u64 {
+    (1 as u64) << (c as u64)
+}
+
+fn in_set(_ mask: u64, _ c: u8) -> bool {
+    c < 64 && ((mask >> (c as u64)) & 1) == 1
+}
+
+/// The tokens that stop error recovery in the item list: they start an item.
+fn item_mask() -> u64 {
+    bit(K_MOD) | bit(K_FN) | bit(K_STRUCT) | bit(K_CONTRACT) | bit(K_ENUM) | bit(K_TRAIT)
+        | bit(K_IMPL) | bit(K_USE) | bit(K_CONST) | bit(K_STATIC_ASSERT) | bit(K_EXTERN)
+        | bit(K_TYPE) | bit(K_PUB) | bit(K_UNSAFE) | bit(K_DOC) | bit(K_POUND)
+}
+
+fn is_item_kw(_ c: u8) -> bool {
+    c == K_MOD || c == K_FN || c == K_STRUCT || c == K_CONTRACT || c == K_MSG || c == K_ENUM
+        || c == K_TRAIT || c == K_IMPL || c == K_USE || c == K_CONST || c == K_STATIC_ASSERT
+        || c == K_EXTERN || c == K_TYPE
+}
+
+fn is_path_seg(_ c: u8) -> bool {
+    c == K_IDENT || c == K_SELFTY || c == K_SELF || c == K_INGOT || c == K_SUPER
+}
+
+fn is_literal_leaf(_ c: u8) -> bool {
+    c == K_INT || c == K_STR || c == K_BYTE || c == K_TRUE || c == K_FALSE
+}
+
+fn is_type_start(_ c: u8) -> bool {
+    c == K_STAR || c == K_STAR2 || c == K_LPAREN || c == K_LBRACK || c == K_MUT || c == K_REF
+        || c == K_OWN || c == K_LT || is_path_seg(c)
+}
+
+fn starts_predicate(_ c: u8) -> bool {
+    is_type_start(c) || is_literal_leaf(c) || c == K_BANG
+}
+
+fn classify(_ lexed: ref Lexed, _ index: usize) -> u8 {
+    let token = lexed.token(index)
+    match token.kind {
+        TokenKind::Int => return K_INT,
+        TokenKind::Str => return K_STR,
+        TokenKind::Byte => return K_BYTE,
+        TokenKind::Whitespace => return K_WS,
+        TokenKind::Newline => return K_NL,
+        TokenKind::LineComment => return K_LC,
+        TokenKind::DocComment => return K_DOC,
+        TokenKind::Unknown => return K_UNK,
+        TokenKind::ColonColon => return K_COLON2,
+        TokenKind::Arrow => return K_ARROW,
+        TokenKind::FatArrow => return K_PUNCT,
+        TokenKind::DotDot => return K_PUNCT,
+        TokenKind::Punct2 => {
+            if lexed.is(token, "**") {
+                return K_STAR2
+            }
+            return K_PUNCT
+        },
+        TokenKind::Punct => {
+            let b = lexed.source[token.start]
+            if b == b'(' { return K_LPAREN }
+            if b == b')' { return K_RPAREN }
+            if b == b'{' { return K_LBRACE }
+            if b == b'}' { return K_RBRACE }
+            if b == b'[' { return K_LBRACK }
+            if b == b']' { return K_RBRACK }
+            if b == b'<' { return K_LT }
+            if b == b'>' { return K_GT }
+            if b == b':' { return K_COLON }
+            if b == b',' { return K_COMMA }
+            if b == b';' { return K_SEMI }
+            if b == b'=' { return K_EQ }
+            if b == b'+' { return K_PLUS }
+            if b == b'*' { return K_STAR }
+            if b == b'#' { return K_POUND }
+            if b == b'!' { return K_BANG }
+            if b == b'|' { return K_PIPE }
+            if b == b'?' { return K_QUEST }
+            if b == b'.' { return K_DOT }
+            return K_PUNCT
+        },
+        TokenKind::Ident => {},
+    }
+    if lexed.is(token, "_") { return K_UNDERSCORE }
+    if lexed.is(token, "mod") { return K_MOD }
+    if lexed.is(token, "fn") { return K_FN }
+    if lexed.is(token, "struct") { return K_STRUCT }
+    if lexed.is(token, "contract") { return K_CONTRACT }
+    if lexed.is(token, "msg") { return K_MSG }
+    if lexed.is(token, "enum") { return K_ENUM }
+    if lexed.is(token, "trait") { return K_TRAIT }
+    if lexed.is(token, "impl") { return K_IMPL }
+    if lexed.is(token, "use") { return K_USE }
+    if lexed.is(token, "const") { return K_CONST }
+    if lexed.is(token, "static_assert") { return K_STATIC_ASSERT }
+    if lexed.is(token, "extern") { return K_EXTERN }
+    if lexed.is(token, "type") { return K_TYPE }
+    if lexed.is(token, "pub") { return K_PUB }
+    if lexed.is(token, "unsafe") { return K_UNSAFE }
+    if lexed.is(token, "for") { return K_FOR }
+    if lexed.is(token, "where") { return K_WHERE }
+    if lexed.is(token, "uses") { return K_USES }
+    if lexed.is(token, "as") { return K_AS }
+    if lexed.is(token, "ingot") { return K_INGOT }
+    if lexed.is(token, "super") { return K_SUPER }
+    if lexed.is(token, "in") { return K_IN }
+    if lexed.is(token, "self") { return K_SELF }
+    if lexed.is(token, "Self") { return K_SELFTY }
+    if lexed.is(token, "mut") { return K_MUT }
+    if lexed.is(token, "ref") { return K_REF }
+    if lexed.is(token, "own") { return K_OWN }
+    if lexed.is(token, "true") { return K_TRUE }
+    if lexed.is(token, "false") { return K_FALSE }
+    if lexed.is(token, "break") || lexed.is(token, "continue") || lexed.is(token, "if")
+        || lexed.is(token, "else") || lexed.is(token, "match") || lexed.is(token, "while")
+        || lexed.is(token, "loop") || lexed.is(token, "return") || lexed.is(token, "yield")
+        || lexed.is(token, "let") || lexed.is(token, "var") {
+        return K_KW
+    }
+    K_IDENT
+}
+
+/// A saved parser position, for speculative parses.
+struct Snap {
+    i: usize,
+    nl: bool,
+    ctx: u64,
+    cur_pos: usize,
+    end_prev: usize,
+    last: usize,
+    types: usize,
+    segments: usize,
+    args: usize,
+}
+
+impl Copy for Snap {}
+
+struct Parser {
+    file: File,
+    codes: MemVec<u8>,
+    // The next token to consume.
+    i: usize,
+    // Whether newlines are trivia now, as fe-parser's `is_newline_trivia`.
+    nl: bool,
+    // The tokens that stop error recovery in the scopes being parsed.
+    ctx: u64,
+    // Where fe-parser's `current_pos` is: the end of the last consumed token, or the start of
+    // the next one once trivia were consumed.
+    cur_pos: usize,
+    // The end of the last consumed non-trivia token.
+    end_prev: usize,
+    // The last consumed token.
+    last: usize,
+}
+
+fn message<const N: usize>(_ text: [u8; N]) -> MemBuffer {
+    var out = MemBuffer::new(0)
+    var i: usize = 0
+    while i < N {
+        out.push(text[i])
+        i += 1
+    }
+    out
+}
+
+fn empty_run(_ start: usize) -> Run {
+    Run { start, len: 0 }
+}
+
+/// Parses `lexed` into a `File`, or reports the first syntax error.
+pub fn parse(_ lexed: own Lexed) -> Result<SyntaxError, File> {
+    var codes = MemVec<u8>::new()
+    var index: usize = 0
+    while index < lexed.token_count() {
+        codes.push(classify(lexed, index))
+        index += 1
+    }
+    let file = File {
+        lexed,
+        items: MemVec<Item>::new(),
+        use_items: MemVec<UseItem>::new(),
+        structs: MemVec<StructItem>::new(),
+        enums: MemVec<EnumItem>::new(),
+        impls: MemVec<ImplItem>::new(),
+        attrs: MemVec<Attribute>::new(),
+        gparams: MemVec<GenericParam>::new(),
+        fields: MemVec<Field>::new(),
+        variants: MemVec<Variant>::new(),
+        types: MemVec<TypeNode>::new(),
+        segments: MemVec<Segment>::new(),
+        args: MemVec<GenericArg>::new(),
+    }
+    var parser = Parser { file, codes, i: 0, nl: true, ctx: 0, cur_pos: 0, end_prev: 0, last: 0 }
+    match parser.parse_items() {
+        Result::Ok(_) => Result::Ok(parser.file),
+        Result::Err(error) => Result::Err(error),
+    }
+}
+
+impl Parser {
+    // ---- cursor ----
+
+    fn count(self) -> usize {
+        self.codes.len()
+    }
+
+    /// The first token at or after `from` that is not trivia in the current mode.
+    fn skip(self, _ from: usize) -> usize {
+        var j = from
+        let n = self.codes.len()
+        while j < n {
+            let c = self.codes[j]
+            if c == K_WS || c == K_LC || (self.nl && c == K_NL) {
+                j += 1
+            } else {
+                return j
+            }
+        }
+        n
+    }
+
+    fn code_at(self, _ index: usize) -> u8 {
+        if index < self.codes.len() {
+            self.codes[index]
+        } else {
+            K_EOF
+        }
+    }
+
+    /// The class of the next significant token.
+    fn code(self) -> u8 {
+        self.code_at(self.skip(self.i))
+    }
+
+    fn start_of(self, _ index: usize) -> usize {
+        self.file.lexed.token(index).start
+    }
+
+    fn bump_trivia(mut self) {
+        self.i = self.skip(self.i)
+        if self.i < self.codes.len() {
+            self.cur_pos = self.start_of(self.i)
+        } else {
+            self.cur_pos = self.file.lexed.source.len()
+        }
+    }
+
+    /// Consumes the next significant token and returns its index.
+    fn bump(mut self) -> usize {
+        self.bump_trivia()
+        let index = self.i
+        self.i += 1
+        self.cur_pos = self.file.lexed.token(index).end
+        self.end_prev = self.cur_pos
+        self.last = index
+        index
+    }
+
+    fn eat(mut self) {
+        let _index = self.bump()
+    }
+
+    fn snap(self) -> Snap {
+        Snap {
+            i: self.i,
+            nl: self.nl,
+            ctx: self.ctx,
+            cur_pos: self.cur_pos,
+            end_prev: self.end_prev,
+            last: self.last,
+            types: self.file.types.len(),
+            segments: self.file.segments.len(),
+            args: self.file.args.len(),
+        }
+    }
+
+    fn restore(mut self, _ s: Snap) {
+        self.i = s.i
+        self.nl = s.nl
+        self.ctx = s.ctx
+        self.cur_pos = s.cur_pos
+        self.end_prev = s.end_prev
+        self.last = s.last
+        self.file.types.truncate(s.types)
+        self.file.segments.truncate(s.segments)
+        self.file.args.truncate(s.args)
+    }
+
+    // ---- errors ----
+
+    fn error<const N: usize>(self, _ offset: usize, _ text: [u8; N]) -> SyntaxError {
+        SyntaxError { offset, message: message(text) }
+    }
+
+    /// An error at the start of the next token (or the end of input).
+    fn error_on_token<const N: usize>(mut self, _ text: [u8; N]) -> SyntaxError {
+        self.bump_trivia()
+        self.error(self.cur_pos, text)
+    }
+
+    /// The error fe-parser reports first when the next token is not what it expects: at the end
+    /// of the previous token if the next one stops recovery (or input ends), otherwise at the
+    /// start of the unexpected token. `extra` adds the recovery tokens of the current scope.
+    fn fail<const N: usize>(self, _ extra: u64, _ text: [u8; N]) -> SyntaxError {
+        let p = self.skip(self.i)
+        if p >= self.codes.len() {
+            return self.error(self.cur_pos, text)
+        }
+        if in_set(item_mask() | self.ctx | extra, self.codes[p]) {
+            return self.error(self.cur_pos, text)
+        }
+        self.error(self.start_of(p), text)
+    }
+
+    // ---- file and items ----
+
+    fn parse_items(mut self) -> Result<SyntaxError, ()> {
+        let n = self.count()
+        // Inner attributes `#![..]`.
+        while true {
+            self.nl = true
+            let p0 = self.skip(self.i)
+            let p1 = self.skip(p0 + 1)
+            let p2 = self.skip(p1 + 1)
+            if !(self.code_at(p0) == K_POUND && self.code_at(p1) == K_BANG && self.code_at(p2) == K_LBRACK) {
+                break
+            }
+            self.eat()
+            self.eat()
+            self.skip_group()?
+            self.nl = false
+            if self.code() != K_NL {
+                if self.skip(self.i) >= n {
+                    return Result::Ok(())
+                }
+                return Result::Err(self.fail(bit(K_NL), "expected a newline after the attribute"))
+            }
+            self.eat()
+        }
+        while true {
+            self.nl = true
+            if self.skip(self.i) >= n {
+                break
+            }
+            self.parse_item()?
+            self.nl = true
+            if self.skip(self.i) >= n {
+                break
+            }
+            self.nl = false
+            if self.code() != K_NL {
+                return Result::Err(self.fail(bit(K_NL), "expected a newline after the item"))
+            }
+            self.eat()
+        }
+        Result::Ok(())
+    }
+
+    fn parse_item(mut self) -> Result<SyntaxError, ()> {
+        self.bump_trivia()
+        let first = self.i
+        let start = self.start_of(first)
+        let attrs = self.parse_attr_list()?
+        var is_pub = false
+        var vis: Option<Span> = Option::None
+        var is_unsafe = false
+        while true {
+            let c = self.code()
+            if c == K_PUB {
+                if is_pub {
+                    return Result::Err(self.error_on_token("duplicate `pub`"))
+                }
+                if is_unsafe {
+                    return Result::Err(self.error_on_token("`pub` must come before `unsafe`"))
+                }
+                self.eat()
+                is_pub = true
+                if self.code() == K_LPAREN {
+                    self.eat()
+                    vis = Option::Some(self.parse_vis()?)
+                }
+            } else if c == K_UNSAFE {
+                if is_unsafe {
+                    return Result::Err(self.error_on_token("duplicate `unsafe`"))
+                }
+                self.eat()
+                is_unsafe = true
+            } else {
+                break
+            }
+        }
+        let mods = Modifiers { is_pub, vis, is_unsafe }
+        let c = self.code()
+        var fn_head = c == K_FN
+        if c == K_CONST {
+            let next = self.skip(self.skip(self.i) + 1)
+            fn_head = self.code_at(next) == K_FN
+        }
+        if is_unsafe && !fn_head && c != K_TRAIT && c != K_IMPL {
+            return Result::Err(self.error(self.cur_pos, "expected `fn`, `trait` or `impl` after `unsafe`"))
+        }
+        if is_pub && (c == K_IMPL || c == K_EXTERN || c == K_STATIC_ASSERT) {
+            return Result::Err(self.error(self.cur_pos, "this item cannot be `pub`"))
+        }
+        if !is_item_kw(c) {
+            return Result::Err(self.fail(0, "expected an item"))
+        }
+        var kind = ItemKind::Other
+        var detail: usize = 0
+        if c == K_USE {
+            kind = ItemKind::Use
+            detail = self.parse_use()?
+        } else if c == K_STRUCT {
+            kind = ItemKind::Struct
+            detail = self.parse_struct(mods, attrs)?
+        } else if c == K_ENUM {
+            kind = ItemKind::Enum
+            detail = self.parse_enum(mods, attrs)?
+        } else if c == K_IMPL {
+            let (is_trait, index) = self.parse_impl(is_unsafe)?
+            if is_trait {
+                kind = ItemKind::ImplTrait
+                detail = index
+            }
+        } else if c == K_CONST && !fn_head {
+            self.skip_line_item()?
+        } else if c == K_TYPE {
+            self.skip_line_item()?
+        } else if c == K_STATIC_ASSERT {
+            self.eat()
+            if self.code() != K_LPAREN {
+                return Result::Err(self.fail(bit(K_RPAREN), "expected `(` after `static_assert`"))
+            }
+            self.skip_group()?
+        } else {
+            self.skip_braced_item()?
+        }
+        self.file.items.push(Item { kind, start, first, last: self.last, detail })
+        Result::Ok(())
+    }
+
+    /// After `pub(`: `ingot)` or `super)`.
+    fn parse_vis(mut self) -> Result<SyntaxError, Span> {
+        self.bump_trivia()
+        let first = self.i
+        let c = self.code()
+        if c == K_INGOT || c == K_SUPER {
+            self.eat()
+        } else {
+            return Result::Err(self.error_on_token("expected `ingot` or `super` after `pub(`"))
+        }
+        if self.code() != K_RPAREN {
+            return Result::Err(self.error_on_token("expected `)` to close the visibility"))
+        }
+        self.eat()
+        Result::Ok(Span { first, last: self.last })
+    }
+
+    // ---- skipping ----
+
+    /// Consumes a bracketed group starting at the next token, through its closing bracket.
+    fn skip_group(mut self) -> Result<SyntaxError, ()> {
+        let saved = self.nl
+        self.nl = true
+        var depth: usize = 0
+        while true {
+            let c = self.code()
+            if c == K_EOF {
+                return Result::Err(self.error(self.cur_pos, "unclosed bracket"))
+            }
+            if c == K_LPAREN || c == K_LBRACK || c == K_LBRACE {
+                depth += 1
+            } else if c == K_RPAREN || c == K_RBRACK || c == K_RBRACE {
+                if depth == 0 {
+                    return Result::Err(self.error_on_token("unexpected closing bracket"))
+                }
+                depth -= 1
+            }
+            self.eat()
+            if depth == 0 {
+                break
+            }
+        }
+        self.nl = saved
+        Result::Ok(())
+    }
+
+    /// The index after the `}` matching the `{` at `from`, or the token count.
+    fn brace_group_end(self, _ from: usize) -> usize {
+        var depth: usize = 0
+        var j = from
+        let n = self.count()
+        while j < n {
+            let c = self.codes[j]
+            if c == K_LBRACE {
+                depth += 1
+            } else if c == K_RBRACE {
+                if depth <= 1 {
+                    return j + 1
+                }
+                depth -= 1
+            }
+            j += 1
+        }
+        n
+    }
+
+    /// Whether the `{` at `from` opens a braced `where` condition rather than the item's block.
+    fn brace_opens_predicate(self, _ from: usize, _ absent: bool) -> bool {
+        if absent {
+            return true
+        }
+        let after = self.brace_group_end(from)
+        let next = self.code_at(self.skip(after))
+        next == K_COMMA || next == K_LBRACE || starts_predicate(next)
+    }
+
+    /// Skips an item that ends with a braced body, through the body's `}`.
+    fn skip_braced_item(mut self) -> Result<SyntaxError, ()> {
+        self.nl = true
+        var depth: usize = 0
+        var angle: usize = 0
+        var prev: u8 = K_MOD
+        while true {
+            let p = self.skip(self.i)
+            if p >= self.count() {
+                return Result::Err(self.error(self.cur_pos, "expected the item body"))
+            }
+            let c = self.codes[p]
+            if c == K_LBRACE {
+                var header = depth > 0 || angle > 0 || prev == K_LT
+                if !header && (prev == K_WHERE || prev == K_COMMA) {
+                    header = self.brace_opens_predicate(p, false)
+                }
+                self.skip_group()?
+                if !header {
+                    return Result::Ok(())
+                }
+                prev = K_RBRACE
+                continue
+            }
+            if c == K_LPAREN || c == K_LBRACK {
+                depth += 1
+            } else if c == K_RPAREN || c == K_RBRACK {
+                if depth > 0 {
+                    depth -= 1
+                }
+            } else if c == K_LT {
+                if p > 0 && self.file.lexed.token(p - 1).end == self.start_of(p) {
+                    angle += 1
+                }
+            } else if c == K_GT {
+                if angle > 0 {
+                    angle -= 1
+                }
+            }
+            prev = c
+            self.eat()
+        }
+        Result::Ok(())
+    }
+
+    /// Skips a `const` or `type` item: up to the end of its line, where an operator or an open
+    /// bracket continues it.
+    fn skip_line_item(mut self) -> Result<SyntaxError, ()> {
+        self.nl = false
+        var depth: usize = 0
+        var prev: u8 = K_CONST
+        var last_sig = self.i
+        while true {
+            let p = self.skip(self.i)
+            if p >= self.count() {
+                break
+            }
+            let c = self.codes[p]
+            if c == K_NL {
+                var cont = depth > 0
+                if !cont {
+                    cont = prev == K_EQ || prev == K_PLUS || prev == K_STAR || prev == K_PIPE
+                        || prev == K_STAR2 || prev == K_PUNCT || prev == K_COMMA || prev == K_DOT
+                        || prev == K_ARROW || prev == K_COLON || prev == K_COLON2 || prev == K_LT
+                        || prev == K_AS
+                    if !cont {
+                        // Look at the next line's first token.
+                        var q = p + 1
+                        while q < self.count() && (self.codes[q] == K_WS || self.codes[q] == K_LC
+                            || self.codes[q] == K_NL) {
+                            q += 1
+                        }
+                        let nc = self.code_at(q)
+                        cont = nc == K_PLUS || nc == K_STAR || nc == K_PUNCT || nc == K_DOT
+                            || nc == K_PIPE || nc == K_QUEST || nc == K_AS || nc == K_STAR2
+                    }
+                }
+                if !cont {
+                    break
+                }
+                self.eat()
+                continue
+            }
+            if c == K_LPAREN || c == K_LBRACK || c == K_LBRACE {
+                depth += 1
+            } else if (c == K_RPAREN || c == K_RBRACK || c == K_RBRACE) && depth > 0 {
+                depth -= 1
+            }
+            prev = c
+            last_sig = self.bump()
+        }
+        self.last = last_sig
+        self.nl = true
+        Result::Ok(())
+    }
+
+    // ---- attributes ----
+
+    /// Attributes and doc comments; only the attributes are recorded.
+    fn parse_attr_list(mut self) -> Result<SyntaxError, Run> {
+        let start = self.file.attrs.len()
+        let saved_nl = self.nl
+        let saved_ctx = self.ctx
+        self.ctx = self.ctx | bit(K_NL)
+        while true {
+            self.nl = true
+            let c = self.code()
+            if c == K_POUND {
+                self.parse_attr()?
+            } else if c == K_DOC {
+                let _d = self.bump()
+            } else {
+                break
+            }
+            self.nl = false
+            if self.code() != K_NL {
+                return Result::Err(self.fail(0, "expected a newline after the attribute"))
+            }
+            self.eat()
+        }
+        self.nl = saved_nl
+        self.ctx = saved_ctx
+        Result::Ok(Run { start, len: self.file.attrs.len() - start })
+    }
+
+    fn parse_attr(mut self) -> Result<SyntaxError, ()> {
+        let saved_ctx = self.ctx
+        self.ctx = self.ctx | bit(K_RBRACK)
+        self.bump_trivia()
+        self.nl = false
+        let hash = self.bump()
+        let start = self.start_of(hash)
+        if self.code() != K_LBRACK {
+            return Result::Err(self.error(self.cur_pos, "expected `[` after `#`"))
+        }
+        self.eat()
+        var wrapped = false
+        if self.code() == K_UNSAFE {
+            self.eat()
+            if self.code() != K_LPAREN {
+                return Result::Err(self.error(self.cur_pos, "expected `(` after `unsafe`"))
+            }
+            self.eat()
+            wrapped = true
+        }
+        if !is_path_seg(self.code()) {
+            return Result::Err(self.error(self.end_prev, "expected an attribute path"))
+        }
+        let first_path = self.bump()
+        while self.code() == K_COLON2 {
+            self.eat()
+            if !is_path_seg(self.code()) {
+                return Result::Err(self.error(self.end_prev, "expected a path segment"))
+            }
+            self.eat()
+        }
+        let path = Span { first: first_path, last: self.last }
+        var has_args = false
+        var value: Option<Span> = Option::None
+        let c = self.code()
+        if c == K_LPAREN {
+            has_args = true
+            self.skip_group()?
+        } else if c == K_EQ {
+            self.eat()
+            self.nl = true
+            let first = self.skip(self.i)
+            var depth: usize = 0
+            var seen = false
+            while true {
+                let d = self.code()
+                if d == K_EOF {
+                    break
+                }
+                if d == K_LPAREN || d == K_LBRACK || d == K_LBRACE {
+                    depth += 1
+                } else if d == K_RPAREN || d == K_RBRACK || d == K_RBRACE {
+                    if depth == 0 {
+                        break
+                    }
+                    depth -= 1
+                }
+                self.eat()
+                seen = true
+            }
+            if !seen {
+                return Result::Err(self.error(self.end_prev, "expected an attribute value"))
+            }
+            value = Option::Some(Span { first, last: self.last })
+            self.nl = false
+        }
+        if wrapped {
+            if self.code() != K_RPAREN {
+                return Result::Err(self.error(self.cur_pos, "expected `)` to close `unsafe(`"))
+            }
+            self.eat()
+        }
+        if self.code() != K_RBRACK {
+            return Result::Err(self.error(self.cur_pos, "expected `]` to close the attribute"))
+        }
+        self.eat()
+        self.file.attrs.push(Attribute { start, first: hash, last: self.last, path, has_args, value })
+        self.ctx = saved_ctx
+        Result::Ok(())
+    }
+
+    // ---- lists ----
+
+    /// After a list element: consumes a `,`, or stops at the closing bracket (not consumed).
+    /// Anything else is an error.
+    fn list_sep(mut self, _ close: u8) -> Result<SyntaxError, ()> {
+        let c = self.code()
+        if c == K_COMMA {
+            self.eat()
+            return Result::Ok(())
+        }
+        if c == close {
+            return Result::Ok(())
+        }
+        self.nl = false
+        if self.code() == K_NL {
+            return Result::Err(self.error(self.cur_pos, "expected `,` or a closing bracket"))
+        }
+        Result::Err(self.fail(bit(K_NL) | bit(K_COMMA) | bit(close), "expected `,` or a closing bracket"))
+    }
+
+    // ---- use ----
+
+    fn parse_use(mut self) -> Result<SyntaxError, usize> {
+        self.eat()
+        self.bump_trivia()
+        let first = self.i
+        self.parse_use_tree()?
+        self.file.use_items.push(UseItem { tree: Span { first, last: self.last } })
+        Result::Ok(self.file.use_items.len() - 1)
+    }
+
+    fn parse_use_tree(mut self) -> Result<SyntaxError, ()> {
+        let saved_nl = self.nl
+        let saved_ctx = self.ctx
+        self.bump_trivia()
+        self.nl = false
+        if self.code() == K_LBRACE {
+            self.parse_use_list()?
+            self.nl = saved_nl
+            return Result::Ok(())
+        }
+        self.ctx = self.ctx | bit(K_COLON2)
+        let c = self.code()
+        if !(is_path_seg(c) || c == K_STAR) {
+            return Result::Err(self.error(self.end_prev, "expected an identifier or `self`"))
+        }
+        self.eat()
+        var glob = c == K_STAR
+        while true {
+            let p = self.skip(self.i)
+            if self.code_at(p) != K_COLON2 {
+                break
+            }
+            let q = self.skip(p + 1)
+            let qc = self.code_at(q)
+            if !(is_path_seg(qc) || qc == K_STAR) {
+                break
+            }
+            if glob {
+                return Result::Err(self.error_on_token("can't specify a path after `*`"))
+            }
+            self.eat()
+            glob = qc == K_STAR
+            self.eat()
+        }
+        self.ctx = saved_ctx
+        if self.code() == K_AS {
+            if glob {
+                return Result::Err(self.error_on_token("can't use `as` with `*`"))
+            }
+            self.eat()
+            let a = self.code()
+            if a != K_IDENT && a != K_UNDERSCORE {
+                return Result::Err(self.error(self.cur_pos, "expected an identifier or `_`"))
+            }
+            self.eat()
+            self.nl = saved_nl
+            return Result::Ok(())
+        }
+        if self.code() == K_COLON2 {
+            self.eat()
+            if self.code() == K_LBRACE {
+                if glob {
+                    return Result::Err(self.error_on_token("can't use `*` with `{}`"))
+                }
+                self.parse_use_list()?
+            }
+        }
+        self.nl = saved_nl
+        Result::Ok(())
+    }
+
+    fn parse_use_list(mut self) -> Result<SyntaxError, ()> {
+        let saved_ctx = self.ctx
+        self.ctx = self.ctx | bit(K_COMMA) | bit(K_RBRACE)
+        self.nl = true
+        self.eat()
+        while true {
+            self.nl = true
+            if self.code() == K_RBRACE {
+                self.eat()
+                break
+            }
+            self.parse_use_tree()?
+            self.nl = true
+            self.list_sep(K_RBRACE)?
+        }
+        self.ctx = saved_ctx
+        Result::Ok(())
+    }
+
+    // ---- structs and enums ----
+
+    fn parse_struct(mut self, _ mods: Modifiers, _ attrs: Run) -> Result<SyntaxError, usize> {
+        self.eat()
+        let m_lt = bit(K_LT) | bit(K_LPAREN) | bit(K_WHERE) | bit(K_LBRACE)
+        if self.code() != K_IDENT {
+            return Result::Err(self.fail(m_lt, "expected the struct name"))
+        }
+        let name = self.bump()
+        if !in_set(m_lt, self.code()) {
+            return Result::Err(self.fail(m_lt, "expected `{`, `(`, `<` or `where`"))
+        }
+        var has_generics = false
+        var gparams = empty_run(self.file.gparams.len())
+        if self.code() == K_LT {
+            has_generics = true
+            gparams = self.parse_generic_params()?
+        }
+        let m_paren = bit(K_LPAREN) | bit(K_WHERE) | bit(K_LBRACE)
+        if !in_set(m_paren, self.code()) {
+            return Result::Err(self.fail(m_paren, "expected `{`, `(` or `where`"))
+        }
+        if self.code() == K_LPAREN {
+            let fields = self.parse_tuple_fields()?
+            let where_token = self.parse_where_opt(true)?
+            self.file.structs.push(StructItem {
+                mods, name, has_generics, where_token, fields_kind: FieldsKind::Tuple, attrs, gparams, fields,
+            })
+            return Result::Ok(self.file.structs.len() - 1)
+        }
+        let m_where = bit(K_WHERE) | bit(K_LBRACE)
+        if !in_set(m_where, self.code()) {
+            return Result::Err(self.fail(m_where, "expected `{` or `where`"))
+        }
+        let where_token = self.parse_where_opt(false)?
+        if self.code() != K_LBRACE {
+            return Result::Err(self.fail(bit(K_LBRACE), "expected the struct body"))
+        }
+        let fields = self.parse_record_fields()?
+        self.file.structs.push(StructItem {
+            mods, name, has_generics, where_token, fields_kind: FieldsKind::Record, attrs, gparams, fields,
+        })
+        Result::Ok(self.file.structs.len() - 1)
+    }
+
+    fn parse_enum(mut self, _ mods: Modifiers, _ attrs: Run) -> Result<SyntaxError, usize> {
+        self.eat()
+        let m = bit(K_LT) | bit(K_WHERE) | bit(K_LBRACE)
+        if self.code() != K_IDENT {
+            return Result::Err(self.fail(m, "expected the enum name"))
+        }
+        let name = self.bump()
+        var has_generics = false
+        var gparams = empty_run(self.file.gparams.len())
+        if self.code() == K_LT {
+            has_generics = true
+            gparams = self.parse_generic_params()?
+        }
+        let where_token = self.parse_where_opt(false)?
+        if self.code() != K_LBRACE {
+            return Result::Err(self.fail(bit(K_LBRACE), "expected the enum body"))
+        }
+        let saved_ctx = self.ctx
+        self.ctx = self.ctx | bit(K_COMMA) | bit(K_RBRACE)
+        self.nl = true
+        self.eat()
+        let vstart = self.file.variants.len()
+        while true {
+            self.nl = true
+            if self.code() == K_RBRACE {
+                self.eat()
+                break
+            }
+            self.parse_variant()?
+            self.nl = true
+            self.list_sep(K_RBRACE)?
+        }
+        self.ctx = saved_ctx
+        let variants = Run { start: vstart, len: self.file.variants.len() - vstart }
+        self.file.enums.push(EnumItem { mods, name, has_generics, where_token, attrs, gparams, variants })
+        Result::Ok(self.file.enums.len() - 1)
+    }
+
+    fn parse_variant(mut self) -> Result<SyntaxError, ()> {
+        self.bump_trivia()
+        let first = self.i
+        let start = self.start_of(first)
+        let attrs = self.parse_attr_list()?
+        if self.code() != K_IDENT {
+            return Result::Err(self.error(self.cur_pos, "expected the variant name"))
+        }
+        let name = self.bump()
+        var kind = VariantKind::Unit
+        var fields = empty_run(self.file.fields.len())
+        if self.code() == K_LPAREN {
+            kind = VariantKind::Tuple
+            self.parse_type_tuple()?
+        } else if self.code() == K_LBRACE {
+            kind = VariantKind::Record
+            fields = self.parse_record_fields()?
+        }
+        self.nl = true
+        self.file.variants.push(Variant { start, first, last: self.last, name, kind, attrs, fields })
+        Result::Ok(())
+    }
+
+    /// `(` type, ... `)` as a tuple type or tuple variant; returns nothing.
+    fn parse_type_tuple(mut self) -> Result<SyntaxError, ()> {
+        let saved_ctx = self.ctx
+        self.ctx = self.ctx | bit(K_RPAREN) | bit(K_COMMA)
+        self.nl = true
+        self.eat()
+        while true {
+            self.nl = true
+            if self.code() == K_RPAREN {
+                self.eat()
+                break
+            }
+            self.parse_type()?
+            self.nl = true
+            self.list_sep(K_RPAREN)?
+        }
+        self.ctx = saved_ctx
+        Result::Ok(())
+    }
+
+    fn parse_record_fields(mut self) -> Result<SyntaxError, Run> {
+        let saved_ctx = self.ctx
+        self.ctx = self.ctx | bit(K_RBRACE) | bit(K_COMMA) | bit(K_NL)
+        self.nl = true
+        self.eat()
+        let start = self.file.fields.len()
+        while true {
+            self.nl = true
+            if self.code() == K_RBRACE {
+                self.eat()
+                break
+            }
+            self.parse_record_field()?
+            self.nl = true
+            self.list_sep(K_RBRACE)?
+        }
+        self.ctx = saved_ctx
+        Result::Ok(Run { start, len: self.file.fields.len() - start })
+    }
+
+    fn parse_record_field(mut self) -> Result<SyntaxError, ()> {
+        self.bump_trivia()
+        let first = self.i
+        let start = self.start_of(first)
+        self.nl = false
+        let attrs = self.parse_attr_list()?
+        self.nl = false
+        var is_pub = false
+        var vis: Option<Span> = Option::None
+        if self.code() == K_PUB {
+            self.eat()
+            is_pub = true
+            if self.code() == K_LPAREN {
+                self.eat()
+                vis = Option::Some(self.parse_vis()?)
+            }
+        }
+        if self.code() == K_FN {
+            return Result::Err(self.error_on_token("function definition in struct is not allowed"))
+        }
+        var is_unsafe = false
+        if self.code() == K_UNSAFE {
+            let next = self.skip(self.skip(self.i) + 1)
+            if self.code_at(next) == K_IDENT {
+                self.eat()
+                is_unsafe = true
+            }
+        }
+        if self.code() == K_MUT {
+            self.eat()
+        }
+        if self.code() != K_IDENT {
+            return Result::Err(self.fail(bit(K_COLON), "expected the field name"))
+        }
+        let name = self.bump()
+        if self.code() != K_COLON {
+            return Result::Err(self.fail(0, "expected `:` and the field type"))
+        }
+        self.eat()
+        let ty = self.parse_type()?
+        self.file.fields.push(Field {
+            start,
+            first,
+            last: self.last,
+            mods: Modifiers { is_pub, vis, is_unsafe },
+            name: Option::Some(name),
+            ty,
+            attrs,
+        })
+        Result::Ok(())
+    }
+
+    fn parse_tuple_fields(mut self) -> Result<SyntaxError, Run> {
+        let saved_ctx = self.ctx
+        self.ctx = self.ctx | bit(K_RPAREN) | bit(K_COMMA)
+        self.nl = true
+        self.eat()
+        let start = self.file.fields.len()
+        while true {
+            self.nl = true
+            if self.code() == K_RPAREN {
+                self.eat()
+                break
+            }
+            self.bump_trivia()
+            let first = self.i
+            let fstart = self.start_of(first)
+            let attrs = self.parse_attr_list()?
+            var is_pub = false
+            var vis: Option<Span> = Option::None
+            if self.code() == K_PUB {
+                self.eat()
+                is_pub = true
+                let p = self.skip(self.i)
+                let q = self.skip(p + 1)
+                if self.code_at(p) == K_LPAREN {
+                    let qc = self.code_at(q)
+                    if qc == K_INGOT || qc == K_SUPER || qc == K_IN {
+                        self.eat()
+                        vis = Option::Some(self.parse_vis()?)
+                    }
+                }
+            }
+            let ty = self.parse_type()?
+            self.file.fields.push(Field {
+                start: fstart,
+                first,
+                last: self.last,
+                mods: Modifiers { is_pub, vis, is_unsafe: false },
+                name: Option::None,
+                ty,
+                attrs,
+            })
+            self.nl = true
+            self.list_sep(K_RPAREN)?
+        }
+        self.ctx = saved_ctx
+        Result::Ok(Run { start, len: self.file.fields.len() - start })
+    }
+
+    // ---- generics and where clauses ----
+
+    fn parse_generic_params(mut self) -> Result<SyntaxError, Run> {
+        let saved_ctx = self.ctx
+        self.ctx = self.ctx | bit(K_COMMA) | bit(K_GT)
+        self.nl = true
+        self.eat()
+        let start = self.file.gparams.len()
+        while true {
+            self.nl = true
+            if self.code() == K_GT {
+                self.eat()
+                break
+            }
+            let c = self.code()
+            if c != K_IDENT && c != K_CONST {
+                return Result::Err(self.fail(0, "expected a generic parameter"))
+            }
+            self.parse_generic_param()?
+            self.nl = true
+            self.list_sep(K_GT)?
+        }
+        self.ctx = saved_ctx
+        Result::Ok(Run { start, len: self.file.gparams.len() - start })
+    }
+
+    fn parse_generic_param(mut self) -> Result<SyntaxError, ()> {
+        self.bump_trivia()
+        let first = self.i
+        let start = self.start_of(first)
+        self.nl = false
+        let c = self.code()
+        if c == K_CONST {
+            self.eat()
+            if self.code() != K_IDENT {
+                return Result::Err(self.fail(bit(K_COLON), "expected the const parameter name"))
+            }
+            let name = self.bump()
+            if self.code() != K_COLON {
+                return Result::Err(self.fail(0, "expected `:` and the const parameter type"))
+            }
+            self.eat()
+            let ty = self.parse_type()?
+            if self.code() == K_COLON {
+                self.parse_bound_list()?
+            }
+            var has_default = false
+            if self.code() == K_EQ {
+                self.eat()
+                has_default = true
+                self.skip_const_expr()?
+            }
+            self.file.gparams.push(GenericParam {
+                kind: GenericKind::Const,
+                start,
+                first,
+                last: self.last,
+                name: Option::Some(name),
+                bounds: Option::None,
+                ty: Option::Some(ty),
+                has_default,
+            })
+            return Result::Ok(())
+        }
+        // `shape Name Name`
+        let t0 = self.file.lexed.token(first)
+        if self.file.lexed.is(t0, "shape") {
+            let p1 = self.skip(first + 1)
+            let p2 = self.skip(p1 + 1)
+            if self.code_at(p1) == K_IDENT && self.code_at(p2) == K_IDENT {
+                self.eat()
+                self.eat()
+                self.file.gparams.push(GenericParam {
+                    kind: GenericKind::Other,
+                    start,
+                    first,
+                    last: self.last,
+                    name: Option::None,
+                    bounds: Option::None,
+                    ty: Option::None,
+                    has_default: false,
+                })
+                return Result::Ok(())
+            }
+        }
+        let name = self.bump()
+        var bounds: Option<Span> = Option::None
+        if self.code() == K_COLON {
+            bounds = Option::Some(self.parse_bound_list()?)
+        }
+        var has_default = false
+        if self.code() == K_EQ {
+            self.eat()
+            has_default = true
+            self.parse_type()?
+        }
+        self.file.gparams.push(GenericParam {
+            kind: GenericKind::Type,
+            start,
+            first,
+            last: self.last,
+            name: Option::Some(name),
+            bounds,
+            ty: Option::None,
+            has_default,
+        })
+        Result::Ok(())
+    }
+
+    /// A const generic expression: a block, a literal or a path with an optional call.
+    fn skip_const_expr(mut self) -> Result<SyntaxError, ()> {
+        let c = self.code()
+        if c == K_LBRACE {
+            return self.skip_group()
+        }
+        if is_literal_leaf(c) {
+            self.eat()
+            return Result::Ok(())
+        }
+        if !is_path_seg(c) {
+            return Result::Err(self.error(self.end_prev, "expected a const expression"))
+        }
+        self.eat()
+        while self.code() == K_COLON2 {
+            self.eat()
+            if !is_path_seg(self.code()) {
+                return Result::Err(self.error(self.end_prev, "expected a path segment"))
+            }
+            self.eat()
+        }
+        if self.code() == K_LPAREN {
+            self.skip_group()?
+        }
+        Result::Ok(())
+    }
+
+    /// `: bound + bound`; the span covers the bounds, after the colon.
+    fn parse_bound_list(mut self) -> Result<SyntaxError, Span> {
+        let saved_ctx = self.ctx
+        self.ctx = self.ctx | bit(K_PLUS)
+        self.eat()
+        self.bump_trivia()
+        let first = self.i
+        self.parse_bound()?
+        while self.code() == K_PLUS {
+            self.eat()
+            self.parse_bound()?
+        }
+        self.ctx = saved_ctx
+        Result::Ok(Span { first, last: self.last })
+    }
+
+    fn parse_bound(mut self) -> Result<SyntaxError, ()> {
+        self.bump_trivia()
+        let c = self.code()
+        if c == K_LPAREN || c == K_STAR {
+            return self.parse_kind_bound()
+        }
+        if c == K_MUT {
+            self.eat()
+            if self.code() == K_QUEST {
+                self.eat()
+            }
+        }
+        self.parse_trait_ref()?
+        Result::Ok(())
+    }
+
+    fn parse_kind_bound(mut self) -> Result<SyntaxError, ()> {
+        let saved = self.nl
+        self.nl = false
+        let c = self.code()
+        if c == K_LPAREN {
+            self.eat()
+            self.parse_kind_bound()?
+            if self.code() != K_RPAREN {
+                return Result::Err(self.fail(0, "expected `)` to close the kind"))
+            }
+            self.eat()
+        } else if c == K_STAR {
+            self.eat()
+        } else {
+            return Result::Err(self.fail(0, "expected a kind"))
+        }
+        if self.code() == K_ARROW {
+            self.eat()
+            self.parse_kind_bound()?
+        }
+        self.nl = saved
+        Result::Ok(())
+    }
+
+    /// A trait reference: a path, or `Fn(..) -> T`.
+    fn parse_trait_ref(mut self) -> Result<SyntaxError, Span> {
+        self.bump_trivia()
+        let first = self.i
+        let saved = self.nl
+        let t = self.file.lexed.token(first)
+        let next = self.skip(first + 1)
+        if first < self.count() && self.codes[first] == K_IDENT
+            && (self.file.lexed.is(t, "Fn") || self.file.lexed.is(t, "FnMut"))
+            && self.code_at(next) == K_LPAREN {
+            self.eat()
+            self.parse_type_tuple()?
+            self.nl = false
+            if self.code() == K_ARROW {
+                self.eat()
+                if self.code() == K_UNDERSCORE {
+                    self.eat()
+                } else {
+                    let _t = self.parse_type()?
+                }
+            }
+        } else {
+            let _p = self.parse_path()?
+        }
+        self.nl = saved
+        Result::Ok(Span { first, last: self.last })
+    }
+
+    fn dry_type_bound(mut self) -> bool {
+        let s = self.snap()
+        var ok = false
+        match self.parse_type() {
+            Result::Ok(_) => ok = self.code() == K_COLON,
+            Result::Err(_) => {},
+        }
+        self.restore(s)
+        ok
+    }
+
+    /// An optional `where` clause: the token of `where`.
+    fn parse_where_opt(mut self, _ absent: bool) -> Result<SyntaxError, Option<usize>> {
+        let saved_nl = self.nl
+        self.nl = true
+        if self.code() != K_WHERE {
+            self.nl = saved_nl
+            return Result::Ok(Option::None)
+        }
+        let saved_ctx = self.ctx
+        self.ctx = self.ctx | bit(K_NL)
+        let w = self.bump()
+        var count: usize = 0
+        while true {
+            self.nl = true
+            let c = self.code()
+            if c == K_LBRACE && self.brace_opens_predicate(self.skip(self.i), absent) {
+                self.skip_group()?
+            } else if c != K_LBRACE && c != K_UNSAFE && starts_predicate(c) {
+                var bound = false
+                if is_type_start(c) {
+                    bound = self.dry_type_bound()
+                }
+                if bound {
+                    self.parse_type()?
+                    self.nl = true
+                    let _b = self.parse_bound_list()?
+                } else {
+                    self.skip_const_predicate()?
+                }
+            } else {
+                break
+            }
+            count += 1
+            self.nl = true
+            if self.code() == K_COMMA {
+                self.eat()
+                continue
+            }
+            let d = self.code()
+            if d == K_LBRACE || d == K_UNSAFE || !starts_predicate(d) {
+                break
+            }
+            self.nl = false
+            if self.code() == K_NL {
+                return Result::Err(self.error(self.cur_pos, "expected `,` between predicates"))
+            }
+            return Result::Err(self.fail(bit(K_COMMA), "expected `,` between predicates"))
+        }
+        if count == 0 {
+            return Result::Err(self.error(self.cur_pos, "`where` clause requires one or more predicates"))
+        }
+        self.ctx = saved_ctx
+        self.nl = saved_nl
+        Result::Ok(Option::Some(w))
+    }
+
+    /// A const condition: tokens up to a `,` or the `{` of the item block.
+    fn skip_const_predicate(mut self) -> Result<SyntaxError, ()> {
+        var depth: usize = 0
+        var any = false
+        while true {
+            let c = self.code()
+            if c == K_EOF {
+                break
+            }
+            if depth == 0 && (c == K_COMMA || c == K_LBRACE || is_item_kw(c) || c == K_PUB
+                || c == K_DOC || c == K_POUND || c == K_UNSAFE) {
+                break
+            }
+            if c == K_LPAREN || c == K_LBRACK || c == K_LBRACE {
+                depth += 1
+            } else if c == K_RPAREN || c == K_RBRACK || c == K_RBRACE {
+                if depth == 0 {
+                    break
+                }
+                depth -= 1
+            }
+            self.eat()
+            any = true
+        }
+        if !any {
+            return Result::Err(self.error(self.end_prev, "expected a where predicate"))
+        }
+        Result::Ok(())
+    }
+
+    // ---- impl ----
+
+    /// Returns whether it is a trait impl and, if so, the index in `File::impls`.
+    fn parse_impl(mut self, _ is_unsafe: bool) -> Result<SyntaxError, (bool, usize)> {
+        self.eat()
+        if self.code() == K_LT {
+            self.parse_generic_params()?
+        }
+        let s = self.snap()
+        var is_trait = false
+        match self.parse_trait_ref() {
+            Result::Ok(_) => is_trait = self.code() == K_FOR,
+            Result::Err(_) => {},
+        }
+        self.restore(s)
+        var trait_ref = Span { first: 0, last: 0 }
+        let m = bit(K_FOR) | bit(K_WHERE) | bit(K_LBRACE)
+        if is_trait {
+            trait_ref = self.parse_trait_ref()?
+            if self.code() != K_FOR {
+                return Result::Err(self.fail(m, "expected `for`"))
+            }
+            self.eat()
+        }
+        if !is_trait && is_unsafe {
+            return Result::Err(self.error(self.cur_pos, "an inherent `impl` cannot be `unsafe`"))
+        }
+        self.nl = true
+        let ty = self.parse_type()?
+        self.nl = true
+        let m2 = bit(K_WHERE) | bit(K_LBRACE)
+        if !in_set(m2, self.code()) {
+            return Result::Err(self.fail(m2, "expected `{` or `where`"))
+        }
+        self.parse_where_opt(false)?
+        if self.code() != K_LBRACE {
+            return Result::Err(self.fail(bit(K_LBRACE), "expected the impl body"))
+        }
+        self.skip_group()?
+        if is_trait {
+            self.file.impls.push(ImplItem { trait_ref, ty })
+            return Result::Ok((true, self.file.impls.len() - 1))
+        }
+        Result::Ok((false, 0))
+    }
+
+    // ---- types ----
+
+    fn push_type(mut self, _ kind: TypeKind, _ first: usize, _ segments: Run, _ parent_args: bool,
+        _ elem: Option<usize>, _ len: Option<Span>) -> usize {
+        let start = self.start_of(first)
+        self.file.types.push(TypeNode { kind, first, last: self.last, start, segments, parent_args, elem, len })
+        self.file.types.len() - 1
+    }
+
+    fn parse_type(mut self) -> Result<SyntaxError, usize> {
+        let saved_nl = self.nl
+        self.bump_trivia()
+        let first = self.i
+        let c = self.code()
+        self.nl = false
+        let none_run = empty_run(self.file.segments.len())
+        var result: usize = 0
+        if c == K_STAR || c == K_STAR2 {
+            self.eat()
+            self.parse_type()?
+            result = self.push_type(TypeKind::Other, first, none_run, false, Option::None, Option::None)
+        } else if c == K_MUT || c == K_REF || c == K_OWN {
+            self.eat()
+            if c == K_MUT && self.code() == K_QUEST && self.start_of(self.skip(self.i)) == self.end_prev {
+                self.eat()
+            }
+            self.parse_type()?
+            result = self.push_type(TypeKind::Other, first, none_run, false, Option::None, Option::None)
+        } else if c == K_LPAREN {
+            self.parse_type_tuple()?
+            result = self.push_type(TypeKind::Other, first, none_run, false, Option::None, Option::None)
+        } else if c == K_LBRACK {
+            let saved_ctx = self.ctx
+            self.ctx = self.ctx | bit(K_SEMI) | bit(K_RBRACK)
+            self.eat()
+            let elem = self.parse_type()?
+            self.nl = false
+            if self.code() != K_SEMI {
+                return Result::Err(self.fail(0, "expected `;` in the array type"))
+            }
+            self.eat()
+            self.nl = true
+            let lfirst = self.skip(self.i)
+            var depth: usize = 0
+            var any = false
+            while true {
+                let d = self.code()
+                if d == K_EOF {
+                    break
+                }
+                if d == K_LPAREN || d == K_LBRACK || d == K_LBRACE {
+                    depth += 1
+                } else if d == K_RPAREN || d == K_RBRACK || d == K_RBRACE {
+                    if depth == 0 {
+                        break
+                    }
+                    depth -= 1
+                }
+                self.eat()
+                any = true
+            }
+            if !any {
+                return Result::Err(self.error(self.end_prev, "expected the array length"))
+            }
+            let len = Span { first: lfirst, last: self.last }
+            self.nl = false
+            if self.code() != K_RBRACK {
+                return Result::Err(self.fail(0, "expected `]` to close the array type"))
+            }
+            self.eat()
+            self.ctx = saved_ctx
+            result = self.push_type(TypeKind::Array, first, none_run, false, Option::Some(elem), Option::Some(len))
+        } else if c == K_BANG {
+            self.eat()
+            result = self.push_type(TypeKind::Other, first, none_run, false, Option::None, Option::None)
+        } else {
+            let (segments, parent_args) = self.parse_path()?
+            result = self.push_type(TypeKind::Path, first, segments, parent_args, Option::None, Option::None)
+        }
+        self.nl = saved_nl
+        Result::Ok(result)
+    }
+
+    /// A path with generic arguments on its segments: the run of segments and whether a segment
+    /// before the last has arguments.
+    fn parse_path(mut self) -> Result<SyntaxError, (Run, bool)> {
+        let saved_ctx = self.ctx
+        self.ctx = self.ctx | bit(K_COLON2)
+        self.nl = false
+        // Segments are collected aside so a path's segments end up contiguous, after the
+        // segments of the types inside their generic arguments.
+        var found = MemVec<Segment>::new()
+        found.push(self.parse_segment()?)
+        while self.code() == K_COLON2 {
+            self.eat()
+            found.push(self.parse_segment()?)
+        }
+        self.ctx = saved_ctx
+        let start = self.file.segments.len()
+        var parent_args = false
+        var i: usize = 0
+        while i < found.len() {
+            let segment = found[i]
+            if i + 1 < found.len() {
+                match segment.args {
+                    Option::Some(_) => parent_args = true,
+                    Option::None => {},
+                }
+            }
+            self.file.segments.push(segment)
+            i += 1
+        }
+        Result::Ok((Run { start, len: found.len() }, parent_args))
+    }
+
+    fn parse_segment(mut self) -> Result<SyntaxError, Segment> {
+        self.nl = false
+        let c = self.code()
+        if c == K_LT {
+            // A qualified type `<T as Trait>`.
+            let first = self.bump()
+            let _t = self.parse_type()?
+            self.nl = false
+            if self.code() != K_AS {
+                return Result::Err(self.error(self.end_prev, "expected `as`"))
+            }
+            self.eat()
+            let _r = self.parse_trait_ref()?
+            self.nl = false
+            if self.code() != K_GT {
+                return Result::Err(self.error(self.end_prev, "expected `>`"))
+            }
+            self.eat()
+            return Result::Ok(Segment { first, last: self.last, name: Option::None, args: Option::None })
+        }
+        if !is_path_seg(c) {
+            return Result::Err(self.error(self.end_prev, "expected a path segment"))
+        }
+        let name = self.bump()
+        var args: Option<Run> = Option::None
+        if self.code() == K_LT {
+            args = Option::Some(self.parse_generic_args()?)
+        }
+        Result::Ok(Segment { first: name, last: self.last, name: Option::Some(name), args })
+    }
+
+    fn parse_generic_args(mut self) -> Result<SyntaxError, Run> {
+        let saved_ctx = self.ctx
+        self.ctx = self.ctx | bit(K_GT) | bit(K_COMMA)
+        let saved_nl = self.nl
+        self.nl = true
+        var found = MemVec<GenericArg>::new()
+        self.eat()
+        while true {
+            self.nl = true
+            if self.code() == K_GT {
+                self.eat()
+                break
+            }
+            found.push(self.parse_generic_arg()?)
+            self.nl = true
+            let c = self.code()
+            if c != K_GT && c != K_COMMA {
+                return Result::Err(self.fail(0, "expected `>` or `,`"))
+            }
+            if c == K_COMMA {
+                self.eat()
+            }
+        }
+        self.ctx = saved_ctx
+        self.nl = saved_nl
+        let start = self.file.args.len()
+        var i: usize = 0
+        while i < found.len() {
+            self.file.args.push(found[i])
+            i += 1
+        }
+        Result::Ok(Run { start, len: found.len() })
+    }
+
+    fn parse_generic_arg(mut self) -> Result<SyntaxError, GenericArg> {
+        self.bump_trivia()
+        self.nl = false
+        let first = self.i
+        let c = self.code()
+        let p1 = self.skip(first + 1)
+        let c1 = self.code_at(p1)
+        if (c == K_REF || c == K_MUT) && (c1 == K_GT || c1 == K_COMMA) {
+            self.eat()
+            return Result::Ok(GenericArg { kind: ArgKind::Other, first, last: self.last, ty: Option::None })
+        }
+        var assoc = c == K_IDENT && c1 == K_EQ
+        if c == K_IDENT && c1 == K_LT {
+            let p2 = self.skip(p1 + 1)
+            let p3 = self.skip(p2 + 1)
+            let p4 = self.skip(p3 + 1)
+            let c2 = self.code_at(p2)
+            if (c2 == K_REF || c2 == K_MUT) && self.code_at(p3) == K_GT && self.code_at(p4) == K_EQ {
+                assoc = true
+            }
+        }
+        if assoc {
+            self.eat()
+            if self.code() == K_LT {
+                self.parse_generic_args()?
+            }
+            self.nl = false
+            self.eat()
+            self.parse_type()?
+            return Result::Ok(GenericArg { kind: ArgKind::Other, first, last: self.last, ty: Option::None })
+        }
+        var is_call = false
+        if is_path_seg(c) {
+            var k = p1
+            while self.code_at(k) == K_COLON2 {
+                let s = self.skip(k + 1)
+                if !is_path_seg(self.code_at(s)) {
+                    break
+                }
+                k = self.skip(s + 1)
+            }
+            is_call = self.code_at(k) == K_LPAREN
+        }
+        if is_call {
+            while self.code() != K_LPAREN {
+                self.eat()
+            }
+            self.skip_group()?
+            self.nl = false
+            return Result::Ok(GenericArg { kind: ArgKind::Const, first, last: self.last, ty: Option::None })
+        }
+        if c == K_LBRACE {
+            self.skip_group()?
+            self.nl = false
+            return Result::Ok(GenericArg { kind: ArgKind::Const, first, last: self.last, ty: Option::None })
+        }
+        if is_literal_leaf(c) {
+            self.eat()
+            return Result::Ok(GenericArg { kind: ArgKind::Const, first, last: self.last, ty: Option::None })
+        }
+        let ty = self.parse_type()?
+        self.nl = false
+        if self.code() == K_COLON {
+            return Result::Err(self.error(self.end_prev, "type bounds are not allowed here"))
+        }
+        Result::Ok(GenericArg { kind: ArgKind::Type, first, last: self.last, ty: Option::Some(ty) })
+    }
+}

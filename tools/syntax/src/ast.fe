@@ -1,0 +1,319 @@
+use core::marker::Copy
+use core::{MemBuffer, MemVec, Option}
+use ingot::lexer::{Lexed, TokenKind}
+
+/// A syntax error: the byte offset where it was found and a short message.
+pub struct SyntaxError {
+    pub offset: usize,
+    pub message: MemBuffer,
+}
+
+/// An inclusive range of token indices.
+pub struct Span {
+    pub first: usize,
+    pub last: usize,
+}
+
+impl Copy for Span {}
+
+/// A range `start..start + len` of one of the `File` arenas.
+pub struct Run {
+    pub start: usize,
+    pub len: usize,
+}
+
+impl Copy for Run {}
+
+pub enum ItemKind {
+    Use,
+    Struct,
+    Enum,
+    ImplTrait,
+    Other,
+}
+
+impl Copy for ItemKind {}
+
+/// A top-level item. `start` is the byte offset where fe-parser starts the item: its first
+/// attribute or doc comment, otherwise its first modifier or keyword. `first..=last` are its
+/// tokens. `detail` indexes `File::use_items`, `structs`, `enums` or `impls` by kind.
+pub struct Item {
+    pub kind: ItemKind,
+    pub start: usize,
+    pub first: usize,
+    pub last: usize,
+    pub detail: usize,
+}
+
+impl Copy for Item {}
+
+/// A `use` item: the tokens of its use tree.
+pub struct UseItem {
+    pub tree: Span,
+}
+
+impl Copy for UseItem {}
+
+/// `pub`, `pub(restriction)` and `unsafe` in front of an item, field or variant.
+/// `vis` spans the tokens after `pub(` up to and including `)`.
+pub struct Modifiers {
+    pub is_pub: bool,
+    pub vis: Option<Span>,
+    pub is_unsafe: bool,
+}
+
+impl Copy for Modifiers {}
+
+pub enum FieldsKind {
+    Record,
+    Tuple,
+    NoFields,
+}
+
+impl Copy for FieldsKind {}
+
+/// A struct item. `name` is a token index, `where_token` the token of its `where`. `attrs`,
+/// `gparams` and `fields` are runs of `File::attrs`, `gparams` and `fields` (tuple fields
+/// have no name).
+pub struct StructItem {
+    pub mods: Modifiers,
+    pub name: usize,
+    pub has_generics: bool,
+    pub where_token: Option<usize>,
+    pub fields_kind: FieldsKind,
+    pub attrs: Run,
+    pub gparams: Run,
+    pub fields: Run,
+}
+
+impl Copy for StructItem {}
+
+pub struct EnumItem {
+    pub mods: Modifiers,
+    pub name: usize,
+    pub has_generics: bool,
+    pub where_token: Option<usize>,
+    pub attrs: Run,
+    pub gparams: Run,
+    pub variants: Run,
+}
+
+impl Copy for EnumItem {}
+
+/// `impl Trait for Type`: the trait reference tokens and the type node (see `File::types`).
+pub struct ImplItem {
+    pub trait_ref: Span,
+    pub ty: usize,
+}
+
+impl Copy for ImplItem {}
+
+/// An attribute `#[path]`, `#[path(..)]` or `#[path = value]`. `start` is the byte offset of
+/// `#`, `value` the raw tokens after `=`.
+pub struct Attribute {
+    pub start: usize,
+    pub first: usize,
+    pub last: usize,
+    pub path: Span,
+    pub has_args: bool,
+    pub value: Option<Span>,
+}
+
+impl Copy for Attribute {}
+
+pub enum GenericKind {
+    Type,
+    Const,
+    Other,
+}
+
+impl Copy for GenericKind {}
+
+/// A generic parameter. For a type parameter `bounds` spans the tokens after `:`; for a
+/// const parameter `ty` is the type node of its type.
+pub struct GenericParam {
+    pub kind: GenericKind,
+    pub start: usize,
+    pub first: usize,
+    pub last: usize,
+    pub name: Option<usize>,
+    pub bounds: Option<Span>,
+    pub ty: Option<usize>,
+    pub has_default: bool,
+}
+
+impl Copy for GenericParam {}
+
+/// A struct field (named or tuple) or a record variant field. `ty` is a type node.
+pub struct Field {
+    pub start: usize,
+    pub first: usize,
+    pub last: usize,
+    pub mods: Modifiers,
+    pub name: Option<usize>,
+    pub ty: usize,
+    pub attrs: Run,
+}
+
+impl Copy for Field {}
+
+pub enum VariantKind {
+    Unit,
+    Tuple,
+    Record,
+}
+
+impl Copy for VariantKind {}
+
+pub struct Variant {
+    pub start: usize,
+    pub first: usize,
+    pub last: usize,
+    pub name: usize,
+    pub kind: VariantKind,
+    pub attrs: Run,
+    pub fields: Run,
+}
+
+impl Copy for Variant {}
+
+pub enum TypeKind {
+    Path,
+    Array,
+    Other,
+}
+
+impl Copy for TypeKind {}
+
+/// A type. A path type has `segments` (a run of `File::segments`) and `parent_args` set when a
+/// segment before the last has generic arguments; an array has its element type node and the
+/// tokens of its length expression; anything else is `Other`.
+pub struct TypeNode {
+    pub kind: TypeKind,
+    pub first: usize,
+    pub last: usize,
+    pub start: usize,
+    pub segments: Run,
+    pub parent_args: bool,
+    pub elem: Option<usize>,
+    pub len: Option<Span>,
+}
+
+impl Copy for TypeNode {}
+
+/// A path segment. `name` is its identifier token (or `Self`, `self`, `ingot`, `super`), none for
+/// a qualified `<T as Trait>` segment. `args` is a run of `File::args`.
+pub struct Segment {
+    pub first: usize,
+    pub last: usize,
+    pub name: Option<usize>,
+    pub args: Option<Run>,
+}
+
+impl Copy for Segment {}
+
+pub enum ArgKind {
+    Type,
+    Const,
+    Other,
+}
+
+impl Copy for ArgKind {}
+
+/// A generic argument: a type (`ty` is its type node), a const expression, or another kind
+/// (mode, associated binding).
+pub struct GenericArg {
+    pub kind: ArgKind,
+    pub first: usize,
+    pub last: usize,
+    pub ty: Option<usize>,
+}
+
+impl Copy for GenericArg {}
+
+/// A parsed file: its lexed source and arenas of nodes linked by index ranges.
+pub struct File {
+    pub lexed: Lexed,
+    pub items: MemVec<Item>,
+    pub use_items: MemVec<UseItem>,
+    pub structs: MemVec<StructItem>,
+    pub enums: MemVec<EnumItem>,
+    pub impls: MemVec<ImplItem>,
+    pub attrs: MemVec<Attribute>,
+    pub gparams: MemVec<GenericParam>,
+    pub fields: MemVec<Field>,
+    pub variants: MemVec<Variant>,
+    pub types: MemVec<TypeNode>,
+    pub segments: MemVec<Segment>,
+    pub args: MemVec<GenericArg>,
+}
+
+impl File {
+    /// The text of tokens `first..=last`, compacted (see `Lexed::compact`).
+    pub fn compact(self, _ span: Span) -> MemBuffer {
+        self.lexed.compact(span.first, span.last)
+    }
+
+    /// The text of a type node, compacted.
+    pub fn type_text(self, _ ty: usize) -> MemBuffer {
+        let node = self.types[ty]
+        self.lexed.compact(node.first, node.last)
+    }
+
+    /// The text of one token.
+    pub fn token_text(self, _ token: usize) -> MemBuffer {
+        self.lexed.text(self.lexed.token(token))
+    }
+
+    /// The byte offset of a token.
+    pub fn token_start(self, _ token: usize) -> usize {
+        self.lexed.token(token).start
+    }
+
+    /// The value of tokens that are exactly one integer literal, otherwise none.
+    pub fn literal_u64(self, _ span: Span) -> Option<u64> {
+        if span.first != span.last {
+            return Option::None
+        }
+        let token = self.lexed.token(span.first)
+        match token.kind {
+            TokenKind::Int => self.lexed.parse_int(token),
+            _ => Option::None,
+        }
+    }
+
+    /// The joined segment names of a path type (`a::b::C`), none if it is not a path, a segment
+    /// before the last has generic arguments or a segment has no name.
+    pub fn path_name(self, _ ty: usize) -> Option<MemBuffer> {
+        let node = self.types[ty]
+        match node.kind {
+            TypeKind::Path => {},
+            _ => return Option::None,
+        }
+        if node.parent_args {
+            return Option::None
+        }
+        var out = MemBuffer::new(0)
+        var i: usize = 0
+        while i < node.segments.len {
+            let segment = self.segments[node.segments.start + i]
+            match segment.name {
+                Option::Some(token) => {
+                    if i > 0 {
+                        out.push(b':')
+                        out.push(b':')
+                    }
+                    let text = self.lexed.text(self.lexed.token(token))
+                    var j: usize = 0
+                    while j < text.len() {
+                        out.push(text[j])
+                        j += 1
+                    }
+                },
+                Option::None => return Option::None,
+            }
+            i += 1
+        }
+        Option::Some(out)
+    }
+}

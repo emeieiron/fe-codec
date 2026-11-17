@@ -7,6 +7,10 @@ This directory holds `fe-codec-gen` rewritten in Fe, so generating serializers n
   enums, impl headers). A library with no I/O and no knowledge of Fe Codec.
 - `generator/` — ingot `fe_codec_gen`: the native executable. It ports `generator/src/*.rs`
   module for module and depends on `fe_syntax`.
+- `syntax-dump/` — ingot `fe_syntax_dump`: prints what `fe_syntax` parses, in the format of
+  `generator/examples/syntax_dump.rs`, which prints what fe-parser parses.
+  `tests/syntax_parity.py` requires the two to agree on every Fe file in the repository and in
+  the toolchain's `core` and `std` ingots.
 
 The Rust generator in `generator/` is the reference. `tests/generator_parity.py` runs both on
 every case in `tests/generator_corpus/` and requires the same results: identical output on
@@ -19,10 +23,14 @@ errors a failure with the same location prefix.
 export PATH=$HOME/.fe/bin:/Users/eieiron/dev/fe-mp/target/release:$PATH
 fe build --backend native tools/generator --out-dir target/fe     # → target/fe/fe_codec_gen
 cd tools/syntax && fe test --backend native && fe test             # parser tests, both backends
+fe build --backend native tools/syntax-dump --out-dir target/fe   # → target/fe/fe_syntax_dump
+cargo build --locked --example syntax_dump                         # → the fe-parser reference
+python3 tests/syntax_parity.py --rust target/debug/examples/syntax_dump --fe target/fe/fe_syntax_dump
 cargo build --locked                                               # → target/debug/fe-codec-gen, the reference
 ```
 
-`fe check <dir>` type-checks without running.
+`fe check <dir>` type-checks without running. Ingots that use `std::fs::Fs` set
+`target = "native"` in `fe.toml`, because `Fs` exists only on native targets.
 
 ## Fe as used here
 

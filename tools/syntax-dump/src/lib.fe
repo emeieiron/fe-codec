@@ -1,0 +1,360 @@
+//! Prints what `fe_syntax` parses from Fe source files, in the format of the Rust
+//! `syntax_dump` example, so the two parsers can be compared node by node.
+use core::{MemBuffer, Option, Result}
+use fe_syntax::{
+    ArgKind, File, FieldsKind, GenericKind, ItemKind, Modifiers, Run, Span, TypeKind, VariantKind, lex,
+    parse,
+}
+use std::env::Args
+use std::fs::Fs
+use std::io::{Stderr, Stdout, print_buffer}
+
+fn put<const N: usize>(_ out: mut MemBuffer, _ text: [u8; N]) {
+    var i: usize = 0
+    while i < N {
+        out.push(text[i])
+        i += 1
+    }
+}
+
+fn put_buf(_ out: mut MemBuffer, _ text: MemBuffer) {
+    var i: usize = 0
+    while i < text.len() {
+        out.push(text[i])
+        i += 1
+    }
+}
+
+fn put_num(_ out: mut MemBuffer, _ value: u64) {
+    write!(mut out, value)
+}
+
+fn put_usize(_ out: mut MemBuffer, _ value: usize) {
+    write!(mut out, value)
+}
+
+fn put_bool(_ out: mut MemBuffer, _ value: bool) {
+    if value {
+        out.push(b'1')
+    } else {
+        out.push(b'0')
+    }
+}
+
+/// `[text]` of a span, or `-`.
+fn put_span(_ out: mut MemBuffer, _ file: ref File, _ span: Option<Span>) {
+    match span {
+        Option::Some(s) => {
+            out.push(b'[')
+            put_buf(mut out, file.compact(s))
+            out.push(b']')
+        },
+        Option::None => out.push(b'-'),
+    }
+}
+
+fn put_modifiers(_ out: mut MemBuffer, _ file: ref File, _ mods: Modifiers) {
+    put(mut out, "pub=")
+    put_bool(mut out, mods.is_pub)
+    put(mut out, " vis=")
+    put_span(mut out, file, mods.vis)
+    put(mut out, " unsafe=")
+    put_bool(mut out, mods.is_unsafe)
+}
+
+/// `name@offset` of a token, or `-`.
+fn put_name(_ out: mut MemBuffer, _ file: ref File, _ name: Option<usize>) {
+    match name {
+        Option::Some(token) => {
+            put_buf(mut out, file.token_text(token))
+            out.push(b'@')
+            put_usize(mut out, file.token_start(token))
+        },
+        Option::None => out.push(b'-'),
+    }
+}
+
+fn put_literal(_ out: mut MemBuffer, _ file: ref File, _ span: Span) {
+    match file.literal_u64(span) {
+        Option::Some(value) => put_num(mut out, value),
+        Option::None => out.push(b'-'),
+    }
+}
+
+fn put_attrs(_ out: mut MemBuffer, _ file: ref File, _ attrs: Run, _ indent: usize) {
+    var i: usize = 0
+    while i < attrs.len {
+        let attr = file.attrs[attrs.start + i]
+        var k: usize = 0
+        while k < indent {
+            out.push(b' ')
+            k += 1
+        }
+        put(mut out, "attr ")
+        put_usize(mut out, attr.start)
+        put(mut out, " path=")
+        put_span(mut out, file, Option::Some(attr.path))
+        put(mut out, " args=")
+        put_bool(mut out, attr.has_args)
+        put(mut out, " value=")
+        match attr.value {
+            Option::Some(span) => {
+                match file.literal_u64(span) {
+                    Option::Some(value) => {
+                        put(mut out, "int ")
+                        put_num(mut out, value)
+                    },
+                    Option::None => put(mut out, "other"),
+                }
+            },
+            Option::None => out.push(b'-'),
+        }
+        out.push(b'\n')
+        i += 1
+    }
+}
+
+fn put_shape(_ out: mut MemBuffer, _ file: ref File, _ ty: usize) {
+    let node = file.types[ty]
+    match node.kind {
+        TypeKind::Array => {
+            match (node.elem, node.len) {
+                (Option::Some(elem), Option::Some(len)) => {
+                    put(mut out, "array(")
+                    put_shape(mut out, file, elem)
+                    out.push(b';')
+                    put_literal(mut out, file, len)
+                    put(mut out, ";[")
+                    put_buf(mut out, file.type_text(elem))
+                    put(mut out, "])")
+                },
+                _ => put(mut out, "other"),
+            }
+        },
+        TypeKind::Path => {
+            match file.path_name(ty) {
+                Option::None => put(mut out, "other"),
+                Option::Some(name) => {
+                    put(mut out, "path(")
+                    put_buf(mut out, name)
+                    let last = file.segments[node.segments.start + node.segments.len - 1]
+                    match last.args {
+                        Option::Some(args) => {
+                            var i: usize = 0
+                            while i < args.len {
+                                let arg = file.args[args.start + i]
+                                out.push(b';')
+                                match arg.kind {
+                                    ArgKind::Type => {
+                                        put(mut out, "type:")
+                                        match arg.ty {
+                                            Option::Some(t) => put_shape(mut out, file, t),
+                                            Option::None => out.push(b'-'),
+                                        }
+                                    },
+                                    ArgKind::Const => {
+                                        put(mut out, "const:")
+                                        put_literal(mut out, file, Span { first: arg.first, last: arg.last })
+                                    },
+                                    ArgKind::Other => out.push(b'x'),
+                                }
+                                i += 1
+                            }
+                        },
+                        Option::None => {},
+                    }
+                    out.push(b')')
+                },
+            }
+        },
+        TypeKind::Other => put(mut out, "other"),
+    }
+}
+
+fn put_field(_ out: mut MemBuffer, _ file: ref File, _ index: usize) {
+    let field = file.fields[index]
+    put(mut out, "  field ")
+    put_usize(mut out, field.start)
+    out.push(b' ')
+    put_modifiers(mut out, file, field.mods)
+    put(mut out, " name=")
+    put_name(mut out, file, field.name)
+    put(mut out, " ty=")
+    put_usize(mut out, file.types[field.ty].start)
+    put(mut out, " [")
+    put_buf(mut out, file.type_text(field.ty))
+    put(mut out, "] ")
+    put_shape(mut out, file, field.ty)
+    out.push(b'\n')
+    put_attrs(mut out, file, field.attrs, 4)
+}
+
+fn put_generics(_ out: mut MemBuffer, _ file: ref File, _ run: Run) {
+    var i: usize = 0
+    while i < run.len {
+        let param = file.gparams[run.start + i]
+        match param.kind {
+            GenericKind::Type => {
+                put(mut out, "  gtype ")
+                put_usize(mut out, param.start)
+                put(mut out, " name=")
+                put_name(mut out, file, param.name)
+                put(mut out, " bounds=")
+                put_span(mut out, file, param.bounds)
+                put(mut out, " default=")
+                put_bool(mut out, param.has_default)
+            },
+            GenericKind::Const => {
+                put(mut out, "  gconst ")
+                put_usize(mut out, param.start)
+                put(mut out, " name=")
+                put_name(mut out, file, param.name)
+                put(mut out, " ty=")
+                match param.ty {
+                    Option::Some(t) => {
+                        out.push(b'[')
+                        put_buf(mut out, file.type_text(t))
+                        out.push(b']')
+                    },
+                    Option::None => out.push(b'-'),
+                }
+                put(mut out, " default=")
+                put_bool(mut out, param.has_default)
+            },
+            GenericKind::Other => {
+                put(mut out, "  gother ")
+                put_usize(mut out, param.start)
+            },
+        }
+        out.push(b'\n')
+        i += 1
+    }
+}
+
+fn dump_file(_ out: mut MemBuffer, _ file: ref File) {
+    var n: usize = 0
+    while n < file.items.len() {
+        let item = file.items[n]
+        match item.kind {
+            ItemKind::Use => {
+                let tree = file.use_items[item.detail].tree
+                put(mut out, "use ")
+                put_usize(mut out, item.start)
+                out.push(b' ')
+                put_span(mut out, file, Option::Some(tree))
+                out.push(b'\n')
+            },
+            ItemKind::Struct => {
+                let model = file.structs[item.detail]
+                put(mut out, "struct ")
+                put_usize(mut out, item.start)
+                out.push(b' ')
+                put_modifiers(mut out, file, model.mods)
+                put(mut out, " name=")
+                put_name(mut out, file, Option::Some(model.name))
+                put(mut out, " generics=")
+                put_bool(mut out, model.has_generics)
+                put(mut out, " where=")
+                match model.where_token {
+                    Option::Some(token) => put_usize(mut out, file.token_start(token)),
+                    Option::None => out.push(b'-'),
+                }
+                put(mut out, " fields=")
+                match model.fields_kind {
+                    FieldsKind::Record => put(mut out, "record"),
+                    FieldsKind::Tuple => put(mut out, "tuple"),
+                    FieldsKind::NoFields => put(mut out, "none"),
+                }
+                out.push(b'\n')
+                put_attrs(mut out, file, model.attrs, 2)
+                put_generics(mut out, file, model.gparams)
+                var f: usize = 0
+                while f < model.fields.len {
+                    put_field(mut out, file, model.fields.start + f)
+                    f += 1
+                }
+            },
+            ItemKind::Enum => {
+                let model = file.enums[item.detail]
+                put(mut out, "enum ")
+                put_usize(mut out, item.start)
+                out.push(b' ')
+                put_modifiers(mut out, file, model.mods)
+                put(mut out, " name=")
+                put_name(mut out, file, Option::Some(model.name))
+                put(mut out, " generics=")
+                put_bool(mut out, model.has_generics)
+                put(mut out, " where=")
+                put_bool(mut out, model.where_token.is_some())
+                out.push(b'\n')
+                put_attrs(mut out, file, model.attrs, 2)
+                var v: usize = 0
+                while v < model.variants.len {
+                    let variant = file.variants[model.variants.start + v]
+                    put(mut out, "  variant ")
+                    put_usize(mut out, variant.start)
+                    put(mut out, " name=")
+                    put_name(mut out, file, Option::Some(variant.name))
+                    put(mut out, " kind=")
+                    match variant.kind {
+                        VariantKind::Unit => put(mut out, "unit"),
+                        VariantKind::Tuple => put(mut out, "tuple"),
+                        VariantKind::Record => put(mut out, "record"),
+                    }
+                    out.push(b'\n')
+                    put_attrs(mut out, file, variant.attrs, 4)
+                    v += 1
+                }
+            },
+            ItemKind::ImplTrait => {
+                let implementation = file.impls[item.detail]
+                put(mut out, "impl_trait ")
+                put_usize(mut out, item.start)
+                put(mut out, " trait=")
+                put_span(mut out, file, Option::Some(implementation.trait_ref))
+                put(mut out, " ty=")
+                match file.path_name(implementation.ty) {
+                    Option::Some(name) => put_buf(mut out, name),
+                    Option::None => out.push(b'-'),
+                }
+                out.push(b'\n')
+            },
+            ItemKind::Other => {
+                put(mut out, "other ")
+                put_usize(mut out, item.start)
+                out.push(b'\n')
+            },
+        }
+        n += 1
+    }
+}
+
+pub fn main() -> i32 uses (out: mut Stdout, err: mut Stderr, args: Args, fs: mut Fs) {
+    var index: usize = 1
+    var status: i32 = 0
+    while index < args.count() {
+        var text = MemBuffer::new(0)
+        put(mut text, "== ")
+        put_buf(mut text, MemBuffer::from_span(args.get(index).span()))
+        text.push(b'\n')
+        match fs.read(args.get(index)) {
+            Result::Ok(contents) => {
+                match parse(lex(contents)) {
+                    Result::Ok(file) => dump_file(mut text, file),
+                    Result::Err(error) => {
+                        put(mut text, "error ")
+                        put_usize(mut text, error.offset)
+                        text.push(b'\n')
+                    },
+                }
+            },
+            Result::Err(error) => {
+                eprintln!(args.get(index), ": error: cannot read: ", error.code())
+                status = 1
+            },
+        }
+        print_buffer(text)
+        index += 1
+    }
+    status
+}
