@@ -196,23 +196,35 @@ const gasMax = Math.max(...gas.map((g) => g.value));
 
       <ol class="steps">
         <li class="step">
-          <p class="step-num">01</p>
-          <h3>Describe</h3>
-          <p>Mark structs and unit enums <code>#[serializable]</code>.</p>
-          <Code code={describe} lang={fe} theme="css-variables" />
+          <p class="step-num" aria-hidden="true">01</p>
+          <div class="step-text">
+            <h3>Describe</h3>
+            <p>Mark structs and unit enums <code>#[serializable]</code>. They stay ordinary Fe types.</p>
+          </div>
+          <div class="step-code">
+            <Code code={describe} lang={fe} theme="css-variables" />
+          </div>
         </li>
         <li class="step">
-          <p class="step-num">02</p>
-          <h3>Generate</h3>
-          <p>Write the impls beside your models, or let FeMP run the generator on each build.</p>
-          <CopyCommand command="fe_codec_gen --source src/models.fe --out src/serializers.fe" label="Copy the generate command" />
-          <Code code={generated} lang={fe} theme="css-variables" />
+          <p class="step-num" aria-hidden="true">02</p>
+          <div class="step-text">
+            <h3>Generate</h3>
+            <p>Write the impls beside your models, or let FeMP run the generator on each build.</p>
+          </div>
+          <div class="step-code">
+            <CopyCommand command="fe_codec_gen --source src/models.fe --out src/serializers.fe" label="Copy the generate command" />
+            <Code code={generated} lang={fe} theme="css-variables" />
+          </div>
         </li>
         <li class="step">
-          <p class="step-num">03</p>
-          <h3>Use</h3>
-          <p>Encode and decode with any format. Bindings choose the type and the buffer.</p>
-          <Code code={use} lang={fe} theme="css-variables" />
+          <p class="step-num" aria-hidden="true">03</p>
+          <div class="step-text">
+            <h3>Use</h3>
+            <p>Encode and decode with any format. Bindings choose the type and the buffer.</p>
+          </div>
+          <div class="step-code">
+            <Code code={use} lang={fe} theme="css-variables" />
+          </div>
         </li>
       </ol>
     </div>
@@ -637,41 +649,71 @@ const gasMax = Math.max(...gas.map((g) => g.value));
   }
 
   /* ---- Steps ---- */
+  /* Steps run down a rail: number, then the text, then the code with room to breathe. */
   .steps {
     list-style: none;
     margin: 0;
     padding: 0;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 14px;
-    counter-reset: step;
   }
 
   .step {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    min-width: 0;
-    padding: 24px;
-    border-top: 2px solid var(--accent);
-    background: linear-gradient(var(--bg-raised), transparent 70%);
+    position: relative;
+    display: grid;
+    grid-template-columns: 56px minmax(0, 0.85fr) minmax(0, 2fr);
+    gap: 0 clamp(20px, 3vw, 44px);
+    padding-bottom: 48px;
     color: var(--fg-muted);
   }
 
-  .step h3 {
-    font-size: 1.6rem;
-    color: var(--fg);
+  .step:last-child {
+    padding-bottom: 0;
+  }
+
+  /* The rail joining one step's number to the next. */
+  .step:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    left: 27px;
+    top: 56px;
+    bottom: 0;
+    width: 1px;
+    background: linear-gradient(var(--accent), var(--line) 60%);
   }
 
   .step-num {
-    font: 600 0.78rem/1 var(--font-mono);
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    border: 1.5px solid var(--accent);
+    border-radius: 6px;
+    background: var(--accent-soft);
+    font: 600 0.95rem/1 var(--font-mono);
     color: var(--accent);
-    letter-spacing: 0.1em;
+    letter-spacing: 0.04em;
   }
 
-  .step :global(pre.astro-code) {
-    font-size: 0.76rem;
-    margin-top: 4px;
+  .step-text {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-top: 8px;
+  }
+
+  .step h3 {
+    font-size: 1.7rem;
+    color: var(--fg);
+  }
+
+  .step-code {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .step-code :global(pre.astro-code) {
+    font-size: 0.8rem;
   }
 
   /* ---- EIP-712 ---- */
@@ -838,8 +880,29 @@ const gasMax = Math.max(...gas.map((g) => g.value));
       grid-row: auto;
     }
 
-    .steps {
-      grid-template-columns: minmax(0, 1fr);
+    /* Narrower: the code moves under the text, beside the rail. */
+    .step {
+      grid-template-columns: 44px minmax(0, 1fr);
+      row-gap: 18px;
+    }
+
+    .step-code {
+      grid-column: 2;
+    }
+
+    .step-num {
+      width: 44px;
+      height: 44px;
+      font-size: 0.82rem;
+    }
+
+    .step:not(:last-child)::before {
+      left: 21px;
+      top: 44px;
+    }
+
+    .step-text {
+      padding-top: 4px;
     }
   }
 
@@ -865,6 +928,33 @@ const gasMax = Math.max(...gas.map((g) => g.value));
 
     .evidence article:last-child {
       border-bottom: 0;
+    }
+  }
+
+  /* Phones: the number sits above the heading and the code takes the full width. */
+  @media (max-width: 560px) {
+    .step {
+      grid-template-columns: minmax(0, 1fr);
+      row-gap: 14px;
+      padding-bottom: 40px;
+    }
+
+    .step:not(:last-child)::before {
+      display: none;
+    }
+
+    .step-num {
+      width: 36px;
+      height: 36px;
+      font-size: 0.75rem;
+    }
+
+    .step-code {
+      grid-column: 1;
+    }
+
+    .step-text {
+      padding-top: 0;
     }
   }
 </style>
