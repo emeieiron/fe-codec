@@ -20,7 +20,7 @@ errors a failure with the same location prefix.
 ## Building and testing
 
 ```bash
-export PATH=$HOME/.fe/bin:/Users/eieiron/dev/fe-mp/target/release:$PATH
+export PATH=$HOME/.fe/bin:$PATH                                    # fe 26.6.0; femp too, for the examples
 fe build --backend native tools/generator --out-dir target/fe     # → target/fe/fe_codec_gen
 cd tools/syntax && fe test --backend native && fe test             # parser tests, both backends
 fe build --backend native tools/syntax-dump --out-dir target/fe   # → target/fe/fe_syntax_dump
