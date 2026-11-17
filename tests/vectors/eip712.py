@@ -7,6 +7,7 @@ which tests/eip712_viem.mjs checks again with viem.
 Run with: python3 -I tests/vectors/eip712.py
 """
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -45,11 +46,13 @@ def permute(lanes):
     return lanes
 
 
-def keccak256(data: bytes) -> bytes:
+def sponge(data: bytes, domain: int) -> bytes:
+    """The Keccak[512] sponge with FIPS 202's multi-rate padding: the domain bits, zeros,
+    then a final 1 bit, so a message one byte short of a block gets the single byte
+    domain | 0x80. Keccak-256 uses domain 0x01 and SHA3-256 uses 0x06."""
     rate = 136
-    padded = bytearray(data) + b"\x01" + b"\x00" * ((-len(data) - 2) % rate) + b"\x80"
-    if len(padded) % rate:  # one-byte padding case
-        raise AssertionError("padding")
+    padded = bytearray(data) + bytes([domain]) + b"\x00" * ((-len(data) - 1) % rate)
+    padded[-1] |= 0x80
     lanes = [[0] * 5 for _ in range(5)]
     for block in range(0, len(padded), rate):
         for i in range(rate // 8):
@@ -60,6 +63,15 @@ def keccak256(data: bytes) -> bytes:
     return out
 
 
+def keccak256(data: bytes) -> bytes:
+    return sponge(data, 0x01)
+
+
+# The sponge and its padding, checked against hashlib's SHA3-256 at every length up to two
+# blocks, including the one-byte padding case of 135 bytes mod 136.
+for _length in range(0, 300):
+    _data = bytes((7 * _i + _length) % 256 for _i in range(_length))
+    assert sponge(_data, 0x06) == hashlib.sha3_256(_data).digest(), _length
 assert keccak256(b"").hex() == "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
 assert keccak256(b"abc").hex() == "4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45"
 
