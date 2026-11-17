@@ -9,4 +9,7 @@
 # Fe language server state
 /.fe-lsp/
 /.fe-lsp.json
-docs
+
+# The documentation site
+/site/node_modules/
+/site/.astro/

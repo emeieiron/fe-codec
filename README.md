@@ -18,6 +18,8 @@ WebAssembly, using fixed-capacity buffers and explicit limits.
 The runtime ingots are plain Fe and work with the official `fe` toolchain. FeMP is optional:
 it can run the generator for you and test across targets, but nothing you ship depends on it.
 
+The documentation is at [emeieiron.github.io/fe-codec](https://emeieiron.github.io/fe-codec/).
+
 ## Quick start
 
 Add the ingots to your `fe.toml`, pinned to a release revision. One Git source can supply
@@ -25,9 +27,9 @@ several ingots by name.
 
 ```toml
 [dependencies]
-fe_codec_core = { source = "https://example.invalid/fe-codec.git", rev = "<commit>", name = "fe_codec_core" }
-fe_codec_json = { source = "https://example.invalid/fe-codec.git", rev = "<commit>", name = "fe_codec_json" }
-fe_codec_cbor = { source = "https://example.invalid/fe-codec.git", rev = "<commit>", name = "fe_codec_cbor" }
+fe_codec_core = { source = "https://github.com/emeieiron/fe-codec.git", rev = "<commit>", name = "fe_codec_core" }
+fe_codec_json = { source = "https://github.com/emeieiron/fe-codec.git", rev = "<commit>", name = "fe_codec_json" }
+fe_codec_cbor = { source = "https://github.com/emeieiron/fe-codec.git", rev = "<commit>", name = "fe_codec_cbor" }
 ```
 
 Build the generator from the same revision. It is written in Fe, so you need only the Fe
@@ -308,7 +310,8 @@ examples/vanilla/        plain-Fe consumer, used by tests/vanilla.py
 examples/transfer/       FeMP project: conformance, properties, proofs, platform demos
 examples/compact_format/ third-party format example
 tests/                   consumer checks, reference vector encoders and the viem cross-check
-docs/                    design, wire profiles, extension guides
+docs/                    the documentation, also published by site/
+site/                    the documentation site (Astro)
 ```
 
 ```bash
@@ -338,6 +341,10 @@ python3 -I tests/vectors/eip712.py && node tests/eip712_viem.mjs --viem <path to
 
 ```bash
 python3 tests/consumer.py
+```
+
+```bash
+cd site && npm ci && npm run dev
 ```
 
 The FeMP project pins Fe 26.6.0. `tests/generator_cases.py` checks the generator's diagnostics,

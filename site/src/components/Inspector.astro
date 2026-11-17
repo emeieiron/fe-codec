@@ -1,0 +1,516 @@
+---
+// The Order from examples/vanilla and its golden encodings, which `fe test` checks there:
+// 119 bytes of JSON and 43 bytes of deterministic CBOR.
+
+interface Field {
+  name: string;
+  type: string;
+  id: number;
+  json: string;
+  /** CBOR key byte, then the value's head and payload. */
+  cbor: string[];
+  meaning: string;
+}
+
+const fields: Field[] = [
+  { name: 'id', type: 'u64', id: 1, json: '"id":7', cbor: ['01', '07'], meaning: 'key 1 · uint 7' },
+  {
+    name: 'buyer',
+    type: 'Address',
+    id: 2,
+    json: '"buyer":"0xd8da6bf26964af9d7eed9e03e53415d37aa96045"',
+    cbor: ['02', '54', 'd8', 'da', '6b', 'f2', '69', '64', 'af', '9d', '7e', 'ed', '9e', '03', 'e5', '34', '15', 'd3', '7a', 'a9', '60', '45'],
+    meaning: 'key 2 · bytes(20)',
+  },
+  {
+    name: 'total',
+    type: 'u256',
+    id: 3,
+    json: '"total":1000000000000000000',
+    cbor: ['03', '1b', '0d', 'e0', 'b6', 'b3', 'a7', '64', '00', '00'],
+    meaning: 'key 3 · uint64 10¹⁸',
+  },
+  { name: 'status', type: 'OrderStatus', id: 4, json: '"status":"Paid"', cbor: ['04', '01'], meaning: 'key 4 · variant 1' },
+  { name: 'note', type: 'Option<Text<32>>', id: 5, json: '"note":"gift"', cbor: ['05', '64', '67', '69', '66', '74'], meaning: 'key 5 · text(4)' },
+];
+
+const jsonBytes = 2 + fields.reduce((n, f) => n + f.json.length, 0) + fields.length - 1;
+const cborBytes = 1 + fields.reduce((n, f) => n + f.cbor.length, 0);
+const hue = (i: number) => `--c: var(--f${i + 1})`;
+
+/** `"name":value` split into the key and the value, for coloring. */
+function split(json: string) {
+  const colon = json.indexOf(':');
+  return [json.slice(0, colon), json.slice(colon + 1)];
+}
+
+function typeTokens(type: string) {
+  return type.split(/([<>])/).filter(Boolean);
+}
+---
+
+<figure class="inspector" data-inspector aria-label="One Order value, field by field, in Fe, JSON and CBOR">
+  <div class="bar">
+    <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span class="title">order · inspect</span>
+    <span class="legend" role="group" aria-label="Fields">
+      {
+        fields.map((field, i) => (
+          <button type="button" class="chip" data-field={field.name} style={hue(i)}>
+            {field.name}
+          </button>
+        ))
+      }
+    </span>
+  </div>
+
+  <div class="panes">
+    <section class="pane source" aria-label="src/models.fe">
+      <header><span>src/models.fe</span><span class="meta">Fe</span></header>
+      <pre class="code"><code><span class="row"><span class="attr">#[serializable]</span></span><span class="row"><span class="kw">pub struct</span> <span class="ty">Order</span> <span class="p">{'{'}</span></span>{fields.map((field, i) => (<span class="row line" data-field={field.name} style={hue(i)} tabindex="0"><span class="gutter">{field.id}</span><span>    </span><span class="kw">pub</span> {field.name}<span class="p">:</span> {typeTokens(field.type).map((t) => (/[<>]/.test(t) ? <span class="p">{t}</span> : <span class="ty">{t}</span>))}<span class="p">,</span></span>))}<span class="row"><span class="p">{'}'}</span></span></code></pre>
+      <p class="value">
+        <span class="label">value</span>
+        <code>id: 7, buyer: 0xd8dA…6045, total: 10¹⁸, status: Paid, note: "gift"</code>
+      </p>
+    </section>
+
+    <section class="pane json" aria-label="JSON encoding">
+      <header><span>fe_codec_json</span><span class="meta">{jsonBytes} bytes</span></header>
+      <p class="stream">
+        <span class="brace">{'{'}</span>{
+          fields.map((field, i) => {
+            const [key, value] = split(field.json);
+            return (
+              <>
+                <span class="member" data-field={field.name} style={hue(i)}>
+                  <span class="k">{key}</span>
+                  <span class="p">:</span>
+                  <span class="v">{value}</span>
+                </span>
+                {i < fields.length - 1 && <span class="p">,</span>}
+              </>
+            );
+          })
+        }<span class="brace">{'}'}</span>
+      </p>
+    </section>
+
+    <section class="pane cbor" aria-label="CBOR encoding">
+      <header><span>fe_codec_cbor</span><span class="meta">{cborBytes} bytes</span></header>
+      <div class="bytes">
+        <span class="group head">
+          <span class="cells"><span class="b">a5</span></span>
+          <span class="what">map · 5</span>
+        </span>
+        {
+          fields.map((field, i) => (
+            <span class="group" data-field={field.name} style={hue(i)}>
+              <span class="cells">
+                {field.cbor.map((byte, j) => (
+                  <span class:list={['b', { key: j === 0 }]}>{byte}</span>
+                ))}
+              </span>
+              <span class="what">{field.meaning}</span>
+            </span>
+          ))
+        }
+      </div>
+    </section>
+  </div>
+
+  <figcaption>
+    <span>Golden bytes from <code>examples/vanilla</code>, checked by <code>fe test</code> on the EVM and natively.</span>
+    <span class="hint">Hover or focus a field</span>
+  </figcaption>
+</figure>
+
+<script>
+  for (const root of document.querySelectorAll<HTMLElement>('[data-inspector]')) {
+    const targets = [...root.querySelectorAll<HTMLElement>('[data-field]')];
+    const names = [...new Set(targets.map((el) => el.dataset.field!))];
+    let auto: number | undefined;
+    let step = 0;
+
+    const show = (name: string | null) => {
+      root.classList.toggle('has-active', name !== null);
+      for (const el of targets) el.classList.toggle('on', el.dataset.field === name);
+    };
+
+    const stop = () => {
+      if (auto !== undefined) window.clearInterval(auto);
+      auto = undefined;
+    };
+
+    for (const el of targets) {
+      const name = el.dataset.field!;
+      el.addEventListener('pointerenter', () => {
+        stop();
+        show(name);
+      });
+      el.addEventListener('focus', () => {
+        stop();
+        show(name);
+      });
+      el.addEventListener('click', () => {
+        stop();
+        show(name);
+      });
+    }
+    root.addEventListener('pointerleave', () => show(null));
+    root.addEventListener('focusout', (event) => {
+      if (!root.contains(event.relatedTarget as Node)) show(null);
+    });
+
+    // Walk through the fields once the page settles, until someone takes over.
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      window.setTimeout(() => {
+        if (root.classList.contains('has-active')) return;
+        auto = window.setInterval(() => {
+          show(names[step % names.length]);
+          step += 1;
+          if (step > names.length * 2) {
+            stop();
+            show(null);
+          }
+        }, 1700);
+      }, 1400);
+    }
+  }
+</script>
+
+<style>
+  .inspector {
+    margin: 0;
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    background: var(--bg);
+    box-shadow: 0 30px 80px -40px var(--shadow-color);
+    overflow: hidden;
+  }
+
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg-raised);
+  }
+
+  .dots {
+    display: flex;
+    gap: 6px;
+  }
+
+  .dots i {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--line-strong);
+  }
+
+  .title {
+    font: 500 0.75rem/1 var(--font-mono);
+    color: var(--fg-faint);
+    letter-spacing: 0.06em;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  .chip {
+    padding: 4px 10px;
+    border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--c);
+    font: 600 0.72rem/1.2 var(--font-mono);
+    cursor: pointer;
+  }
+
+  .chip.on {
+    background: color-mix(in srgb, var(--c) 18%, transparent);
+  }
+
+  .panes {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .pane {
+    min-width: 0;
+    padding: 0 0 18px;
+    border-right: 1px solid var(--line);
+  }
+
+  .pane:last-child {
+    border-right: 0;
+  }
+
+  .pane header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 18px;
+    border-bottom: 1px dashed var(--line);
+    font: 500 0.72rem/1 var(--font-mono);
+    letter-spacing: 0.05em;
+    color: var(--fg-muted);
+  }
+
+  .pane header .meta {
+    color: var(--byte);
+  }
+
+  /* Source */
+  .code {
+    margin: 0;
+    padding: 16px 18px 6px 0;
+    font: 400 0.84rem/1.9 var(--font-mono);
+    color: var(--fg);
+    overflow-x: auto;
+  }
+
+  .row {
+    display: block;
+    position: relative;
+    padding-left: 18px;
+    border-left: 2px solid transparent;
+    white-space: pre;
+  }
+
+  .line {
+    cursor: default;
+    outline: none;
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      opacity 160ms ease;
+  }
+
+  .gutter {
+    position: absolute;
+    left: 4px;
+    font-size: 0.66rem;
+    color: var(--fg-faint);
+  }
+
+  .kw {
+    color: var(--astro-code-token-keyword);
+  }
+
+  .ty {
+    color: var(--astro-code-token-function);
+  }
+
+  .attr {
+    color: var(--astro-code-token-function);
+  }
+
+  .p {
+    color: var(--astro-code-token-punctuation);
+  }
+
+  .value {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    margin: 6px 18px 0;
+    padding-top: 12px;
+    border-top: 1px dashed var(--line);
+    font-size: 0.76rem;
+    color: var(--fg-muted);
+  }
+
+  .value .label {
+    font-family: var(--font-mono);
+    color: var(--fg-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: 0.64rem;
+  }
+
+  .value code {
+    font-size: 0.74rem;
+    line-height: 1.5;
+  }
+
+  /* JSON */
+  .stream {
+    padding: 16px 18px;
+    font: 400 0.82rem/1.9 var(--font-mono);
+    word-break: break-all;
+    color: var(--fg-muted);
+  }
+
+  .member {
+    border-radius: 3px;
+    padding: 1px 0;
+    transition:
+      background-color 160ms ease,
+      opacity 160ms ease,
+      color 160ms ease;
+  }
+
+  .member .k {
+    color: var(--astro-code-token-keyword);
+  }
+
+  .member .v {
+    color: var(--fg);
+  }
+
+  .brace {
+    color: var(--fg-faint);
+  }
+
+  /* CBOR */
+  .bytes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 10px;
+    padding: 16px 18px;
+  }
+
+  .group {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 6px;
+    border-radius: 5px;
+    transition: opacity 160ms ease;
+  }
+
+  .cells {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+  }
+
+  .b {
+    display: inline-grid;
+    place-items: center;
+    width: 2.2em;
+    height: 1.9em;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--bg-raised);
+    font: 500 0.74rem/1 var(--font-mono);
+    color: var(--fg);
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease;
+  }
+
+  .group .b.key {
+    border-color: color-mix(in srgb, var(--c) 55%, var(--line));
+    color: var(--c);
+  }
+
+  .head .b {
+    color: var(--byte);
+  }
+
+  .what {
+    font: 500 0.64rem/1.2 var(--font-mono);
+    letter-spacing: 0.04em;
+    color: var(--fg-faint);
+    white-space: nowrap;
+  }
+
+  /* Linked highlight */
+  .has-active :is(.line, .member, .group):not(.on) {
+    opacity: 0.32;
+  }
+
+  .line.on {
+    background: color-mix(in srgb, var(--c) 12%, transparent);
+    border-left-color: var(--c);
+  }
+
+  .member.on {
+    background: color-mix(in srgb, var(--c) 16%, transparent);
+  }
+
+  .member.on .k,
+  .member.on .v {
+    color: var(--c);
+  }
+
+  .group.on .b {
+    border-color: var(--c);
+    background: color-mix(in srgb, var(--c) 18%, var(--bg-raised));
+    color: var(--fg);
+  }
+
+  .group.on .what {
+    color: var(--c);
+  }
+
+  figcaption {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 12px 18px;
+    border-top: 1px solid var(--line);
+    background: var(--bg-raised);
+    font-size: 0.8rem;
+    color: var(--fg-muted);
+  }
+
+  figcaption code {
+    font-size: 0.78rem;
+    color: var(--fg);
+  }
+
+  .hint {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--fg-faint);
+    letter-spacing: 0.06em;
+  }
+
+  @media (hover: none) {
+    .hint::after {
+      content: ' (tap)';
+    }
+  }
+
+  @media (max-width: 1080px) {
+    .panes {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .source {
+      grid-column: 1 / -1;
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+    }
+  }
+
+  @media (max-width: 680px) {
+    .panes {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .pane {
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .pane:last-child {
+      border-bottom: 0;
+    }
+
+    .legend {
+      margin-left: 0;
+      width: 100%;
+    }
+  }
+</style>
