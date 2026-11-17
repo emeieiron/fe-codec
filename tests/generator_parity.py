@@ -279,6 +279,7 @@ def main(argv: list | None = None) -> int:
     parser.add_argument("--rust", required=True, type=Path, help="Rust fe-codec-gen binary")
     parser.add_argument("--fe", type=Path, help="Fe fe_codec_gen binary to compare with the Rust one")
     parser.add_argument("--case", help="run only the case with this directory name")
+    parser.add_argument("--mode", choices=sorted(MODE_FLAGS), help="run only this mode")
     parser.add_argument("--keep", action="store_true", help="keep temporary directories and print their paths")
     args = parser.parse_args(argv)
 
@@ -290,6 +291,8 @@ def main(argv: list | None = None) -> int:
 
     for case in cases:
         for mode in case.modes:
+            if args.mode and mode != args.mode:
+                continue
             for flow in [None, *case.flows]:
                 rust_trace = run_trace(rust, case, mode, flow, args.keep, kept)
                 runs += 1

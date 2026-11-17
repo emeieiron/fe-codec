@@ -1,21 +1,122 @@
-use core::MemBuffer
+//! `fe_codec_gen`: generates Fe Codec impls for `#[serializable]` structs and enums. A Fe port
+//! of `generator/src/main.rs`; `cli` has the command line and files, `schema` reads the
+//! declarations and `render` writes the module.
+use core::{MemBuffer, MemVec, Option, Result}
+use ingot::cli::{Options, at_path, module_name, parse_args, source_dir, write_output}
+use ingot::render::render
+use ingot::schema::{Diagnostic, Program, line_col}
+use ingot::text::{copy, is_utf8, same}
 use std::env::Args
 use std::fs::Fs
 use std::io::{Stderr, Stdout}
 
-/// Probe: reads the file named by the first argument and reports its length.
-pub fn main() -> i32 uses (out: mut Stdout, err: mut Stderr, args: Args, fs: mut Fs) {
-    if args.count() != 2 {
-        eprintln!("usage: fe_codec_gen FILE")
-        return 2
+/// `path:line:col: error: message`, from the byte offset of the error in its source.
+fn diagnostic(_ path: ref MemBuffer, _ text: ref MemBuffer, _ error: Diagnostic) -> MemBuffer {
+    let (line, column) = line_col(text, error.offset)
+    format!(path, ":", line, ":", column, ": error: ", error.message)
+}
+
+fn run(_ options: ref Options) -> Result<MemBuffer, ()> uses (out: mut Stdout, fs: mut Fs) {
+    var modules = MemVec<MemBuffer>::new()
+    var parent = MemBuffer::new(0)
+    var i: usize = 0
+    while i < options.sources.len() {
+        let path = ref options.sources[i]
+        let module = module_name(path)?
+        let dir = source_dir(path)?
+        if i == 0 {
+            parent = copy(dir)
+        } else if !same(parent, dir) {
+            return Result::Err(format!("error: every --source must be in the same ingot's src directory"))
+        }
+        var m: usize = 0
+        while m < modules.len() {
+            if same(modules[m], module) {
+                return Result::Err(format!(path, ": error: source given twice"))
+            }
+            m += 1
+        }
+        modules.push(module)
+        i += 1
     }
-    match fs.read(args.get(1)) {
-        Result::Ok(contents) => {
-            println!("read ", contents.len(), " bytes, syntax ", fe_syntax::VERSION)
-            0
+    match options.out {
+        Option::Some(ref path) => {
+            let module = module_name(path)?
+            var taken = false
+            var m: usize = 0
+            while m < modules.len() {
+                if same(modules[m], module) {
+                    taken = true
+                }
+                m += 1
+            }
+            if !same(parent, source_dir(path)?) || taken {
+                return Result::Err(format!("error: the output must be a different module beside the sources"))
+            }
         },
+        Option::None => {},
+    }
+
+    var texts = MemVec<MemBuffer>::new()
+    i = 0
+    while i < options.sources.len() {
+        let path = ref options.sources[i]
+        let bytes = match fs.read(path) {
+            Result::Ok(bytes) => bytes,
+            Result::Err(error) => return Result::Err(at_path(path, error)),
+        }
+        if !is_utf8(bytes) {
+            return Result::Err(format!(path, ": error: stream did not contain valid UTF-8"))
+        }
+        texts.push(bytes)
+        i += 1
+    }
+    var program = match Program::parse(texts) {
+        Result::Ok(program) => program,
         Result::Err(error) => {
-            eprintln!(args.get(1), ": error: cannot read: ", error.code())
+            return Result::Err(diagnostic(options.sources[error.source], texts[error.source], error))
+        },
+    }
+    let schema = match program.extract(modules) {
+        Result::Ok(schema) => schema,
+        Result::Err(error) => {
+            return Result::Err(diagnostic(options.sources[error.source], texts[error.source], error))
+        },
+    }
+    let output = render(program, schema)
+    if options.stdout {
+        if !out.write_stdout(output.span()) {
+            return Result::Err(format!("cannot write generated source: failed writing to stdout"))
+        }
+        Result::Ok(())
+    } else {
+        match options.out {
+            Option::Some(ref path) => write_output(path, output, options.check),
+            Option::None => Result::Ok(()),
+        }
+    }
+}
+
+pub fn main() -> i32 uses (out: mut Stdout, err: mut Stderr, args: Args, fs: mut Fs) {
+    let options = match parse_args() {
+        Result::Ok(options) => options,
+        Result::Err(exit) => {
+            if exit.to_stdout {
+                out.write_stdout(exit.text.span())
+            } else {
+                err.write_stderr(exit.text.span())
+            }
+            return exit.status
+        },
+    }
+    if options.eip712 {
+        eprintln!("error: --eip712 is not implemented yet")
+        return 1
+    }
+    match run(options) {
+        Result::Ok(_) => 0,
+        Result::Err(message) => {
+            eprintln!(message)
             1
         },
     }

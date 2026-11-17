@@ -1,6 +1,7 @@
 [ingot]
 name = "fe_codec_gen"
 version = "0.1.0"
+target = "native"
 
 [dependencies]
 fe_syntax = "../syntax"

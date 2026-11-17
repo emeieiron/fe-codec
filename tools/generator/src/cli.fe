@@ -1,0 +1,461 @@
+//! The command line, paths and the output file: a port of `generator/src/main.rs` apart from
+//! `main` itself, which is in `lib.fe`.
+use core::{MemBuffer, MemVec, Option, Result}
+use fe_syntax::is_keyword
+use ingot::render::header
+use ingot::text::{copy, is_text, part, same, starts_with}
+use std::env::Args
+use std::fs::{FileType, Fs}
+use std::io::{Error, ErrorKind}
+
+/// The parsed command line.
+pub struct Options {
+    /// `--source`, in order.
+    pub sources: MemVec<MemBuffer>,
+    pub out: Option<MemBuffer>,
+    pub stdout: bool,
+    pub check: bool,
+    pub eip712: bool,
+}
+
+/// Something to print instead of running, and the exit status that goes with it.
+pub struct Exit {
+    pub status: i32,
+    /// Printed on stdout for `--help` and `--version`, on stderr for a usage error.
+    pub to_stdout: bool,
+    pub text: MemBuffer,
+}
+
+fn long_help() -> MemBuffer {
+    format!("Generate Fe Codec impls for #[serializable] structs and enums.
+
+With --out, writes (or with --check, verifies) a module beside the sources. With --stdout, prints the module for a build system to place: this is the FSGP v1 generator mode, which writes no files.
+
+Usage: fe-codec-gen [OPTIONS] --source <SOURCE>
+
+Options:
+      --source <SOURCE>
+          A top-level module of the ingot that declares models. Repeat for several modules
+
+      --out <OUT>
+          The sibling module to create or update
+
+      --stdout
+          Print the module instead of writing it
+
+      --check
+          Report a missing or stale --out module without writing it
+
+      --eip712
+          Generate static EIP-712 struct hashing for #[eip712] structs instead of serializers. The module needs the fe_codec_eip712 ingot
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+")
+}
+
+fn short_help() -> MemBuffer {
+    format!("Generate Fe Codec impls for #[serializable] structs and enums
+
+Usage: fe-codec-gen [OPTIONS] --source <SOURCE>
+
+Options:
+      --source <SOURCE>  A top-level module of the ingot that declares models. Repeat for several modules
+      --out <OUT>        The sibling module to create or update
+      --stdout           Print the module instead of writing it
+      --check            Report a missing or stale --out module without writing it
+      --eip712           Generate static EIP-712 struct hashing for #[eip712] structs instead of serializers. The module needs the fe_codec_eip712 ingot
+  -h, --help             Print help (see more with '--help')
+  -V, --version          Print version
+")
+}
+
+fn usage_error(_ text: own MemBuffer) -> Exit {
+    Exit {
+        status: 2,
+        to_stdout: false,
+        text: format!("error: ", text, "\n\nFor more information, try '--help'.\n"),
+    }
+}
+
+fn arg_text(_ args: ref MemVec<MemBuffer>, _ index: usize) -> MemBuffer {
+    copy(args[index])
+}
+
+/// Which option an argument names, if it names one.
+const OPT_SOURCE: u8 = 1
+const OPT_OUT: u8 = 2
+const OPT_STDOUT: u8 = 3
+const OPT_CHECK: u8 = 4
+const OPT_EIP712: u8 = 5
+const OPT_HELP: u8 = 6
+const OPT_VERSION: u8 = 7
+const OPT_UNKNOWN: u8 = 0
+
+fn option_of(_ name: ref MemBuffer) -> u8 {
+    if name == "--source" {
+        OPT_SOURCE
+    } else if name == "--out" {
+        OPT_OUT
+    } else if name == "--stdout" {
+        OPT_STDOUT
+    } else if name == "--check" {
+        OPT_CHECK
+    } else if name == "--eip712" {
+        OPT_EIP712
+    } else if name == "--help" || name == "-h" {
+        OPT_HELP
+    } else if name == "--version" || name == "-V" {
+        OPT_VERSION
+    } else {
+        OPT_UNKNOWN
+    }
+}
+
+/// Reads the command line as clap would for this tool's options: `--source` (repeatable) and
+/// `--out` take a value as `--name value` or `--name=value`; `--stdout`, `--check` and
+/// `--eip712` are flags; `-h`/`--help` and `-V`/`--version` print and exit. The text of a usage
+/// error is shorter than clap's; its status, 2, is the same.
+pub fn parse_args() -> Result<Exit, Options> uses (args: Args) {
+    var words = MemVec<MemBuffer>::new()
+    var i: usize = 1
+    while i < args.count() {
+        words.push(MemBuffer::from_span(args.get(i).span()))
+        i += 1
+    }
+    var options = Options {
+        sources: MemVec<MemBuffer>::new(),
+        out: Option::None,
+        stdout: false,
+        check: false,
+        eip712: false,
+    }
+    var seen_stdout = false
+    var seen_check = false
+    var seen_eip712 = false
+    var rest_positional = false
+    i = 0
+    while i < words.len() {
+        let word = arg_text(words, i)
+        i += 1
+        if rest_positional || !starts_with(word, "-") || word == "-" {
+            return Result::Err(usage_error(format!("unexpected argument '", word, "' found")))
+        }
+        if word == "--" {
+            rest_positional = true
+            continue
+        }
+        var name = copy(word)
+        var value: Option<MemBuffer> = Option::None
+        if starts_with(word, "--") {
+            var eq: usize = 0
+            while eq < word.len() && word[eq] != b'=' {
+                eq += 1
+            }
+            if eq < word.len() {
+                name = part(word, 0, eq)
+                value = Option::Some(part(word, eq + 1, word.len()))
+            }
+        }
+        let option = option_of(name)
+        if option == OPT_UNKNOWN {
+            return Result::Err(usage_error(format!("unexpected argument '", word, "' found")))
+        }
+        if option == OPT_SOURCE || option == OPT_OUT {
+            let label = if option == OPT_SOURCE { format!("--source <SOURCE>") } else { format!("--out <OUT>") }
+            var taken = MemBuffer::new(0)
+            match value {
+                Option::Some(text) => taken = text,
+                Option::None => {
+                    if i >= words.len() || (starts_with(words[i], "-") && words[i].len() > 1) {
+                        return Result::Err(usage_error(
+                            format!("a value is required for '", label, "' but none was supplied"),
+                        ))
+                    }
+                    taken = arg_text(words, i)
+                    i += 1
+                },
+            }
+            if option == OPT_SOURCE {
+                options.sources.push(taken)
+            } else {
+                if options.out.is_some() {
+                    return Result::Err(usage_error(format!("the argument '", label, "' cannot be used multiple times")))
+                }
+                options.out = Option::Some(taken)
+            }
+            continue
+        }
+        if value.is_some() {
+            if option == OPT_HELP || option == OPT_VERSION {
+                return Result::Err(usage_error(format!("unexpected argument '", word, "' found")))
+            }
+            return Result::Err(usage_error(
+                format!("unexpected value '", value.unwrap(), "' for '", name, "' found; no more were expected"),
+            ))
+        }
+        if option == OPT_HELP {
+            let text = if name == "-h" { short_help() } else { long_help() }
+            return Result::Err(Exit { status: 0, to_stdout: true, text })
+        }
+        if option == OPT_VERSION {
+            return Result::Err(Exit { status: 0, to_stdout: true, text: format!("fe-codec-gen 0.1.0\n") })
+        }
+        if (option == OPT_STDOUT && seen_stdout) || (option == OPT_CHECK && seen_check)
+            || (option == OPT_EIP712 && seen_eip712) {
+            return Result::Err(usage_error(format!("the argument '", name, "' cannot be used multiple times")))
+        }
+        if option == OPT_STDOUT {
+            seen_stdout = true
+            options.stdout = true
+        } else if option == OPT_CHECK {
+            seen_check = true
+            options.check = true
+        } else {
+            seen_eip712 = true
+            options.eip712 = true
+        }
+    }
+    if options.stdout && options.out.is_some() {
+        return Result::Err(usage_error(format!("the argument '--stdout' cannot be used with '--out <OUT>'")))
+    }
+    if options.stdout && options.check {
+        return Result::Err(usage_error(format!("the argument '--stdout' cannot be used with '--check'")))
+    }
+    let missing_source = options.sources.len() == 0
+    let missing_out = options.out.is_none() && !options.stdout
+    if missing_source || missing_out {
+        var text = format!("the following required arguments were not provided:")
+        if missing_source {
+            write!(mut text, "\n  --source <SOURCE>")
+        }
+        if missing_out {
+            write!(mut text, "\n  --out <OUT>")
+        }
+        return Result::Err(usage_error(text))
+    }
+    Result::Ok(options)
+}
+
+/// `path: error: <reason> (os error N)`, how Rust prints an OS error for a path.
+pub fn at_path(_ path: ref MemBuffer, _ error: Error) -> MemBuffer {
+    format!(path, ": error: ", error, " (os error ", error.code(), ")")
+}
+
+/// The start and end of the last normal component of `path`, as Rust's `Path::file_name`
+/// finds it, which skips trailing separators and `.` components.
+fn file_name_range(_ path: ref MemBuffer) -> Option<(usize, usize)> {
+    var end = path.len()
+    while true {
+        while end > 0 && path[end - 1] == b'/' {
+            end -= 1
+        }
+        if end == 0 {
+            return Option::None
+        }
+        var start = end
+        while start > 0 && path[start - 1] != b'/' {
+            start -= 1
+        }
+        if end - start == 1 && path[start] == b'.' {
+            end = start
+            continue
+        }
+        if end - start == 2 && path[start] == b'.' && path[start + 1] == b'.' {
+            return Option::None
+        }
+        return Option::Some((start, end))
+    }
+    Option::None
+}
+
+/// The directory part of `path` as Rust's `Path::parent` gives it, with an empty parent
+/// standing for `.`.
+fn parent_of(_ path: ref MemBuffer) -> MemBuffer {
+    var end = path.len()
+    while end > 0 && path[end - 1] == b'/' {
+        end -= 1
+    }
+    if end == 0 {
+        if path.len() > 0 {
+            return format!("/")
+        }
+        return format!(".")
+    }
+    while end > 0 && path[end - 1] != b'/' {
+        end -= 1
+    }
+    while true {
+        while end > 1 && path[end - 1] == b'/' {
+            end -= 1
+        }
+        if end > 2 && path[end - 1] == b'.' && path[end - 2] == b'/' {
+            end -= 2
+        } else {
+            break
+        }
+    }
+    if end == 0 {
+        return format!(".")
+    }
+    if end == 1 && path[0] == b'/' {
+        return format!("/")
+    }
+    part(path, 0, end)
+}
+
+fn is_ident_name(_ name: ref MemBuffer) -> bool {
+    if name.len() == 0 {
+        return false
+    }
+    var i: usize = 0
+    while i < name.len() {
+        let b = name[i]
+        let letter = (b >= b'a' && b <= b'z') || (b >= b'A' && b <= b'Z') || b == b'_'
+        let digit = b >= b'0' && b <= b'9'
+        if !(letter || (i > 0 && digit)) {
+            return false
+        }
+        i += 1
+    }
+    true
+}
+
+/// The module a `.fe` file declares: its stem, which must be a name other than `_` and `lib`.
+pub fn module_name(_ path: ref MemBuffer) -> Result<MemBuffer, MemBuffer> {
+    let bad = format!(path, ": error: expected a named Fe module file")
+    let range = match file_name_range(path) {
+        Option::Some(range) => range,
+        Option::None => return Result::Err(bad),
+    }
+    let (start, end) = range
+    let name = part(path, start, end)
+    // The extension follows the last dot, unless that is the first byte.
+    var dot: usize = 0
+    var has_dot = false
+    var i: usize = 1
+    while i < name.len() {
+        if name[i] == b'.' {
+            dot = i
+            has_dot = true
+        }
+        i += 1
+    }
+    if !has_dot || name == ".." {
+        return Result::Err(bad)
+    }
+    let stem = part(name, 0, dot)
+    let extension = part(name, dot + 1, name.len())
+    if extension != "fe" || stem == "_" || stem == "lib" || !is_ident_name(stem) || is_keyword(stem.span()) {
+        return Result::Err(bad)
+    }
+    Result::Ok(stem)
+}
+
+/// The canonical `src` directory of `path`, which must be a top-level module of an ingot.
+pub fn source_dir(_ path: ref MemBuffer) -> Result<MemBuffer, MemBuffer> uses (fs: Fs) {
+    let parent = parent_of(path)
+    let dir = match fs.canonicalize(parent) {
+        Result::Ok(dir) => dir,
+        Result::Err(error) => return Result::Err(at_path(parent, error)),
+    }
+    let bad = format!(path, ": error: expected a top-level module in an ingot's src directory")
+    // The canonical path has no trailing separator, `.` or `..`.
+    var slash = dir.len()
+    while slash > 0 && dir[slash - 1] != b'/' {
+        slash -= 1
+    }
+    if slash == 0 || !is_text(part(dir, slash, dir.len()), "src") {
+        return Result::Err(bad)
+    }
+    var manifest = MemBuffer::new(0)
+    if slash > 1 {
+        write!(mut manifest, part(dir, 0, slash - 1))
+    }
+    write!(mut manifest, "/fe.toml")
+    let is_file = match fs.metadata(manifest) {
+        Result::Ok(metadata) => metadata.is_file(),
+        Result::Err(_) => false,
+    }
+    if !is_file {
+        return Result::Err(bad)
+    }
+    Result::Ok(dir)
+}
+
+/// Writes `output` to `path`, or with `check` only verifies it. A handwritten file, one that
+/// does not start with the generated header, is never replaced.
+///
+/// Rust writes a temporary file and renames it over `path`; Fe has no rename, so the file is
+/// written in place, and only after every check has passed.
+pub fn write_output(
+    _ path: ref MemBuffer,
+    _ output: ref MemBuffer,
+    _ check: bool,
+) -> Result<MemBuffer, ()> uses (fs: mut Fs) {
+    // `metadata` follows symbolic links; the directory listing does not, as `symlink_metadata`.
+    let name = match file_name_range(path) {
+        Option::Some(range) => part(path, range.0, range.1),
+        Option::None => MemBuffer::new(0),
+    }
+    var found = false
+    var regular = false
+    match fs.read_dir(parent_of(path)) {
+        Result::Ok(entries) => {
+            var i: usize = 0
+            while i < entries.len() {
+                if entries[i].name() == name.span() {
+                    found = true
+                    regular = match entries[i].file_type() {
+                        FileType::File => true,
+                        _ => false,
+                    }
+                }
+                i += 1
+            }
+        },
+        Result::Err(error) => {
+            match error.kind() {
+                ErrorKind::NotFound => {},
+                _ => return Result::Err(at_path(path, error)),
+            }
+        },
+    }
+    var existing = MemBuffer::new(0)
+    var has_existing = false
+    if found {
+        if !regular {
+            return Result::Err(format!(path, ": error: expected a regular output file"))
+        }
+        match fs.read(path) {
+            Result::Ok(bytes) => {
+                existing = bytes
+                has_existing = true
+            },
+            Result::Err(error) => return Result::Err(at_path(path, error)),
+        }
+    }
+    if has_existing && same(existing, output) {
+        return Result::Ok(())
+    }
+    if check {
+        return Result::Err(format!(path, ": error: generated serializers are missing or stale"))
+    }
+    if has_existing && !starts_with_buffer(existing, header()) {
+        return Result::Err(format!(path, ": error: refusing to replace handwritten source"))
+    }
+    match fs.write(path, output.span()) {
+        Result::Ok(_) => Result::Ok(()),
+        Result::Err(error) => Result::Err(at_path(path, error)),
+    }
+}
+
+fn starts_with_buffer(_ text: ref MemBuffer, _ prefix: ref MemBuffer) -> bool {
+    if prefix.len() > text.len() {
+        return false
+    }
+    same(part(text, 0, prefix.len()), prefix)
+}

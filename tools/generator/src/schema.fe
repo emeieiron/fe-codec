@@ -1,0 +1,1034 @@
+//! Reads `#[serializable]` declarations from Fe source files: a port of `generator/src/schema.rs`.
+//!
+//! The generator does not resolve types. Field types are copied into the generated module,
+//! which imports everything its source modules import, and the Fe compiler checks that each
+//! one implements the codec traits. The checks here are the ones the compiler cannot make or
+//! report well: unsupported integer widths, values that cannot round-trip, local types that
+//! were not marked serializable, and arrays that need `Copy` elements.
+//!
+//! Every name and type is kept as an index into its source's `File`, so the model types are
+//! plain `Copy` values; the text is read back from the file when it is needed.
+use core::marker::Copy
+use core::{MemBuffer, MemVec, Option, Result}
+use fe_syntax::{
+    ArgKind, File, FieldsKind, GenericArg, GenericKind, ItemKind, Modifiers, Run, Span, TypeKind,
+    VariantKind, lex, parse,
+}
+use ingot::text::{contains, copy, ends_with, is_text, same, starts_with}
+
+const MAX_NAME_BYTES: usize = 31
+/// Literal-length arrays of non-`Copy` elements are decoded element by element up to this
+/// length.
+pub const MAX_UNROLLED_ELEMENTS: u64 = 64
+
+/// An error at a byte offset of one source file.
+pub struct Diagnostic {
+    /// Index of the source file the offset refers to.
+    pub source: usize,
+    pub offset: usize,
+    pub message: MemBuffer,
+}
+
+fn fail<T>(_ source: usize, _ offset: usize, _ message: own MemBuffer) -> Result<Diagnostic, T> {
+    Result::Err(Diagnostic { source, offset, message })
+}
+
+/// A generic parameter. `name` is a token of the declaring source. A type parameter has its
+/// `bounds`; a const parameter has its type node `ty`. `copy` is set when decoding builds
+/// arrays of the parameter, so it must be `Copy`.
+pub struct Generic {
+    pub is_const: bool,
+    pub name: usize,
+    pub bounds: Option<Span>,
+    pub ty: Option<usize>,
+    pub copy: bool,
+}
+
+impl Copy for Generic {}
+
+/// A field of a record. `name` is a token and `ty` a type node of the declaring source.
+pub struct Field {
+    pub name: usize,
+    pub ty: usize,
+    pub optional: bool,
+    pub id: u64,
+    /// For a literal-length array decoded element by element: the element type node.
+    pub unrolled: bool,
+    pub unrolled_element: usize,
+    pub unrolled_length: u64,
+    /// Byte offset of the field in its source, for diagnostics.
+    pub offset: usize,
+}
+
+impl Copy for Field {}
+
+pub struct Variant {
+    pub name: usize,
+    pub id: u64,
+}
+
+impl Copy for Variant {}
+
+/// A struct or enum. `generics` is a run of `Output::generics`; `members` a run of
+/// `Output::fields` (in ascending ID order, which is their schema position) for a record or of
+/// `Output::variants` for an enum.
+pub struct Model {
+    pub name: usize,
+    /// Marked `#[eip712]`: `--eip712` generates static struct hashing for it.
+    pub eip712: bool,
+    /// The source file and byte offset of the declaration, for diagnostics.
+    pub source: usize,
+    pub offset: usize,
+    pub is_record: bool,
+    pub generics: Run,
+    pub members: Run,
+}
+
+impl Copy for Model {}
+
+/// Everything the renderer needs. Names and types are indices into the sources' `File`s.
+pub struct Output {
+    /// Source module names, imported by glob.
+    pub modules: MemVec<MemBuffer>,
+    /// The sources' own `use` items, which field types may rely on.
+    pub use_items: MemVec<MemBuffer>,
+    pub models: MemVec<Model>,
+    pub generics: MemVec<Generic>,
+    pub fields: MemVec<Field>,
+    pub variants: MemVec<Variant>,
+}
+
+/// A local struct or enum, whether it is serializable and whether it implements `Copy`.
+struct Local {
+    source: usize,
+    name: usize,
+    serializable: bool,
+    copy: bool,
+}
+
+impl Copy for Local {}
+
+/// The parsed sources and the local declarations they make.
+pub struct Program {
+    pub files: MemVec<File>,
+    locals: MemVec<Local>,
+}
+
+/// The 1-based line and column (counted in bytes) of byte `offset` of `text`.
+pub fn line_col(_ text: ref MemBuffer, _ offset: usize) -> (usize, usize) {
+    var end = offset
+    if end > text.len() {
+        end = text.len()
+    }
+    var line: usize = 1
+    var line_start: usize = 0
+    var i: usize = 0
+    while i < end {
+        if text[i] == b'\n' {
+            line += 1
+            line_start = i + 1
+        }
+        i += 1
+    }
+    (line, end - line_start + 1)
+}
+
+/// Which parts of a field type the checks inspect.
+enum TyKind {
+    Path,
+    Array,
+    Other,
+}
+
+impl Copy for TyKind {}
+
+/// How the type `ty` of `file` reads to the generator, as `parse_ty` in `schema.rs` decides.
+fn ty_kind(_ file: ref File, _ ty: usize) -> TyKind {
+    let node = file.types[ty]
+    match node.kind {
+        TypeKind::Array => match node.elem {
+            Option::Some(_) => TyKind::Array,
+            Option::None => TyKind::Other,
+        },
+        TypeKind::Path => match file.path_name(ty) {
+            Option::Some(_) => TyKind::Path,
+            Option::None => TyKind::Other,
+        },
+        TypeKind::Other => TyKind::Other,
+    }
+}
+
+/// The name of a path type.
+fn ty_name(_ file: ref File, _ ty: usize) -> MemBuffer {
+    match file.path_name(ty) {
+        Option::Some(name) => name,
+        Option::None => MemBuffer::new(0),
+    }
+}
+
+/// The element type node of an array type.
+fn array_elem(_ file: ref File, _ ty: usize) -> usize {
+    match file.types[ty].elem {
+        Option::Some(elem) => elem,
+        Option::None => ty,
+    }
+}
+
+/// The literal length of an array type.
+fn array_len(_ file: ref File, _ ty: usize) -> Option<u64> {
+    match file.types[ty].len {
+        Option::Some(span) => file.literal_u64(span),
+        Option::None => Option::None,
+    }
+}
+
+/// The generic arguments of a path type's last segment.
+fn arg_run(_ file: ref File, _ ty: usize) -> Run {
+    let node = file.types[ty]
+    if node.segments.len == 0 {
+        return Run { start: 0, len: 0 }
+    }
+    match file.segments[node.segments.start + node.segments.len - 1].args {
+        Option::Some(run) => run,
+        Option::None => Run { start: 0, len: 0 },
+    }
+}
+
+/// The type node of argument `index` of a path type, none where the argument is not a type.
+fn arg_ty(_ file: ref File, _ ty: usize, _ index: usize) -> Option<usize> {
+    let run = arg_run(file, ty)
+    let arg = file.args[run.start + index]
+    match arg.kind {
+        ArgKind::Type => arg.ty,
+        _ => Option::None,
+    }
+}
+
+fn is_option(_ name: ref MemBuffer) -> bool {
+    name == "Option" || name == "core::Option" || name == "core::option::Option"
+}
+
+fn is_primitive(_ name: ref MemBuffer) -> bool {
+    name == "bool" || name == "u8" || name == "u16" || name == "u32" || name == "u64"
+        || name == "u128" || name == "u256" || name == "i8" || name == "i16" || name == "i32"
+        || name == "i64" || name == "i128" || name == "i256"
+}
+
+/// The payload of `Option<T>`: the one type argument of an `Option` path.
+fn option_payload(_ file: ref File, _ ty: usize) -> Option<usize> {
+    match ty_kind(file, ty) {
+        TyKind::Path => {},
+        _ => return Option::None,
+    }
+    if !is_option(ty_name(file, ty)) {
+        return Option::None
+    }
+    if arg_run(file, ty).len != 1 {
+        return Option::None
+    }
+    arg_ty(file, ty, 0)
+}
+
+/// Whether `name` is a type parameter among `generics`.
+fn is_parameter(_ file: ref File, _ generics: ref MemVec<Generic>, _ name: ref MemBuffer) -> bool {
+    var i: usize = 0
+    while i < generics.len() {
+        let generic = generics[i]
+        if !generic.is_const && same(file.token_text(generic.name), name) {
+            return true
+        }
+        i += 1
+    }
+    false
+}
+
+/// Records that decoding builds arrays of the parameter `name`.
+fn mark_copy(_ file: ref File, _ generics: mut MemVec<Generic>, _ name: ref MemBuffer) {
+    var i: usize = 0
+    while i < generics.len() {
+        var generic = generics[i]
+        if !generic.is_const && same(file.token_text(generic.name), name) {
+            generic.copy = true
+            generics.set(i, generic)
+        }
+        i += 1
+    }
+}
+
+/// The attribute path `attr`, compacted.
+fn attr_path(_ file: ref File, _ run: Run, _ index: usize) -> MemBuffer {
+    file.compact(file.attrs[run.start + index].path)
+}
+
+/// Whether the attributes carry the attribute `name`.
+fn marked<const N: usize>(_ file: ref File, _ attrs: Run, _ name: [u8; N]) -> bool {
+    var i: usize = 0
+    while i < attrs.len {
+        if is_text(attr_path(file, attrs, i), name) {
+            return true
+        }
+        i += 1
+    }
+    false
+}
+
+/// Whether `mods` make an item or field `pub` or `pub(ingot)`.
+fn visible(_ file: ref File, _ mods: Modifiers) -> bool {
+    if !mods.is_pub {
+        return false
+    }
+    match mods.vis {
+        Option::Some(span) => contains(file.compact(span), "ingot"),
+        Option::None => true,
+    }
+}
+
+/// Whether the attributes carry `#[serializable]`, which takes no arguments.
+fn serializable(_ file: ref File, _ source: usize, _ attrs: Run) -> Result<Diagnostic, bool> {
+    var found = false
+    var i: usize = 0
+    while i < attrs.len {
+        let attribute = file.attrs[attrs.start + i]
+        let path = attr_path(file, attrs, i)
+        if path == "serializable" {
+            if attribute.has_args || attribute.value.is_some() {
+                return fail(source, attribute.start, format!("#[serializable] takes no arguments"))
+            }
+            found = true
+        } else if path == "codec_id" {
+            return fail(source, attribute.start, format!("codec_id belongs on fields and enum variants"))
+        }
+        i += 1
+    }
+    Result::Ok(found)
+}
+
+/// Fails if a schema name token is longer than `MAX_NAME_BYTES`.
+fn check_name(_ file: ref File, _ source: usize, _ name: Option<usize>, _ site: usize) -> Result<Diagnostic, ()> {
+    match name {
+        Option::None => fail(source, site, format!("missing name")),
+        Option::Some(token) => {
+            if file.token_text(token).len() > MAX_NAME_BYTES {
+                return fail(source, site, format!("schema name exceeds ", MAX_NAME_BYTES, " bytes"))
+            }
+            Result::Ok(())
+        },
+    }
+}
+
+/// Parses every source, reporting the first syntax error.
+pub fn parse_sources(_ texts: ref MemVec<MemBuffer>) -> Result<Diagnostic, MemVec<File>> {
+    var files = MemVec<File>::new()
+    var index: usize = 0
+    while index < texts.len() {
+        match parse(lex(copy(texts[index]))) {
+            Result::Ok(file) => files.push(file),
+            Result::Err(error) => {
+                return Result::Err(Diagnostic { source: index, offset: error.offset, message: error.message })
+            },
+        }
+        index += 1
+    }
+    Result::Ok(files)
+}
+
+/// Explicit IDs, which every member must have when one does, or declaration positions counted
+/// from `first`.
+fn resolve_ids(
+    _ source: usize,
+    _ ids: ref MemVec<Option<u64>>,
+    _ first: u64,
+    _ site: usize,
+) -> Result<Diagnostic, MemVec<u64>> {
+    var result = MemVec<u64>::new()
+    var any = false
+    var all = true
+    var i: usize = 0
+    while i < ids.len() {
+        match ids[i] {
+            Option::Some(_) => any = true,
+            Option::None => all = false,
+        }
+        i += 1
+    }
+    if !any {
+        var id = first
+        i = 0
+        while i < ids.len() {
+            result.push(id)
+            id += 1
+            i += 1
+        }
+        return Result::Ok(result)
+    }
+    if !all {
+        return fail(source, site, format!("assign codec_id to every member of an explicitly numbered type"))
+    }
+    i = 0
+    while i < ids.len() {
+        match ids[i] {
+            Option::Some(id) => result.push(id),
+            Option::None => {},
+        }
+        i += 1
+    }
+    i = 0
+    while i < result.len() {
+        var j = i + 1
+        while j < result.len() {
+            if result[i] == result[j] {
+                return fail(source, site, format!("duplicate codec_id in type"))
+            }
+            j += 1
+        }
+        i += 1
+    }
+    if first == 1 {
+        i = 0
+        while i < result.len() {
+            if result[i] == 0 {
+                return fail(source, site, format!("a field codec_id must be positive"))
+            }
+            i += 1
+        }
+    }
+    Result::Ok(result)
+}
+
+/// The `codec_id` of a field or variant, if it has one.
+fn explicit_id(_ file: ref File, _ source: usize, _ attrs: Run) -> Result<Diagnostic, Option<u64>> {
+    var id: Option<u64> = Option::None
+    var i: usize = 0
+    while i < attrs.len {
+        let attribute = file.attrs[attrs.start + i]
+        let path = attr_path(file, attrs, i)
+        if (starts_with(path, "codec") && path != "codec_id") || path == "serializable" {
+            return fail(
+                source,
+                attribute.start,
+                format!("unknown codec attribute '", path, "'; fields and variants take codec_id"),
+            )
+        }
+        if path != "codec_id" {
+            i += 1
+            continue
+        }
+        if id.is_some() {
+            return fail(source, attribute.start, format!("duplicate codec_id attribute"))
+        }
+        id = match attribute.value {
+            Option::Some(span) => file.literal_u64(span),
+            Option::None => Option::None,
+        }
+        if id.is_none() {
+            return fail(source, attribute.start, format!("codec_id must be an unsigned 64-bit integer literal"))
+        }
+        i += 1
+    }
+    Result::Ok(id)
+}
+
+const COPY_YES: u8 = 0
+const COPY_NO: u8 = 1
+const COPY_UNKNOWN: u8 = 2
+
+impl Program {
+    /// Parses the sources, which must parse without errors.
+    pub fn parse(_ texts: ref MemVec<MemBuffer>) -> Result<Diagnostic, Program> {
+        let files = parse_sources(texts)?
+        Result::Ok(Program { files, locals: MemVec<Local>::new() })
+    }
+
+    fn local(self, _ file: ref File, _ name: ref MemBuffer) -> Option<Local> {
+        var i: usize = 0
+        while i < self.locals.len() {
+            let local = self.locals[i]
+            if same(self.files[local.source].token_text(local.name), name) {
+                return Option::Some(local)
+            }
+            i += 1
+        }
+        Option::None
+    }
+
+    /// Everything the renderer needs, or the first problem in the sources.
+    pub fn extract(mut self, _ modules: ref MemVec<MemBuffer>) -> Result<Diagnostic, Output> {
+        // Every struct and enum declared in the sources, and which implement `Copy`.
+        var copies = MemVec<MemBuffer>::new()
+        var index: usize = 0
+        while index < self.files.len() {
+            let file = ref self.files[index]
+            var n: usize = 0
+            while n < file.items.len() {
+                let item = file.items[n]
+                n += 1
+                var name: usize = 0
+                var is_serializable = false
+                match item.kind {
+                    ItemKind::Struct => {
+                        let model = file.structs[item.detail]
+                        is_serializable = serializable(file, index, model.attrs)?
+                        name = model.name
+                    },
+                    ItemKind::Enum => {
+                        let model = file.enums[item.detail]
+                        is_serializable = serializable(file, index, model.attrs)?
+                        name = model.name
+                    },
+                    ItemKind::ImplTrait => {
+                        let implementation = file.impls[item.detail]
+                        let text = file.compact(implementation.trait_ref)
+                        if text == "Copy" || ends_with(text, "::Copy") {
+                            match file.path_name(implementation.ty) {
+                                Option::Some(name) => copies.push(name),
+                                Option::None => {},
+                            }
+                        }
+                        continue
+                    },
+                    _ => continue,
+                }
+                let text = file.token_text(name)
+                if self.local(file, text).is_some() {
+                    return fail(index, file.token_start(name), format!("duplicate declaration '", text, "'"))
+                }
+                self.locals.push(Local { source: index, name, serializable: is_serializable, copy: false })
+            }
+            index += 1
+        }
+        var c: usize = 0
+        while c < copies.len() {
+            var l: usize = 0
+            while l < self.locals.len() {
+                var local = self.locals[l]
+                if same(self.files[local.source].token_text(local.name), copies[c]) {
+                    local.copy = true
+                    self.locals.set(l, local)
+                }
+                l += 1
+            }
+            c += 1
+        }
+
+        var output = Output {
+            modules: MemVec<MemBuffer>::new(),
+            use_items: MemVec<MemBuffer>::new(),
+            models: MemVec<Model>::new(),
+            generics: MemVec<Generic>::new(),
+            fields: MemVec<Field>::new(),
+            variants: MemVec<Variant>::new(),
+        }
+        var m: usize = 0
+        while m < modules.len() {
+            output.modules.push(copy(modules[m]))
+            m += 1
+        }
+        index = 0
+        while index < self.files.len() {
+            let file = ref self.files[index]
+            var n: usize = 0
+            while n < file.items.len() {
+                let item = file.items[n]
+                n += 1
+                match item.kind {
+                    ItemKind::Use => {
+                        let tree = file.use_items[item.detail].tree
+                        var text = MemBuffer::new(0)
+                        write!(mut text, "use ", file.compact(tree))
+                        var seen = false
+                        var u: usize = 0
+                        while u < output.use_items.len() {
+                            if same(output.use_items[u], text) {
+                                seen = true
+                            }
+                            u += 1
+                        }
+                        if !seen {
+                            output.use_items.push(text)
+                        }
+                    },
+                    ItemKind::Struct => {
+                        let model = file.structs[item.detail]
+                        if serializable(file, index, model.attrs)? {
+                            self.record(index, item.start, model, mut output)?
+                            let last = output.models.len() - 1
+                            var record = output.models[last]
+                            record.eip712 = marked(file, model.attrs, "eip712")
+                            output.models.set(last, record)
+                        } else if marked(file, model.attrs, "eip712") {
+                            return fail(index, item.start, format!("#[eip712] types must also be #[serializable]"))
+                        }
+                    },
+                    ItemKind::Enum => {
+                        let model = file.enums[item.detail]
+                        if serializable(file, index, model.attrs)? {
+                            self.enumeration(index, item.start, model, mut output)?
+                        }
+                    },
+                    _ => {},
+                }
+            }
+            index += 1
+        }
+        if output.models.len() == 0 {
+            return fail(0, 0, format!("no #[serializable] struct or enum found"))
+        }
+        Result::Ok(output)
+    }
+
+    fn record(
+        self,
+        _ source: usize,
+        _ start: usize,
+        _ model: fe_syntax::StructItem,
+        _ output: mut Output,
+    ) -> Result<Diagnostic, ()> {
+        let file = ref self.files[source]
+        self.header(source, start, model.mods, Option::Some(model.name))?
+        let name = file.token_text(model.name)
+        let generics = self.generics(source, start, model)?
+        match model.fields_kind {
+            FieldsKind::Record => {},
+            _ => return fail(source, start, format!("expected a struct with named fields")),
+        }
+        var generics = generics
+        var fields = MemVec<Field>::new()
+        var ids = MemVec<Option<u64>>::new()
+        var f: usize = 0
+        while f < model.fields.len {
+            let field = file.fields[model.fields.start + f]
+            f += 1
+            ids.push(explicit_id(file, source, field.attrs)?)
+            if !visible(file, field.mods) || field.mods.is_unsafe {
+                return fail(source, field.start, format!("serializable fields must be `pub` or `pub(ingot)`, and safe"))
+            }
+            check_name(file, source, field.name, field.start)?
+            let field_name = match field.name {
+                Option::Some(token) => token,
+                Option::None => 0,
+            }
+            let field_text = file.token_text(field_name)
+            var d: usize = 0
+            while d < fields.len() {
+                if same(file.token_text(fields[d].name), field_text) {
+                    return fail(source, field.start, format!("duplicate field '", field_text, "'"))
+                }
+                d += 1
+            }
+            let site = file.types[field.ty].start
+            self.check(source, field.ty, name, site, generics)?
+            let optional = option_payload(file, field.ty).is_some()
+            var unrolled = false
+            var unrolled_element: usize = 0
+            var unrolled_length: u64 = 0
+            if optional {
+                self.nested_arrays(source, field.ty, mut generics, site)?
+            } else {
+                let kind = ty_kind(file, field.ty)
+                match kind {
+                    TyKind::Array => {
+                        let element = array_elem(file, field.ty)
+                        let length = array_len(file, field.ty)
+                        self.nested_arrays(source, element, mut generics, site)?
+                        let element_is_parameter = match ty_kind(file, element) {
+                            TyKind::Path => is_parameter(file, generics, ty_name(file, element)),
+                            _ => false,
+                        }
+                        let copyness = self.copyness(source, element, generics)
+                        var unroll = false
+                        match length {
+                            Option::Some(length) => {
+                                if length == 0 {
+                                    unroll = true
+                                } else {
+                                    unroll = !element_is_parameter && copyness != COPY_YES
+                                        && length <= MAX_UNROLLED_ELEMENTS
+                                }
+                            },
+                            Option::None => {},
+                        }
+                        if !unroll {
+                            self.array_element(source, element, mut generics, site)?
+                        } else {
+                            unrolled = true
+                            unrolled_element = element
+                            unrolled_length = match length {
+                                Option::Some(length) => length,
+                                Option::None => 0,
+                            }
+                        }
+                    },
+                    _ => self.nested_arrays(source, field.ty, mut generics, site)?,
+                }
+            }
+            fields.push(Field {
+                name: field_name,
+                ty: field.ty,
+                optional,
+                id: 0,
+                unrolled,
+                unrolled_element,
+                unrolled_length,
+                offset: field.start,
+            })
+        }
+        let resolved = resolve_ids(source, ids, 1, start)?
+        var i: usize = 0
+        while i < fields.len() {
+            var field = fields[i]
+            field.id = resolved[i]
+            fields.set(i, field)
+            i += 1
+        }
+        // A stable insertion sort by ID.
+        i = 1
+        while i < fields.len() {
+            var j = i
+            while j > 0 && fields[j - 1].id > fields[j].id {
+                fields.swap(j - 1, j)
+                j -= 1
+            }
+            i += 1
+        }
+        let first_generic = output.generics.len()
+        i = 0
+        while i < generics.len() {
+            output.generics.push(generics[i])
+            i += 1
+        }
+        let first_field = output.fields.len()
+        i = 0
+        while i < fields.len() {
+            output.fields.push(fields[i])
+            i += 1
+        }
+        output.models.push(Model {
+            name: model.name,
+            eip712: false,
+            source,
+            offset: start,
+            is_record: true,
+            generics: Run { start: first_generic, len: generics.len() },
+            members: Run { start: first_field, len: fields.len() },
+        })
+        Result::Ok(())
+    }
+
+    fn enumeration(
+        self,
+        _ source: usize,
+        _ start: usize,
+        _ model: fe_syntax::EnumItem,
+        _ output: mut Output,
+    ) -> Result<Diagnostic, ()> {
+        let file = ref self.files[source]
+        self.header(source, start, model.mods, Option::Some(model.name))?
+        if model.has_generics || model.where_token.is_some() {
+            return fail(source, start, format!("generic enums are unsupported"))
+        }
+        var variants = MemVec<Variant>::new()
+        var ids = MemVec<Option<u64>>::new()
+        var v: usize = 0
+        while v < model.variants.len {
+            let variant = file.variants[model.variants.start + v]
+            v += 1
+            ids.push(explicit_id(file, source, variant.attrs)?)
+            match variant.kind {
+                VariantKind::Unit => {},
+                _ => return fail(source, variant.start, format!("only unit enum variants are supported")),
+            }
+            check_name(file, source, Option::Some(variant.name), variant.start)?
+            let variant_name = file.token_text(variant.name)
+            var d: usize = 0
+            while d < variants.len() {
+                if same(file.token_text(variants[d].name), variant_name) {
+                    return fail(source, variant.start, format!("duplicate variant '", variant_name, "'"))
+                }
+                d += 1
+            }
+            variants.push(Variant { name: variant.name, id: 0 })
+        }
+        if variants.len() == 0 {
+            return fail(source, start, format!("empty enums are unsupported"))
+        }
+        let resolved = resolve_ids(source, ids, 0, start)?
+        let first_variant = output.variants.len()
+        var i: usize = 0
+        while i < variants.len() {
+            var variant = variants[i]
+            variant.id = resolved[i]
+            output.variants.push(variant)
+            i += 1
+        }
+        output.models.push(Model {
+            name: model.name,
+            eip712: false,
+            source,
+            offset: start,
+            is_record: false,
+            generics: Run { start: 0, len: 0 },
+            members: Run { start: first_variant, len: variants.len() },
+        })
+        Result::Ok(())
+    }
+
+    fn header(
+        self,
+        _ source: usize,
+        _ start: usize,
+        _ mods: Modifiers,
+        _ name: Option<usize>,
+    ) -> Result<Diagnostic, ()> {
+        let file = ref self.files[source]
+        if !visible(file, mods) || mods.is_unsafe {
+            return fail(source, start, format!("serializable declarations must be `pub` or `pub(ingot)`, and safe"))
+        }
+        check_name(file, source, name, start)
+    }
+
+    fn generics(self, _ source: usize, _ start: usize, _ model: fe_syntax::StructItem) -> Result<Diagnostic, MemVec<Generic>> {
+        let file = ref self.files[source]
+        match model.where_token {
+            Option::Some(token) => {
+                return fail(
+                    source,
+                    file.token_start(token),
+                    format!("where clauses on serializable structs are unsupported"),
+                )
+            },
+            Option::None => {},
+        }
+        var generics = MemVec<Generic>::new()
+        var g: usize = 0
+        while g < model.gparams.len {
+            let parameter = file.gparams[model.gparams.start + g]
+            g += 1
+            match parameter.kind {
+                GenericKind::Type => {
+                    if !parameter.has_default {
+                        let token = match parameter.name {
+                            Option::Some(token) => token,
+                            Option::None => {
+                                return fail(source, parameter.start, format!("missing generic parameter name"))
+                            },
+                        }
+                        let text = file.token_text(token)
+                        if text == "CodecEncoder" || text == "CodecDecoder" || text == "CodecDescriber" {
+                            return fail(
+                                source,
+                                parameter.start,
+                                format!("this parameter name is reserved for generated code"),
+                            )
+                        }
+                        generics.push(Generic {
+                            is_const: false,
+                            name: token,
+                            bounds: parameter.bounds,
+                            ty: Option::None,
+                            copy: false,
+                        })
+                        continue
+                    }
+                },
+                GenericKind::Const => {
+                    if !parameter.has_default {
+                        let token = match parameter.name {
+                            Option::Some(token) => token,
+                            Option::None => {
+                                return fail(source, parameter.start, format!("missing generic parameter name"))
+                            },
+                        }
+                        if parameter.ty.is_none() {
+                            return fail(source, parameter.start, format!("missing const parameter type"))
+                        }
+                        generics.push(Generic {
+                            is_const: true,
+                            name: token,
+                            bounds: Option::None,
+                            ty: parameter.ty,
+                            copy: false,
+                        })
+                        continue
+                    }
+                },
+                GenericKind::Other => {},
+            }
+            return fail(
+                source,
+                parameter.start,
+                format!("only type and const generic parameters without defaults are supported"),
+            )
+        }
+        Result::Ok(generics)
+    }
+
+    /// Rejects types that cannot be serialized faithfully.
+    fn check(
+        self,
+        _ source: usize,
+        _ ty: usize,
+        _ model: ref MemBuffer,
+        _ site: usize,
+        _ generics: ref MemVec<Generic>,
+    ) -> Result<Diagnostic, ()> {
+        let file = ref self.files[source]
+        match ty_kind(file, ty) {
+            TyKind::Path => {
+                let name = ty_name(file, ty)
+                if name == "usize" || name == "isize" {
+                    return fail(
+                        source,
+                        site,
+                        format!("'", name, "' has a different width on each target; use a fixed-width integer"),
+                    )
+                }
+                match option_payload(file, ty) {
+                    Option::Some(inner) => {
+                        match ty_kind(file, inner) {
+                            TyKind::Path => {
+                                if is_option(ty_name(file, inner)) {
+                                    return fail(
+                                        source,
+                                        site,
+                                        format!("Option<Option<T>> cannot round-trip: Some(None) and None encode alike"),
+                                    )
+                                }
+                            },
+                            _ => {},
+                        }
+                    },
+                    Option::None => {},
+                }
+                match self.local(file, name) {
+                    Option::Some(local) => {
+                        if !local.serializable {
+                            return fail(
+                                source,
+                                site,
+                                format!("'", name, "' is used by '", model, "' but is not #[serializable]"),
+                            )
+                        }
+                    },
+                    Option::None => {},
+                }
+                var i: usize = 0
+                while i < arg_run(file, ty).len {
+                    match arg_ty(file, ty, i) {
+                        Option::Some(arg) => self.check(source, arg, model, site, generics)?,
+                        Option::None => {},
+                    }
+                    i += 1
+                }
+                Result::Ok(())
+            },
+            TyKind::Array => self.check(source, array_elem(file, ty), model, site, generics),
+            TyKind::Other => Result::Ok(()),
+        }
+    }
+
+    fn copyness(self, _ source: usize, _ ty: usize, _ generics: ref MemVec<Generic>) -> u8 {
+        let file = ref self.files[source]
+        match ty_kind(file, ty) {
+            TyKind::Path => {
+                let name = ty_name(file, ty)
+                var last_start: usize = 0
+                var i: usize = 0
+                while i + 1 < name.len() {
+                    if name[i] == b':' && name[i + 1] == b':' {
+                        last_start = i + 2
+                    }
+                    i += 1
+                }
+                let last = ingot::text::part(name, last_start, name.len())
+                if is_primitive(last) || last == "Text" || last == "BoundedBuffer" || last == "PackedBytes"
+                    || last == "Address" {
+                    return COPY_YES
+                }
+                if is_option(name) {
+                    if arg_run(file, ty).len == 0 {
+                        return COPY_UNKNOWN
+                    }
+                    return match arg_ty(file, ty, 0) {
+                        Option::Some(inner) => self.copyness(source, inner, generics),
+                        Option::None => COPY_UNKNOWN,
+                    }
+                }
+                if is_parameter(file, generics, name) {
+                    return COPY_UNKNOWN
+                }
+                match self.local(file, name) {
+                    Option::Some(local) => {
+                        if local.copy {
+                            COPY_YES
+                        } else {
+                            COPY_NO
+                        }
+                    },
+                    Option::None => COPY_UNKNOWN,
+                }
+            },
+            TyKind::Array => self.copyness(source, array_elem(file, ty), generics),
+            TyKind::Other => COPY_UNKNOWN,
+        }
+    }
+
+    /// Type parameters an array of `element` makes `Copy`, and an error for a local non-`Copy`
+    /// element.
+    fn array_element(
+        self,
+        _ source: usize,
+        _ element: usize,
+        _ generics: mut MemVec<Generic>,
+        _ site: usize,
+    ) -> Result<Diagnostic, ()> {
+        let file = ref self.files[source]
+        match ty_kind(file, element) {
+            TyKind::Path => {
+                let name = ty_name(file, element)
+                if is_parameter(file, generics, name) {
+                    mark_copy(file, mut generics, name)
+                    return Result::Ok(())
+                }
+            },
+            _ => {},
+        }
+        if self.copyness(source, element, generics) == COPY_NO {
+            return fail(
+                source,
+                site,
+                format!("decoding this array builds it from copies of its first element; implement Copy for the element type"),
+            )
+        }
+        Result::Ok(())
+    }
+
+    /// Checks every array inside `ty`, which the trait impls decode.
+    fn nested_arrays(
+        self,
+        _ source: usize,
+        _ ty: usize,
+        _ generics: mut MemVec<Generic>,
+        _ site: usize,
+    ) -> Result<Diagnostic, ()> {
+        let file = ref self.files[source]
+        match ty_kind(file, ty) {
+            TyKind::Path => {
+                var i: usize = 0
+                while i < arg_run(file, ty).len {
+                    match arg_ty(file, ty, i) {
+                        Option::Some(arg) => self.nested_arrays(source, arg, mut generics, site)?,
+                        Option::None => {},
+                    }
+                    i += 1
+                }
+                Result::Ok(())
+            },
+            TyKind::Array => {
+                let element = array_elem(file, ty)
+                self.array_element(source, element, mut generics, site)?
+                self.nested_arrays(source, element, mut generics, site)
+            },
+            TyKind::Other => Result::Ok(()),
+        }
+    }
+}

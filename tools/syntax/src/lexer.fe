@@ -1,6 +1,6 @@
 use core::marker::Copy
 use core::ops::Eq
-use core::{MemBuffer, MemVec, Option}
+use core::{MemBuffer, MemSpan, MemVec, Option}
 
 /// What a token is. Keywords are identifiers; the parser decides.
 pub enum TokenKind {
@@ -430,4 +430,18 @@ impl Lexed {
         }
         out
     }
+}
+
+/// Whether `word` is one of fe-parser's keyword tokens, which cannot be used as a name.
+pub fn is_keyword(_ word: MemSpan) -> bool {
+    word == "as" || word == "true" || word == "false" || word == "break" || word == "uses"
+        || word == "continue" || word == "contract" || word == "msg" || word == "fn"
+        || word == "mod" || word == "const" || word == "static_assert" || word == "if"
+        || word == "else" || word == "match" || word == "for" || word == "in"
+        || word == "where" || word == "while" || word == "loop" || word == "pub"
+        || word == "return" || word == "yield" || word == "self" || word == "Self"
+        || word == "struct" || word == "enum" || word == "trait" || word == "impl"
+        || word == "type" || word == "let" || word == "var" || word == "mut" || word == "ref"
+        || word == "own" || word == "use" || word == "extern" || word == "unsafe"
+        || word == "ingot" || word == "super"
 }
