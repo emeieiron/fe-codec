@@ -1,0 +1,4 @@
+use ingot::a::Inner
+#[serializable]
+#[eip712]
+pub struct Outer { pub i: Inner }

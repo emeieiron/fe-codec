@@ -1,0 +1,4 @@
+#[serializable]
+pub struct Slots<T, const N: usize> {
+    pub items: [Option<T>; N],
+}

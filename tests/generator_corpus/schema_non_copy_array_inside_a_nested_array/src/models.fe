@@ -1,0 +1,6 @@
+#[serializable]
+pub struct Inner { pub a: u8 }
+#[serializable]
+pub struct P {
+    pub xs: [[Inner; 70]; 2],
+}

@@ -1,2 +1,3 @@
 sources = ["src/models.fe"]
 modes = ["serializers"]
+compile_files = { "src/custom.fe" = "examples/vanilla/src/temperature.fe" }

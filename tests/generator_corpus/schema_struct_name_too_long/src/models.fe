@@ -1,0 +1,2 @@
+#[serializable]
+pub struct Abcdefghijabcdefghijabcdefghij12 { pub a: u8 }

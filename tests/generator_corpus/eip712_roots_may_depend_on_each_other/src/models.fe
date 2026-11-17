@@ -1,0 +1,8 @@
+#[serializable]
+pub struct B { pub a: u8 }
+#[serializable]
+#[eip712]
+pub struct A { pub b: B, pub c: [B; 3] }
+#[serializable]
+#[eip712]
+pub struct C { pub a: A }

@@ -1,0 +1,3 @@
+use ingot::a::B
+#[serializable]
+pub struct A { pub b: [B; 2] }

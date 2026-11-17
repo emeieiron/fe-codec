@@ -1,0 +1,2 @@
+#[serializable]
+pub struct A { pub unsafe a: u8 }

@@ -1,0 +1,12 @@
+// c
+use fe_codec_core::Text // c
+/// d
+#[serializable] // c
+// c
+pub struct A { // c
+    /// d
+    pub a: Text<8>, // c
+    pub b: Option< // c
+        u8 // c
+    >,
+}

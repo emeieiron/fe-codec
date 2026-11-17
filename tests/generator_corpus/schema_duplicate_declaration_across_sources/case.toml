@@ -1,0 +1,2 @@
+sources = ["src/a.fe", "src/b.fe"]
+expect_stderr = "src/b.fe:1:10: error: duplicate declaration 'A'\n"

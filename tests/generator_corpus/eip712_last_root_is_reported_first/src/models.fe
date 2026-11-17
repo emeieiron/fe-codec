@@ -1,0 +1,6 @@
+#[serializable]
+#[eip712]
+pub struct A { pub a: Option<u8> }
+#[serializable]
+#[eip712]
+pub struct B { pub a: Option<u16> }

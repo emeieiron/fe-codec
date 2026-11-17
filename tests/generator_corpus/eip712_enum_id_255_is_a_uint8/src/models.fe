@@ -1,0 +1,10 @@
+#[serializable]
+pub enum E {
+    #[codec_id = 255]
+    A,
+    #[codec_id = 0]
+    B,
+}
+#[serializable]
+#[eip712]
+pub struct A { pub e: E }

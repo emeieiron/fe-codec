@@ -1,0 +1,9 @@
+#[serializable]
+pub struct Foo<T> {
+    pub item: T,
+}
+
+#[serializable]
+pub struct A {
+    pub a: Foo<[u8; 0]>,
+}

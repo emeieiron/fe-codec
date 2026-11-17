@@ -1,0 +1,7 @@
+#[serializable]
+pub enum E {
+    #[codec_id = 0]
+    A,
+    #[codec_id = 7]
+    B,
+}

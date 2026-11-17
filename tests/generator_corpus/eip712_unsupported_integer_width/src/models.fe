@@ -1,0 +1,6 @@
+#[serializable]
+#[eip712]
+pub struct A {
+    pub a: u8,
+    pub b: u24
+}

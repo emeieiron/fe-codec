@@ -1,0 +1,2 @@
+sources = ["src/models.fe"]
+expect_stderr = "src/models.fe:6:12: error: 'usize' has a different width on each target; use a fixed-width integer\n"

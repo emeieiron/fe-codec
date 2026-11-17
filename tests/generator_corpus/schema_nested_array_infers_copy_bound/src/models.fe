@@ -1,0 +1,4 @@
+#[serializable]
+pub struct Grid<T, const N: usize> {
+    pub rows: [[T; 2]; N],
+}

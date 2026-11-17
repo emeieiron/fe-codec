@@ -1,0 +1,3 @@
+#[serializable]
+pub struct A<T = u8>
+    where T: Copy { pub a: T }

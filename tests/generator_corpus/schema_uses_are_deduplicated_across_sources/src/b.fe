@@ -1,0 +1,4 @@
+use std::evm::Address
+use fe_codec_core::Text
+#[serializable]
+pub struct B { pub b: Address }

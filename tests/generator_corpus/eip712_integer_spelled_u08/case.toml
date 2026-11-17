@@ -1,0 +1,3 @@
+sources = ["src/models.fe"]
+modes = ["eip712"]
+expect_stderr = "src/models.fe:5:5: error: field 'b': the generator cannot see type 'u08'; pass its module with --source, or hash it with the generic path\n"

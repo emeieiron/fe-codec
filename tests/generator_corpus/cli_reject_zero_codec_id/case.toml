@@ -1,3 +1,2 @@
 sources = ["src/models.fe"]
-modes = ["serializers"]
-expect_error = "must be positive"
+expect_stderr = "src/models.fe:1:1: error: a field codec_id must be positive\n"

@@ -1,0 +1,2 @@
+#[serializable]
+pub struct A { pub b: Foo<"é✓">, pub a: }

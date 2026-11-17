@@ -1,0 +1,2 @@
+sources = ["src/models.fe"]
+expect_stderr = "src/models.fe:3:5: error: codec_id must be an unsigned 64-bit integer literal\n"

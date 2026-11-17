@@ -1,0 +1,3 @@
+#[serializable]
+#[eip712]
+pub enum E { A }

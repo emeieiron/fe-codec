@@ -1,0 +1,2 @@
+#[serializable]
+pub struct A<CodecEncoder> { pub a: CodecEncoder }

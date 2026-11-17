@@ -1,0 +1,3 @@
+#[serializable]
+#[eip712]
+pub struct A { pub a: core::bytes::PackedBytes<32>, pub b: fe_codec_core::Text<4>, pub c: std::evm::Address }

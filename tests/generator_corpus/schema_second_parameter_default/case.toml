@@ -1,0 +1,2 @@
+sources = ["src/models.fe"]
+expect_stderr = "src/models.fe:2:17: error: only type and const generic parameters without defaults are supported\n"

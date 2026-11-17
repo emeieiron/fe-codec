@@ -1,0 +1,6 @@
+#[serializable]
+pub struct A {
+    #[codec_id = 1]
+    #[codec_id = 2]
+    pub a: u8,
+}

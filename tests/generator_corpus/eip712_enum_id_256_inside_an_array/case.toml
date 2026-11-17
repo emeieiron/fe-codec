@@ -1,0 +1,3 @@
+sources = ["src/models.fe"]
+modes = ["eip712"]
+expect_stderr = "src/models.fe:11:5: error: field 'e': enum 'E' is a uint8 in EIP-712, but variant 'B' has ID 256\n"

@@ -1,0 +1,7 @@
+#[serializable]
+pub struct Inner { pub a: u8 }
+#[serializable]
+pub struct P<const N: usize> {
+    pub ys: [Inner; 2],
+    pub zs: [Inner; N],
+}

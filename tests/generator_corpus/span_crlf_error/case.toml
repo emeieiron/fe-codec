@@ -1,3 +1,2 @@
 sources = ["src/models.fe"]
-modes = ["serializers"]
-expect_error = "different width on each target"
+expect_stderr = "src/models.fe:4:12: error: 'isize' has a different width on each target; use a fixed-width integer\n"

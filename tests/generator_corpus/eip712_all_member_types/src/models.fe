@@ -1,0 +1,19 @@
+use fe_codec_core::{BoundedBuffer, Text}
+use std::evm::Address
+use core::bytes::PackedBytes
+#[serializable]
+pub enum Kind { A, B }
+#[serializable]
+pub struct Person { pub name: Text<16>, pub wallet: Address }
+#[serializable]
+#[eip712]
+pub struct Mail {
+    pub from: Person,
+    pub to: [Person; 2],
+    pub kind: Kind,
+    pub data: BoundedBuffer<32>,
+    pub tag: PackedBytes<4>,
+    pub n: u256,
+    pub s: i8,
+    pub ok: bool,
+}

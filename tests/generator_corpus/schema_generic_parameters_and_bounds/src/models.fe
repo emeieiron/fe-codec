@@ -1,0 +1,2 @@
+#[serializable]
+pub struct A<T: Copy + core::Eq, U> { pub a: T, pub b: Option<U>, pub c: [U; 2] }

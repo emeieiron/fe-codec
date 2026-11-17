@@ -1,0 +1,2 @@
+sources = ["src/models.fe"]
+expect_stderr = "src/models.fe:3:1: error: codec_id belongs on fields and enum variants\n"

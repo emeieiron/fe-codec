@@ -1,2 +1,4 @@
 sources = ["src/models.fe"]
 modes = ["serializers"]
+compile = false
+compile_note = "the source holds an unrelated contract whose msg variant has no #[selector]; it exists to exercise the parser and does not compile"

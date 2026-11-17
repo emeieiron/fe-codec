@@ -1,0 +1,4 @@
+#[serializable]
+pub struct Cells<T> {
+    pub cells: Option<[Option<T>; 2]>,
+}

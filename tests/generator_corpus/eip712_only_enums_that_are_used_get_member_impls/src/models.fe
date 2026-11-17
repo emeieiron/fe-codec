@@ -1,0 +1,7 @@
+#[serializable]
+pub enum Unused { X }
+#[serializable]
+pub enum Used { Y, Z }
+#[serializable]
+#[eip712]
+pub struct A { pub u: Used, pub n: [Used; 2] }

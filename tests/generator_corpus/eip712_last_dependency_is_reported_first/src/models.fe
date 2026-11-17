@@ -1,0 +1,7 @@
+#[serializable]
+pub struct Bb { pub a: Option<u8> }
+#[serializable]
+pub struct Aa { pub a: Unknown }
+#[serializable]
+#[eip712]
+pub struct R { pub b: Bb, pub a: Aa }

@@ -1,0 +1,5 @@
+#[serializable]
+pub struct G<T> { pub a: T }
+#[serializable]
+#[eip712]
+pub struct A { pub g: G<u8> }

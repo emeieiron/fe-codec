@@ -1,0 +1,5 @@
+pub enum K { X }
+#[serializable]
+pub struct A {
+    pub k: K,
+}

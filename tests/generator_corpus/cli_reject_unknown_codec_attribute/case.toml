@@ -1,3 +1,2 @@
 sources = ["src/models.fe"]
-modes = ["serializers"]
-expect_error = "unknown codec attribute 'codec_ids'"
+expect_stderr = "src/models.fe:3:5: error: unknown codec attribute 'codec_ids'; fields and variants take codec_id\n"

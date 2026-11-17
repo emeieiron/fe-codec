@@ -1,4 +1,6 @@
 sources = ["src/models.fe"]
 modes = ["serializers"]
-flows = ["out", "check", "stale", "missing"]
+flows = ["out", "check", "stale", "missing", "stdout_writes_nothing", "idempotent", "failed_run_keeps_output", "symlink_output", "directory_output"]
 stale_edit = ["u8", "u16"]
+break_edit = ["u8", "usize"]
+break_stderr = "src/models.fe:2:27: error: 'usize' has a different width on each target; use a fixed-width integer\n"

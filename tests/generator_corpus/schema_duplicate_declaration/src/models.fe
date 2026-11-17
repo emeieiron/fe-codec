@@ -1,0 +1,3 @@
+#[serializable]
+pub struct A { pub a: u8 }
+pub enum A { X }

@@ -1,0 +1,4 @@
+#[serializable]
+pub struct A {
+    pub a: Option<[u8; 0]>,
+}

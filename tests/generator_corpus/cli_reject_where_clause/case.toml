@@ -1,3 +1,2 @@
 sources = ["src/models.fe"]
-modes = ["serializers"]
-expect_error = "where clauses"
+expect_stderr = "src/models.fe:3:5: error: where clauses on serializable structs are unsupported\n"

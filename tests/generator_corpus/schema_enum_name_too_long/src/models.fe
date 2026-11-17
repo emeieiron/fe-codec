@@ -1,0 +1,3 @@
+/// long
+#[serializable]
+pub enum Abcdefghijabcdefghijabcdefghij12 { A }

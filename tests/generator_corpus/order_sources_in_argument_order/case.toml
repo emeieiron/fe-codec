@@ -1,0 +1,2 @@
+sources = ["src/b.fe", "src/a.fe"]
+expect_stderr = "src/b.fe:2:23: error: 'usize' has a different width on each target; use a fixed-width integer\n"

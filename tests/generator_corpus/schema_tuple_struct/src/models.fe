@@ -1,0 +1,5 @@
+// plain
+
+/// A tuple.
+#[serializable]
+pub struct A(u8)

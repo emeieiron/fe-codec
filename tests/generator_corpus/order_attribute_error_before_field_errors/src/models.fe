@@ -1,0 +1,4 @@
+#[serializable]
+pub struct A { pub a: usize, b: u8 }
+#[serializable(x)]
+pub struct B {}

@@ -1,0 +1,2 @@
+sources = ["src/a.fe", "src/b.fe"]
+expect_stderr = "src/b.fe:3:23: error: 'B' is used by 'A' but is not #[serializable]\n"

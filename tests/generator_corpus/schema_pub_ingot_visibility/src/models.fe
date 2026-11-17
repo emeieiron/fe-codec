@@ -1,0 +1,2 @@
+#[serializable]
+pub(ingot) struct A { pub(ingot) a: u8 }

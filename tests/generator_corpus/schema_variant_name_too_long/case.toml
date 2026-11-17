@@ -1,0 +1,2 @@
+sources = ["src/models.fe"]
+expect_stderr = "src/models.fe:4:5: error: schema name exceeds 31 bytes\n"

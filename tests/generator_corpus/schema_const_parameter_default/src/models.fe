@@ -1,0 +1,2 @@
+#[serializable]
+pub struct A<const N: usize = 2> { pub a: [u8; N] }

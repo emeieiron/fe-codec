@@ -1,3 +1,4 @@
 sources = ["src/models.fe"]
 modes = ["eip712"]
-expect_error = "EIP-712 has no optional types"
+expect_stderr = "src/models.fe:4:5: error: field 'note': EIP-712 has no optional types\n"
+flows = ["out", "handwritten", "missing"]

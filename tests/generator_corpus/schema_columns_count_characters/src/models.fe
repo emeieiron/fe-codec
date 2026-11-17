@@ -1,0 +1,4 @@
+/// ünï ✓
+// a b
+#[serializable]
+pub struct A { pub b: Foo<"é✓">, pub a: usize }

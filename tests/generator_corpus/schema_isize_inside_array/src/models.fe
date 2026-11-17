@@ -1,0 +1,4 @@
+#[serializable]
+pub struct A {
+    pub a: [[isize; 2]; 2],
+}

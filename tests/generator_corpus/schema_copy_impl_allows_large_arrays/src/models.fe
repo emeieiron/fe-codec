@@ -1,0 +1,8 @@
+#[serializable]
+pub struct A { pub a: u8 }
+impl Copy for A {}
+#[serializable]
+pub struct B { pub a: u8 }
+impl core::Copy for B {}
+#[serializable]
+pub struct C { pub xs: [A; 70], pub ys: [B; 70], pub zs: Option<[A; 2]> }

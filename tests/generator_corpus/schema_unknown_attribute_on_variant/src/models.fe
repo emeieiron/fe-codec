@@ -1,0 +1,5 @@
+#[serializable]
+pub enum E {
+    #[codec]
+    A,
+}

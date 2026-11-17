@@ -1,0 +1,2 @@
+#[serializable]
+pub struct A<T, U = u8> { pub a: T, pub b: U }

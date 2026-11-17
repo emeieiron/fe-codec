@@ -1,0 +1,9 @@
+#[serializable]
+pub struct Zed { pub a: u8 }
+#[serializable]
+pub struct Alpha { pub z: Zed, pub b: Beta }
+#[serializable]
+pub struct Beta { pub a: u8 }
+#[serializable]
+#[eip712]
+pub struct Root { pub z: Zed, pub a: Alpha, pub y: Beta }

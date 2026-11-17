@@ -1,1 +1,2 @@
 sources = ["src/models.fe", "src/typed.fe"]
+compile_files = { "src/custom.fe" = "examples/vanilla/src/temperature.fe" }

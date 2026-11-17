@@ -1,0 +1,2 @@
+#[serializable]
+pub(super) struct A { pub a: u8 }

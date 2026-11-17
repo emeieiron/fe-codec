@@ -1,0 +1,3 @@
+sources = ["src/a.fe", "src/b.fe"]
+modes = ["eip712"]
+expect_stderr = "src/b.fe:6:5: error: field 'o': EIP-712 has no optional types\n"

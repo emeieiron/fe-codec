@@ -1,0 +1,4 @@
+use fe_codec_core::Text
+use std::evm::Address
+#[serializable]
+pub struct A { pub a: Text<4> }

@@ -1,0 +1,4 @@
+// x
+#[serializable]
+#[eip712]
+pub struct EIP712Domain { pub a: u8 }

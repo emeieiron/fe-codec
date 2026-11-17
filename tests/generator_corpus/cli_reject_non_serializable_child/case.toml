@@ -1,3 +1,2 @@
 sources = ["src/models.fe"]
-modes = ["serializers"]
-expect_error = "'Plain' is used by 'Item' but is not #[serializable]"
+expect_stderr = "src/models.fe:3:16: error: 'Plain' is used by 'Item' but is not #[serializable]\n"
