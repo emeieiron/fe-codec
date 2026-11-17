@@ -3,6 +3,7 @@
 //! declarations and `render` writes the module.
 use core::{MemBuffer, MemVec, Option, Result}
 use ingot::cli::{Options, at_path, module_name, parse_args, source_dir, write_output}
+use ingot::eip712::render as render_eip712
 use ingot::render::render
 use ingot::schema::{Diagnostic, Program, line_col}
 use ingot::text::{copy, is_utf8, same}
@@ -83,7 +84,16 @@ fn run(_ options: ref Options) -> Result<MemBuffer, ()> uses (out: mut Stdout, f
             return Result::Err(diagnostic(options.sources[error.source], texts[error.source], error))
         },
     }
-    let output = render(program, schema)
+    let output = if options.eip712 {
+        match render_eip712(program, schema) {
+            Result::Ok(output) => output,
+            Result::Err(error) => {
+                return Result::Err(diagnostic(options.sources[error.source], texts[error.source], error))
+            },
+        }
+    } else {
+        render(program, schema)
+    }
     if options.stdout {
         if !out.write_stdout(output.span()) {
             return Result::Err(format!("cannot write generated source: failed writing to stdout"))
@@ -108,10 +118,6 @@ pub fn main() -> i32 uses (out: mut Stdout, err: mut Stderr, args: Args, fs: mut
             }
             return exit.status
         },
-    }
-    if options.eip712 {
-        eprintln!("error: --eip712 is not implemented yet")
-        return 1
     }
     match run(options) {
         Result::Ok(_) => 0,

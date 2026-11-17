@@ -134,7 +134,7 @@ pub fn line_col(_ text: ref MemBuffer, _ offset: usize) -> (usize, usize) {
 }
 
 /// Which parts of a field type the checks inspect.
-enum TyKind {
+pub enum TyKind {
     Path,
     Array,
     Other,
@@ -143,7 +143,7 @@ enum TyKind {
 impl Copy for TyKind {}
 
 /// How the type `ty` of `file` reads to the generator, as `parse_ty` in `schema.rs` decides.
-fn ty_kind(_ file: ref File, _ ty: usize) -> TyKind {
+pub fn ty_kind(_ file: ref File, _ ty: usize) -> TyKind {
     let node = file.types[ty]
     match node.kind {
         TypeKind::Array => match node.elem {
@@ -159,7 +159,7 @@ fn ty_kind(_ file: ref File, _ ty: usize) -> TyKind {
 }
 
 /// The name of a path type.
-fn ty_name(_ file: ref File, _ ty: usize) -> MemBuffer {
+pub fn ty_name(_ file: ref File, _ ty: usize) -> MemBuffer {
     match file.path_name(ty) {
         Option::Some(name) => name,
         Option::None => MemBuffer::new(0),
@@ -167,7 +167,7 @@ fn ty_name(_ file: ref File, _ ty: usize) -> MemBuffer {
 }
 
 /// The element type node of an array type.
-fn array_elem(_ file: ref File, _ ty: usize) -> usize {
+pub fn array_elem(_ file: ref File, _ ty: usize) -> usize {
     match file.types[ty].elem {
         Option::Some(elem) => elem,
         Option::None => ty,
@@ -175,7 +175,7 @@ fn array_elem(_ file: ref File, _ ty: usize) -> usize {
 }
 
 /// The literal length of an array type.
-fn array_len(_ file: ref File, _ ty: usize) -> Option<u64> {
+pub fn array_len(_ file: ref File, _ ty: usize) -> Option<u64> {
     match file.types[ty].len {
         Option::Some(span) => file.literal_u64(span),
         Option::None => Option::None,
@@ -183,7 +183,7 @@ fn array_len(_ file: ref File, _ ty: usize) -> Option<u64> {
 }
 
 /// The generic arguments of a path type's last segment.
-fn arg_run(_ file: ref File, _ ty: usize) -> Run {
+pub fn arg_run(_ file: ref File, _ ty: usize) -> Run {
     let node = file.types[ty]
     if node.segments.len == 0 {
         return Run { start: 0, len: 0 }
@@ -195,7 +195,7 @@ fn arg_run(_ file: ref File, _ ty: usize) -> Run {
 }
 
 /// The type node of argument `index` of a path type, none where the argument is not a type.
-fn arg_ty(_ file: ref File, _ ty: usize, _ index: usize) -> Option<usize> {
+pub fn arg_ty(_ file: ref File, _ ty: usize, _ index: usize) -> Option<usize> {
     let run = arg_run(file, ty)
     let arg = file.args[run.start + index]
     match arg.kind {
