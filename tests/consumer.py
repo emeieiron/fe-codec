@@ -36,20 +36,21 @@ def fixture_release(root):
 
 
 def consumer_project(app, generator, source, rev):
-    shutil.copytree(DEMO, app, ignore=shutil.ignore_patterns("build", "dist", "serializers.fe"))
+    ignore = shutil.ignore_patterns("build", "dist", "serializers.fe", "regressions")
+    shutil.copytree(DEMO, app, ignore=ignore)
+    # The demo's third-party format sits beside it, as an ordinary ingot of the consumer's.
+    shutil.copytree(ROOT / "examples/compact_format", app.parent / "compact_format", ignore=ignore)
     manifest = app / "femp.toml"
     text = manifest.read_text()
-    start, stop = text.index("[modules.io]"), text.index("[modules.shared]")
+    start, stop = text.index("[modules.io]"), text.index("[modules.compact]")
     text = text[:start] + text[stop:]
     start, stop = text.index("command = ["), text.index("output =")
-    command = [
-        generator, "--source", "src/models.fe",
-        "--type", "Batch", "--type", "Sample", "--type", "StableTransfer", "--stdout",
-    ]
+    command = [generator, "--source", "src/models.fe", "--stdout"]
     manifest.write_text(text[:start] + f"command = {json.dumps(command)}\n" + text[stop:])
 
-    for module in ("shared", "native", "wasm"):
-        ingot = app / module / "fe.toml"
+    for ingot in [app / module / "fe.toml" for module in ("shared", "native", "wasm")] + [
+        app.parent / "compact_format/fe.toml"
+    ]:
         lines = []
         for line in ingot.read_text().splitlines():
             alias = line.partition("=")[0].strip()

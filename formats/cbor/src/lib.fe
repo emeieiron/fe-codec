@@ -1,21 +1,45 @@
-use fe_codec_core::{BoundedBuffer, CodecResult, Limits, Serializer}
+use fe_codec_core::{BoundedBuffer, CodecResult, Deserialize, Format, Limits, Serialize}
 use ingot::encoder::CborEncoder
 use ingot::decoder::CborDecoder
 
-pub fn encode<T, S: Serializer<T>, const N: usize>(_ value: T, _ limits: Limits) -> CodecResult<
-    BoundedBuffer<N>,
-> {
-    var encoder = CborEncoder<N>::new(limits)
-    S::encode(value, mut encoder)?
-    encoder.finish()
+pub use ingot::encoder::CborEncoder
+pub use ingot::decoder::CborDecoder
+
+/// Deterministic CBOR with its limits. `Cbor::new()` uses `Limits::standard()`.
+pub struct Cbor { pub limits: Limits }
+impl Copy for Cbor {}
+
+impl Cbor {
+    pub const fn new() -> Self {
+        Self { limits: Limits::standard() }
+    }
+
+    pub const fn with_limits(_ limits: Limits) -> Self {
+        Self { limits }
+    }
 }
 
-pub fn decode<T, S: Serializer<T>, const N: usize>(
-    _ input: own BoundedBuffer<N>,
-    _ limits: Limits,
-) -> CodecResult<T> {
-    var decoder = CborDecoder<N>::new(input, limits)
-    let value = S::decode(mut decoder)?
-    decoder.finish()?
-    Result::Ok(value)
+impl Format for Cbor {
+    fn encode<T: Serialize, const N: usize>(self, _ value: T) -> CodecResult<BoundedBuffer<N>> {
+        var encoder = CborEncoder<N>::new(self.limits)
+        value.serialize(mut encoder)?
+        encoder.finish()
+    }
+
+    fn decode<T: Deserialize, const N: usize>(self, _ input: own BoundedBuffer<N>) -> CodecResult<T> {
+        var decoder = CborDecoder<N>::new(input, self.limits)
+        let value = T::deserialize(mut decoder)?
+        decoder.finish()?
+        Result::Ok(value)
+    }
+}
+
+/// Encodes `value` as deterministic CBOR in at most `N` bytes, with standard limits.
+pub fn encode<T: Serialize, const N: usize>(_ value: T) -> CodecResult<BoundedBuffer<N>> {
+    Cbor::new().encode<T, N>(value)
+}
+
+/// Decodes one CBOR data item that fills `input`, with standard limits.
+pub fn decode<T: Deserialize, const N: usize>(_ input: own BoundedBuffer<N>) -> CodecResult<T> {
+    Cbor::new().decode<T, N>(input)
 }

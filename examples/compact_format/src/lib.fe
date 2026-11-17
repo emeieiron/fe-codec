@@ -1,0 +1,46 @@
+//! A positional binary format, written only against `fe_codec_core`'s public API to show
+//! how a third party adds a format. It is an example, not a supported format, and it is not
+//! compatible with BCS or any other published encoding.
+//!
+//! - Records carry no keys: fields follow each other in ascending ID order, and every field
+//!   is written, so `OMIT_NONE` is false.
+//! - Optional values are a tag byte, 0 for `None` and 1 for `Some`, before the value.
+//! - Integers are fixed-width, big-endian, two's complement for signed types.
+//! - Text and byte strings are a ULEB128 length and the bytes. Lengths and variant IDs use
+//!   the shortest ULEB128 form; a longer one is rejected as non-canonical.
+//! - Sequences have no header, because their length is part of the type.
+
+use fe_codec_core::{BoundedBuffer, CodecResult, Deserialize, Format, Limits, Serialize}
+use ingot::encoder::CompactEncoder
+use ingot::decoder::CompactDecoder
+
+pub use ingot::encoder::CompactEncoder
+pub use ingot::decoder::CompactDecoder
+
+pub struct Compact { pub limits: Limits }
+impl Copy for Compact {}
+
+impl Compact {
+    pub const fn new() -> Self {
+        Self { limits: Limits::standard() }
+    }
+
+    pub const fn with_limits(_ limits: Limits) -> Self {
+        Self { limits }
+    }
+}
+
+impl Format for Compact {
+    fn encode<T: Serialize, const N: usize>(self, _ value: T) -> CodecResult<BoundedBuffer<N>> {
+        var encoder = CompactEncoder<N>::new(self.limits)
+        value.serialize(mut encoder)?
+        encoder.finish()
+    }
+
+    fn decode<T: Deserialize, const N: usize>(self, _ input: own BoundedBuffer<N>) -> CodecResult<T> {
+        var decoder = CompactDecoder<N>::new(input, self.limits)
+        let value = T::deserialize(mut decoder)?
+        decoder.finish()?
+        Result::Ok(value)
+    }
+}

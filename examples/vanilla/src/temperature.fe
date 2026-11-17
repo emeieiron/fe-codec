@@ -1,0 +1,45 @@
+use core::num::IntDowncast
+use fe_codec_core::{CodecError, CodecResult, Decoder, Deserialize, Encoder, ErrorKind, Serialize}
+
+/// Whole degrees, written as text such as `"21C"` in every format.
+pub struct Celsius { pub degrees: u8 }
+impl Copy for Celsius {}
+
+impl Serialize for Celsius {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        let tens = self.degrees / 10
+        let ones = self.degrees % 10
+        if tens >= 10 {
+            return encoder.write_text(fe_codec_core::Text<4>::from_array([b'0' + tens / 10, b'0' + tens % 10, b'0' + ones, b'C'])?)
+        }
+        if tens != 0 {
+            return encoder.write_text(fe_codec_core::Text<4>::from_array([b'0' + tens, b'0' + ones, b'C'])?)
+        }
+        encoder.write_text(fe_codec_core::Text<4>::from_array([b'0' + ones, b'C'])?)
+    }
+}
+
+impl Deserialize for Celsius {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        let start = decoder.offset()
+        let text = decoder.read_text<4>()?
+        let invalid = CodecError::at(kind: ErrorKind::InvalidSyntax, offset: start)
+        if text.len() < 2 || text.byte_at(text.len() - 1) != Option::Some(b'C') {
+            return Result::Err(invalid)
+        }
+        var degrees: u16 = 0
+        var index: usize = 0
+        while index + 1 < text.len() {
+            let byte = text.byte_at(index).unwrap()
+            if byte < b'0' || byte > b'9' || (index == 0 && byte == b'0' && text.len() > 2) {
+                return Result::Err(invalid)
+            }
+            degrees = degrees * 10 + ((byte - b'0') as u16)
+            index += 1
+        }
+        if degrees > 255 {
+            return Result::Err(invalid)
+        }
+        Result::Ok(Celsius { degrees: degrees.downcast_unchecked() })
+    }
+}

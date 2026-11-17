@@ -1,0 +1,213 @@
+//! Handwritten serializers: a scalar with its own text form, a record written with the
+//! helpers generated code uses, and deliberately broken serializers for protocol tests.
+
+use core::num::IntDowncast
+use fe_codec_core::{
+    CodecError,
+    CodecResult,
+    Decoder,
+    Deserialize,
+    Encoder,
+    ErrorKind,
+    FieldInfo,
+    Schema,
+    Serialize,
+    Text,
+    TextWriter,
+    schema_name,
+}
+
+/// A temperature in tenths of a degree, written as decimal text such as `"-12.5"` in every
+/// format.
+pub struct Celsius { pub tenths: i64 }
+impl Copy for Celsius {}
+
+impl Serialize for Celsius {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_text(self.text()?)
+    }
+}
+
+impl Deserialize for Celsius {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        let start = decoder.offset()
+        match Celsius::parse(decoder.read_text<24>()?) {
+            Option::Some(value) => Result::Ok(value),
+            Option::None => Result::Err(CodecError::at(kind: ErrorKind::InvalidSyntax, offset: start)),
+        }
+    }
+}
+
+impl Celsius {
+    pub fn text(self) -> CodecResult<Text<24>> {
+        var digits: [u8; 20] = [0; 20]
+        var count: usize = 0
+        var magnitude: u64 = if self.tenths < 0 {
+            let below: u64 = (-(self.tenths + 1)).downcast_unchecked()
+            below + 1
+        } else {
+            self.tenths.downcast_unchecked()
+        }
+        let tenth: u8 = (magnitude % 10).downcast_unchecked()
+        magnitude /= 10
+        loop {
+            let digit: u8 = (magnitude % 10).downcast_unchecked()
+            digits[count] = b'0' + digit
+            count += 1
+            magnitude /= 10
+            if magnitude == 0 { break }
+        }
+        var text = TextWriter<24>::new()
+        if self.tenths < 0 {
+            text.write(b'-', 0)?
+        }
+        while count != 0 {
+            count -= 1
+            text.write(digits[count], 0)?
+        }
+        text.write(b'.', 0)?
+        text.write(b'0' + tenth, 0)?
+        text.finish(0)
+    }
+
+    /// `-?D+.D` with no leading zeros, within `i64`.
+    pub fn parse(_ text: Text<24>) -> Option<Celsius> {
+        var index: usize = 0
+        let negative = text.byte_at(0) == Option::Some(b'-')
+        if negative { index = 1 }
+        let first = index
+        var whole: u64 = 0
+        while let Option::Some(byte) = text.byte_at(index) {
+            if byte < b'0' || byte > b'9' { break }
+            if index != first && text.byte_at(first) == Option::Some(b'0') {
+                return Option::None
+            }
+            if whole > 100000000000000000 {
+                return Option::None
+            }
+            whole = whole * 10 + ((byte - b'0') as u64)
+            index += 1
+        }
+        if index == first || text.byte_at(index) != Option::Some(b'.') {
+            return Option::None
+        }
+        let tenth = match text.byte_at(index + 1) {
+            Option::Some(byte) => {
+                if byte < b'0' || byte > b'9' {
+                    return Option::None
+                }
+                (byte - b'0') as u64
+            },
+            Option::None => {
+                return Option::None
+            },
+        }
+        if index + 2 != text.len() {
+            return Option::None
+        }
+        let magnitude = whole * 10 + tenth
+        if negative {
+            if magnitude > 0x8000000000000000 {
+                return Option::None
+            }
+            if magnitude == 0x8000000000000000 {
+                return Option::Some(Celsius { tenths: -0x7fffffffffffffff - 1 })
+            }
+            let positive: i64 = magnitude.downcast_unchecked()
+            return Option::Some(Celsius { tenths: -positive })
+        }
+        if magnitude > 0x7fffffffffffffff {
+            return Option::None
+        }
+        Option::Some(Celsius { tenths: magnitude.downcast_unchecked() })
+    }
+}
+
+/// A record written by hand with the helpers generated code uses.
+pub struct Point { pub x: i64, pub y: i64 }
+impl Copy for Point {}
+
+impl Schema for Point {
+    fn field(_ position: usize) -> Option<FieldInfo> {
+        match position {
+            0 => Option::Some(FieldInfo { name: schema_name<1>("x"), id: 1, optional: false }),
+            1 => Option::Some(FieldInfo { name: schema_name<1>("y"), id: 2, optional: false }),
+            _ => Option::None,
+        }
+    }
+}
+
+impl Serialize for Point {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        var record = encoder.begin_record<Self>(2)?
+        encoder.field<Self>(mut record, 0)?
+        self.x.serialize(mut encoder)?
+        encoder.field<Self>(mut record, 1)?
+        self.y.serialize(mut encoder)?
+        encoder.end_record(record)
+    }
+}
+
+impl Deserialize for Point {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        var x: Option<i64> = Option::None
+        var y: Option<i64> = Option::None
+        var record = decoder.begin_record<Self>()?
+        while let Option::Some(key) = decoder.next_field<Self>(mut record)? {
+            match key.position {
+                0 => key.read(mut decoder, mut x)?,
+                1 => key.read(mut decoder, mut y)?,
+                _ => return Result::Err(key.unknown()),
+            }
+        }
+        decoder.end_record(record)?
+        Result::Ok(
+            Point { x: Self::required(x, 0, decoder.offset())?, y: Self::required(y, 1, decoder.offset())? },
+        )
+    }
+}
+
+/// Writes no value for zero and two values otherwise; decoding reads nothing.
+pub struct Broken { pub value: u64 }
+
+impl Serialize for Broken {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        if self.value != 0 {
+            encoder.write_unsigned(self.value, 64)?
+            encoder.write_unsigned(self.value, 64)?
+        }
+        Result::Ok(())
+    }
+}
+
+impl Deserialize for Broken {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        Result::Ok(Broken { value: 0 })
+    }
+}
+
+/// Visits `Point`'s fields in descending ID order, which every format must reject.
+pub struct Disordered { pub point: Point }
+
+impl Serialize for Disordered {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        var record = encoder.begin_record<Point>(2)?
+        encoder.field<Point>(mut record, 1)?
+        self.point.y.serialize(mut encoder)?
+        encoder.field<Point>(mut record, 0)?
+        self.point.x.serialize(mut encoder)?
+        encoder.end_record(record)
+    }
+}
+
+/// Announces two fields and visits one.
+pub struct Short { pub point: Point }
+
+impl Serialize for Short {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        var record = encoder.begin_record<Point>(2)?
+        encoder.field<Point>(mut record, 0)?
+        self.point.x.serialize(mut encoder)?
+        encoder.end_record(record)
+    }
+}

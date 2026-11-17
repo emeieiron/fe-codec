@@ -4,20 +4,24 @@ use fe_codec_core::{
     CodecResult,
     Decoder,
     ErrorKind,
-    Field,
+    FieldKey,
     Limits,
     MAX_NAME_BYTES,
+    Schema,
     Structure,
-    SerialDescriptor,
     Text,
     TextWriter,
     checked_signed,
     checked_unsigned,
+    checked_wide_signed,
+    checked_wide_unsigned,
 }
-use fe_codec_io::{BoundedBuffer, ByteReader}
+use fe_codec_io::{BoundedBuffer, ByteReader, ByteWriter}
 
 const MAX_UNSIGNED: u64 = 0xffffffffffffffff
 const MAX_SIGNED: u64 = 0x7fffffffffffffff
+const MAX_WIDE_UNSIGNED: u256 = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+const MAX_WIDE_SIGNED: u256 = 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 
 pub struct Record { seen: usize }
 pub struct Sequence { expected: usize, seen: usize }
@@ -89,7 +93,8 @@ impl<const N: usize> JsonDecoder<N> {
         Result::Ok(())
     }
 
-    fn integer(mut self) -> CodecResult<(bool, u64)> {
+    /// Reads an optional minus sign and the first digit, which must follow it.
+    fn integer_start(mut self) -> CodecResult<(bool, u8)> {
         let negative = self.peek()? == b'-'
         if negative { self.byte()? }
         let first = self.peek()?
@@ -102,6 +107,23 @@ impl<const N: usize> JsonDecoder<N> {
             return Result::Err(self.error(kind))
         }
         self.byte()?
+        Result::Ok((negative, first))
+    }
+
+    /// Rejects a fraction or exponent and checks what follows the digits.
+    fn integer_end(self) -> CodecResult<()> {
+        if let Option::Some(byte) = self.input.peek() {
+            if byte == b'.' || byte == b'e' || byte == b'E' {
+                return Result::Err(self.error(ErrorKind::Unsupported))
+            }
+        }
+        self.scalar_end()
+    }
+
+    /// A decimal integer whose magnitude fits 64 bits. A digit that would exceed them is
+    /// reported where it stands.
+    fn integer(mut self) -> CodecResult<(bool, u64)> {
+        let (negative, first) = self.integer_start()?
         var value: u64 = (first - b'0') as u64
         while let Option::Some(byte) = self.input.peek() {
             if !is_digit(byte) { break }
@@ -115,30 +137,50 @@ impl<const N: usize> JsonDecoder<N> {
             self.byte()?
             value = value * 10 + digit
         }
-        if let Option::Some(byte) = self.input.peek() {
-            if byte == b'.' || byte == b'e' || byte == b'E' {
-                return Result::Err(self.error(ErrorKind::Unsupported))
-            }
-        }
-        self.scalar_end()?
+        self.integer_end()?
         Result::Ok((negative, value))
+    }
+
+    /// A decimal integer whose magnitude fits 256 bits.
+    fn wide_integer(mut self) -> CodecResult<(bool, u256)> {
+        let (negative, first) = self.integer_start()?
+        var value: u256 = (first - b'0') as u256
+        while let Option::Some(byte) = self.input.peek() {
+            if !is_digit(byte) { break }
+            if first == b'0' {
+                return Result::Err(self.error(ErrorKind::InvalidSyntax))
+            }
+            let digit = (byte - b'0') as u256
+            if value > (MAX_WIDE_UNSIGNED - digit) / 10 {
+                return Result::Err(self.error(ErrorKind::IntegerOutOfRange))
+            }
+            self.byte()?
+            value = value * 10 + digit
+        }
+        self.integer_end()?
+        Result::Ok((negative, value))
+    }
+
+    fn hex_digit(mut self) -> CodecResult<u8> {
+        let offset = self.offset()
+        let byte = self.byte()?
+        if is_digit(byte) {
+            return Result::Ok(byte - b'0')
+        }
+        if byte >= b'a' && byte <= b'f' {
+            return Result::Ok(byte - b'a' + 10)
+        }
+        if byte >= b'A' && byte <= b'F' {
+            return Result::Ok(byte - b'A' + 10)
+        }
+        Result::Err(CodecError::at(kind: ErrorKind::InvalidSyntax, offset))
     }
 
     fn hex_quad(mut self) -> CodecResult<u32> {
         var value: u32 = 0
         var index: usize = 0
         while index < 4 {
-            let offset = self.offset()
-            let byte = self.byte()?
-            let digit = if is_digit(byte) {
-                byte - b'0'
-            } else if byte >= b'a' && byte <= b'f' {
-                byte - b'a' + 10
-            } else if byte >= b'A' && byte <= b'F' {
-                byte - b'A' + 10
-            } else {
-                return Result::Err(CodecError::at(kind: ErrorKind::InvalidSyntax, offset))
-            }
+            let digit = self.hex_digit()?
             value = (value << 4) | (digit as u32)
             index += 1
         }
@@ -234,6 +276,19 @@ impl<const N: usize> JsonDecoder<N> {
         let offset = self.offset()
         self.structure.check_items(seen + 1, offset)
     }
+
+    /// A member name. One longer than any schema name can hold is reported as `unknown`.
+    fn member_name(mut self, _ unknown: ErrorKind, _ offset: usize) -> CodecResult<Text<MAX_NAME_BYTES>> {
+        match self.string<MAX_NAME_BYTES>() {
+            Result::Ok(name) => Result::Ok(name),
+            Result::Err(error) => {
+                if error.kind == ErrorKind::CapacityExceeded {
+                    return Result::Err(CodecError::at(kind: unknown, offset))
+                }
+                Result::Err(error)
+            },
+        }
+    }
 }
 
 impl<const N: usize> Decoder for JsonDecoder<N> {
@@ -261,7 +316,7 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
         }
     }
 
-    fn read_unsigned(mut self, _ bits: u8) -> CodecResult<u64> {
+    fn read_unsigned(mut self, _ bits: u16) -> CodecResult<u64> {
         self.whitespace()?
         let offset = self.offset()
         self.structure.value(offset)?
@@ -272,7 +327,7 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
         checked_unsigned(value, bits, offset)
     }
 
-    fn read_signed(mut self, _ bits: u8) -> CodecResult<i64> {
+    fn read_signed(mut self, _ bits: u16) -> CodecResult<i64> {
         self.whitespace()?
         let offset = self.offset()
         self.structure.value(offset)?
@@ -289,6 +344,35 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
         checked_signed(value, bits, offset)
     }
 
+    fn read_wide_unsigned(mut self, _ bits: u16) -> CodecResult<u256> {
+        self.whitespace()?
+        let offset = self.offset()
+        self.structure.value(offset)?
+        let (negative, value) = self.wide_integer()?
+        if negative {
+            return Result::Err(CodecError::at(kind: ErrorKind::IntegerOutOfRange, offset))
+        }
+        checked_wide_unsigned(value, bits, offset)
+    }
+
+    fn read_wide_signed(mut self, _ bits: u16) -> CodecResult<i256> {
+        self.whitespace()?
+        let offset = self.offset()
+        self.structure.value(offset)?
+        let (negative, magnitude) = self.wide_integer()?
+        let limit = if negative { MAX_WIDE_SIGNED + 1 } else { MAX_WIDE_SIGNED }
+        if magnitude > limit {
+            return Result::Err(CodecError::at(kind: ErrorKind::IntegerOutOfRange, offset))
+        }
+        let value: i256 = if negative && magnitude != 0 {
+            let magnitude_minus_one: i256 = (magnitude - 1).downcast_unchecked()
+            (-magnitude_minus_one) - 1
+        } else {
+            magnitude.downcast_unchecked()
+        }
+        checked_wide_signed(value, bits, offset)
+    }
+
     fn read_text<const M: usize>(mut self) -> CodecResult<Text<M>> {
         self.whitespace()?
         let offset = self.offset()
@@ -296,60 +380,82 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
         self.string<M>()
     }
 
-    fn take_null(mut self) -> CodecResult<bool> {
+    /// A string of `0x` and an even number of hex digits in either case.
+    fn read_bytes<const M: usize>(mut self) -> CodecResult<BoundedBuffer<M>> {
+        self.whitespace()?
+        let offset = self.offset()
+        self.structure.value(offset)?
+        self.expect(b'"', ErrorKind::TypeMismatch)?
+        self.expect(b'0', ErrorKind::InvalidSyntax)?
+        self.expect(b'x', ErrorKind::InvalidSyntax)?
+        var output = ByteWriter<M>::new()
+        loop {
+            let at = self.offset()
+            if self.peek()? == b'"' {
+                self.byte()?
+                return Result::Ok(output.finish())
+            }
+            let high = self.hex_digit()?
+            if self.peek()? == b'"' {
+                return Result::Err(self.error(ErrorKind::InvalidSyntax))
+            }
+            let low = self.hex_digit()?
+            if output.write((high << 4) | low).is_err() {
+                return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: at))
+            }
+        }
+    }
+
+    fn read_some(mut self) -> CodecResult<bool> {
         self.whitespace()?
         if self.input.peek() == Option::Some(b'n') {
             let offset = self.offset()
             self.structure.value(offset)?
             self.word<4>("null")?
-            return Result::Ok(true)
+            return Result::Ok(false)
         }
-        Result::Ok(false)
+        Result::Ok(true)
     }
 
-    fn read_variant<S: SerialDescriptor>(mut self, _ node: usize) -> CodecResult<usize> {
+    fn read_variant<V: Schema>(mut self) -> CodecResult<usize> {
         self.whitespace()?
         let offset = self.offset()
         self.structure.value(offset)?
-        let name = self.string<MAX_NAME_BYTES>()?
+        let name = self.member_name(ErrorKind::UnknownVariant, offset)?
         var index: usize = 0
-        while let Option::Some(variant) = S::variant(node, index) {
+        while let Option::Some(variant) = V::variant(index) {
             if variant.name.equals(name) {
-                return Result::Ok(variant.index)
+                return Result::Ok(index)
             }
             index += 1
         }
         Result::Err(CodecError::at(kind: ErrorKind::UnknownVariant, offset))
     }
 
-    fn begin_record<S: SerialDescriptor>(mut self, _ node: usize) -> CodecResult<Record> {
+    fn begin_record<R: Schema>(mut self) -> CodecResult<Record> {
         self.begin(b'{')?
         Result::Ok(Record { seen: 0 })
     }
 
-    fn next_field<S: SerialDescriptor>(
-        mut self,
-        _ node: usize,
-        _ record: mut Record,
-    ) -> CodecResult<Option<Field>> {
+    fn next_field<R: Schema>(mut self, _ record: mut Record) -> CodecResult<Option<FieldKey>> {
         self.whitespace()?
         if self.peek()? == b'}' {
             return Result::Ok(Option::None)
         }
         self.separator(record.seen)?
         let offset = self.offset()
-        let name = self.string<MAX_NAME_BYTES>()?
+        let name = self.member_name(ErrorKind::UnknownField, offset)?
         self.whitespace()?
         self.expect(b':', ErrorKind::InvalidSyntax)?
         self.structure.member(offset)?
         record.seen += 1
 
-        var index: usize = 0
-        while let Option::Some(field) = S::field(node, index) {
+        var position: usize = 0
+        while let Option::Some(field) = R::field(position) {
             if field.name.equals(name) {
-                return Result::Ok(Option::Some(Field { index: field.index, offset }))
+                return Result::Ok(FieldKey::of<R>(position, offset))
             }
-            index += 1
+            position += 1
         }
         Result::Err(CodecError::at(kind: ErrorKind::UnknownField, offset))
     }

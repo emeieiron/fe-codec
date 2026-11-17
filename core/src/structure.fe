@@ -66,6 +66,60 @@ impl Structure {
     }
 }
 
+/// Counts the entries of a definite-length container and checks record key order.
+///
+/// Encoders call `key` for each record field, which enforces the rule that every format
+/// visits fields in strictly ascending ID order, and `take` for each sequence element.
+/// Decoders of formats with canonical key order can use the same checks on input.
+pub struct Frame { count: usize, remaining: usize, last_id: Option<u64> }
+
+impl Frame {
+    pub fn new(_ count: usize) -> Self {
+        Self { count, remaining: count, last_id: Option::None }
+    }
+
+    /// Entries accounted for so far.
+    pub fn taken(self) -> usize {
+        self.count - self.remaining
+    }
+
+    pub fn remaining(self) -> usize {
+        self.remaining
+    }
+
+    pub fn take(mut self, _ offset: usize) -> CodecResult<()> {
+        if self.remaining == 0 {
+            return Result::Err(CodecError::at(kind: ErrorKind::InvalidLength, offset))
+        }
+        self.remaining -= 1
+        Result::Ok(())
+    }
+
+    /// Accounts for a record field with wire `id`. IDs must be positive and ascend.
+    pub fn key(mut self, _ id: u64, _ offset: usize) -> CodecResult<()> {
+        if id == 0 {
+            return Result::Err(CodecError::at(kind: ErrorKind::UnknownField, offset))
+        }
+        if let Option::Some(last_id) = self.last_id {
+            if id == last_id {
+                return Result::Err(CodecError::at(kind: ErrorKind::DuplicateField, offset))
+            }
+            if id < last_id {
+                return Result::Err(CodecError::at(kind: ErrorKind::NonCanonical, offset))
+            }
+        }
+        self.last_id = Option::Some(id)
+        self.take(offset)
+    }
+
+    pub fn complete(self, _ offset: usize) -> CodecResult<()> {
+        if self.remaining != 0 {
+            return Result::Err(CodecError::at(kind: ErrorKind::InvalidLength, offset))
+        }
+        Result::Ok(())
+    }
+}
+
 fn invalid_state(_ offset: usize) -> CodecError {
     CodecError::at(kind: ErrorKind::InvalidState, offset)
 }

@@ -1,21 +1,45 @@
-use fe_codec_core::{BoundedBuffer, CodecResult, Limits, Serializer}
+use fe_codec_core::{BoundedBuffer, CodecResult, Deserialize, Format, Limits, Serialize}
 use ingot::encoder::JsonEncoder
 use ingot::decoder::JsonDecoder
 
-pub fn encode<T, S: Serializer<T>, const N: usize>(_ value: T, _ limits: Limits) -> CodecResult<
-    BoundedBuffer<N>,
-> {
-    var encoder = JsonEncoder<N>::new(limits)
-    S::encode(value, mut encoder)?
-    encoder.finish()
+pub use ingot::encoder::JsonEncoder
+pub use ingot::decoder::JsonDecoder
+
+/// The JSON format with its limits. `Json::new()` uses `Limits::standard()`.
+pub struct Json { pub limits: Limits }
+impl Copy for Json {}
+
+impl Json {
+    pub const fn new() -> Self {
+        Self { limits: Limits::standard() }
+    }
+
+    pub const fn with_limits(_ limits: Limits) -> Self {
+        Self { limits }
+    }
 }
 
-pub fn decode<T, S: Serializer<T>, const N: usize>(
-    _ input: own BoundedBuffer<N>,
-    _ limits: Limits,
-) -> CodecResult<T> {
-    var decoder = JsonDecoder<N>::new(input, limits)
-    let value = S::decode(mut decoder)?
-    decoder.finish()?
-    Result::Ok(value)
+impl Format for Json {
+    fn encode<T: Serialize, const N: usize>(self, _ value: T) -> CodecResult<BoundedBuffer<N>> {
+        var encoder = JsonEncoder<N>::new(self.limits)
+        value.serialize(mut encoder)?
+        encoder.finish()
+    }
+
+    fn decode<T: Deserialize, const N: usize>(self, _ input: own BoundedBuffer<N>) -> CodecResult<T> {
+        var decoder = JsonDecoder<N>::new(input, self.limits)
+        let value = T::deserialize(mut decoder)?
+        decoder.finish()?
+        Result::Ok(value)
+    }
+}
+
+/// Encodes `value` as compact JSON in at most `N` bytes, with standard limits.
+pub fn encode<T: Serialize, const N: usize>(_ value: T) -> CodecResult<BoundedBuffer<N>> {
+    Json::new().encode<T, N>(value)
+}
+
+/// Decodes one JSON value that fills `input`, with standard limits.
+pub fn decode<T: Deserialize, const N: usize>(_ input: own BoundedBuffer<N>) -> CodecResult<T> {
+    Json::new().decode<T, N>(input)
 }

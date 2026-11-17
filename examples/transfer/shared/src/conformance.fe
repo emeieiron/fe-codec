@@ -1,0 +1,218 @@
+//! A format-independent conformance check. Any `Format` should pass it: JSON, CBOR and the
+//! compact example format all run it on every target.
+
+use core::bytes::PackedBytes
+use fe_codec_core::{
+    BoundedBuffer,
+    CodecError,
+    CodecResult,
+    Deserialize,
+    ErrorKind,
+    Format,
+    Serialize,
+    Text,
+    TextWriter,
+}
+use std::evm::Address
+use ingot::custom::{Celsius, Point}
+use ingot::models::{
+    AccountV2,
+    Batch,
+    Page,
+    Recipient,
+    Sample,
+    Slots,
+    StableStatus,
+    Status,
+    Transfer,
+    Wallet,
+    Wide,
+    Reading,
+}
+
+pub const U256_MAX: u256 = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+pub const I256_MIN: i256 = -0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff - 1
+pub const U128_MAX: u128 = 0xffffffffffffffffffffffffffffffff
+pub const I128_MIN: i128 = -0x7fffffffffffffffffffffffffffffff - 1
+
+/// Encodes `value`, decodes it and encodes the result again. The encodings must be
+/// identical, which checks that decoding lost nothing the format writes.
+pub fn stable<T: Serialize + Deserialize, F: Format, const N: usize>(_ format: F, _ value: T) -> CodecResult<
+    T,
+> {
+    let first = format.encode<T, N>(value)?
+    let decoded = format.decode<T, N>(first)?
+    let second = format.encode<T, N>(decoded)?
+    if !first.equals(second) {
+        return Result::Err(CodecError::at(kind: ErrorKind::InvalidState, offset: 0))
+    }
+    Result::Ok(decoded)
+}
+
+/// 0 when `format` passes every check, else the number of the first check that failed,
+/// whether its value differed or it returned an error.
+pub fn conformance<F: Format>(_ format: F) -> u32 {
+    var step: u32 = 0
+    match run(format, mut step) {
+        Result::Ok(failed) => failed,
+        Result::Err(_) => step,
+    }
+}
+
+fn run<F: Format>(_ format: F, _ step: mut u32) -> CodecResult<u32> {
+    // Scalars at the root.
+    step = 1
+    if stable<bool, F, 8>(format, true)? != true { return Result::Ok(1) }
+    step = 2
+    if stable<u8, F, 8>(format, 255)? != 255 { return Result::Ok(2) }
+    step = 3
+    if stable<i8, F, 8>(format, -128)? != -128 { return Result::Ok(3) }
+    step = 4
+    if stable<u64, F, 32>(format, 0xffffffffffffffff)? != 0xffffffffffffffff { return Result::Ok(4) }
+    step = 5
+    if stable<i64, F, 32>(format, -0x7fffffffffffffff - 1)? != -0x7fffffffffffffff - 1 { return Result::Ok(5) }
+    step = 6
+    if stable<u128, F, 64>(format, U128_MAX)? != U128_MAX { return Result::Ok(6) }
+    step = 7
+    if stable<i128, F, 64>(format, I128_MIN)? != I128_MIN { return Result::Ok(7) }
+    step = 8
+    if stable<u256, F, 96>(format, U256_MAX)? != U256_MAX { return Result::Ok(8) }
+    step = 9
+    if stable<i256, F, 96>(format, I256_MIN)? != I256_MIN { return Result::Ok(9) }
+    let boundary: u256 = 0x10000000000000000
+    step = 10
+    if stable<u256, F, 96>(format, boundary)? != boundary { return Result::Ok(10) }
+    let below: i256 = -0x10000000000000001
+    step = 11
+    if stable<i256, F, 96>(format, below)? != below { return Result::Ok(11) }
+    step = 12
+    if stable<Option<u8>, F, 8>(format, Option::None)?.is_some() { return Result::Ok(12) }
+    step = 13
+    if stable<Option<u8>, F, 8>(format, Option::Some(7))? != Option::Some(7) { return Result::Ok(13) }
+
+    // Text, including NUL and a four-byte sequence.
+    let text = emoji()?
+    step = 14
+    if !stable<Text<8>, F, 32>(format, text)?.equals(text) { return Result::Ok(14) }
+
+    // Enums with declaration-order and explicit IDs.
+    step = 15
+    match stable<Status, F, 16>(format, Status::Sent)? {
+        Status::Sent => {},
+        _ => { return Result::Ok(15) },
+    }
+    step = 16
+    match stable<StableStatus, F, 16>(format, StableStatus::Ready)? {
+        StableStatus::Ready => {},
+        _ => { return Result::Ok(16) },
+    }
+
+    // Records with optional fields absent and present.
+    step = 17
+    let empty = stable<Sample, F, 32>(format, Sample { value: 24, note: Option::None })?
+    if empty.value != 24 || empty.note.is_some() { return Result::Ok(17) }
+    step = 18
+    let noted = stable<Sample, F, 48>(format, Sample { value: 255, note: Option::Some(text) })?
+    if noted.value != 255 || !noted.note.unwrap().equals(text) { return Result::Ok(18) }
+
+    // Nested records, arrays and an empty array.
+    step = 19
+    let batch = stable<Batch, F, 256>(format, sample_batch()?)?
+    let transfer = ref batch.transfers[0]
+    if transfer.amount != 0xffffffffffffffff || transfer.delta != -0x7fffffffffffffff - 1 {
+        return Result::Ok(19)
+    }
+    if transfer.hops != [1, 255] || transfer.nonce != Option::Some(9) || !transfer.recipient.active {
+        return Result::Ok(20)
+    }
+
+    // Wide integers in a record.
+    step = 21
+    let wide = stable<Wide, F, 320>(
+        format,
+        Wide { big: U256_MAX, signed: I256_MIN, mid: U128_MAX, small: I128_MIN },
+    )?
+    if wide.big != U256_MAX || wide.signed != I256_MIN || wide.mid != U128_MAX || wide.small != I128_MIN {
+        return Result::Ok(21)
+    }
+
+    // Byte strings and an address.
+    step = 22
+    let wallet = stable<Wallet, F, 128>(format, sample_wallet())?
+    if wallet.owner.word() != 0xd8da6bf26964af9d7eed9e03e53415d37aa96045 {
+        return Result::Ok(22)
+    }
+    if wallet.hash.to_array() != [0xde, 0xad, 0xbe, 0xef] || wallet.memo.len() != 3 {
+        return Result::Ok(23)
+    }
+    if wallet.tag.unwrap().to_array() != [0, 1] { return Result::Ok(24) }
+    let untagged = Wallet {
+        owner: Address::zero(),
+        hash: PackedBytes<4>::from_array([0, 0, 0, 0]),
+        memo: BoundedBuffer<8>::empty(),
+        tag: Option::None,
+    }
+    step = 25
+    if stable<Wallet, F, 128>(format, untagged)?.tag.is_some() { return Result::Ok(25) }
+
+    // A generic record, optional sequence elements and a handwritten field type.
+    step = 26
+    let page = stable<Page<u16, 3>, F, 64>(
+        format,
+        Page<u16, 3> { items: [1, 2, 65535], next: Option::Some(7) },
+    )?
+    if page.items != [1, 2, 65535] || page.next != Option::Some(7) { return Result::Ok(26) }
+    step = 27
+    let slots = stable<Slots, F, 64>(format, Slots { values: [Option::Some(1), Option::None, Option::Some(255)] })?
+    if slots.values != [Option::Some(1), Option::None, Option::Some(255)] { return Result::Ok(27) }
+    step = 28
+    let reading = stable<Reading, F, 64>(format, Reading { at: 5, temperature: Celsius { tenths: -125 } })?
+    if reading.at != 5 || reading.temperature.tenths != -125 { return Result::Ok(28) }
+
+    // A handwritten record and an evolved one.
+    step = 29
+    let point = stable<Point, F, 64>(format, Point { x: -1, y: -0x7fffffffffffffff - 1 })?
+    if point.x != -1 || point.y != -0x7fffffffffffffff - 1 { return Result::Ok(29) }
+    step = 30
+    let account = stable<AccountV2, F, 64>(format, AccountV2 { owner: 1, balance: 2, label: Option::Some(text) })?
+    if account.owner != 1 || account.balance != 2 || !account.label.unwrap().equals(text) {
+        return Result::Ok(30)
+    }
+    Result::Ok(0)
+}
+
+/// `"\0😀"`: a NUL byte and a four-byte UTF-8 sequence.
+pub fn emoji() -> CodecResult<Text<8>> {
+    Text<8>::from_array([0, 0xf0, 0x9f, 0x98, 0x80])
+}
+
+/// `"\0é"`: a NUL byte and a two-byte UTF-8 sequence.
+pub fn label() -> CodecResult<Text<8>> {
+    var text = TextWriter<8>::new()
+    text.write(0, 0)?
+    text.write(0xc3, 1)?
+    text.write(0xa9, 2)?
+    text.finish(3)
+}
+
+pub fn sample_batch() -> CodecResult<Batch> {
+    let transfer = Transfer {
+        recipient: Recipient { active: true, label: label()? },
+        amount: 0xffffffffffffffff,
+        delta: -0x7fffffffffffffff - 1,
+        status: Status::Sent,
+        hops: [1, 255],
+        flags: [],
+        nonce: Option::Some(9),
+    }
+    Result::Ok(Batch { transfers: [transfer] })
+}
+
+pub fn sample_wallet() -> Wallet {
+    Wallet {
+        owner: Address::new(0xd8da6bf26964af9d7eed9e03e53415d37aa96045),
+        hash: PackedBytes<4>::from_array([0xde, 0xad, 0xbe, 0xef]),
+        memo: BoundedBuffer<8>::from_prefix([1, 2, 3]).unwrap(),
+        tag: Option::Some(PackedBytes<2>::from_array([0, 1])),
+    }
+}

@@ -1,0 +1,111 @@
+//! Claims for `femp prove`, stated against their specifications. They are ordinary public
+//! functions so FeMP can find them; nothing else calls them.
+//!
+//! Text validation runs `Utf8::step` once per byte. The claims below prove, for every
+//! input, that one character of each length is accepted exactly when RFC 3629 §4 allows
+//! it, and that the state returns to its start after each character. Together they give
+//! well-formedness for text of any length by induction over its characters.
+
+use ingot::text::Utf8
+
+/// RFC 3629 §4: `UTF8-tail = %x80-BF`.
+fn tail(_ byte: u8) -> bool {
+    byte >= 0x80 && byte <= 0xbf
+}
+
+fn is_start(_ state: Utf8) -> bool {
+    state.remaining == 0 && state.lower == 0x80 && state.upper == 0xbf
+}
+
+/// `byte` alone, from the start state, completes a character exactly when it is ASCII.
+#[property]
+pub fn one_byte_utf8_matches_rfc_3629(b0: u8) -> bool {
+    let completes = match Utf8::new().step(b0) {
+        Option::Some(state) => is_start(state),
+        Option::None => false,
+    }
+    completes == (b0 <= 0x7f)
+}
+
+/// `UTF8-2 = %xC2-DF UTF8-tail`.
+#[property]
+pub fn two_byte_utf8_matches_rfc_3629(b0: u8, b1: u8) -> bool {
+    let rfc = b0 >= 0xc2 && b0 <= 0xdf && tail(b1)
+    let completes = match Utf8::new().step(b0) {
+        Option::Some(first) => {
+            if first.remaining != 1 {
+                false
+            } else {
+                match first.step(b1) {
+                    Option::Some(state) => is_start(state),
+                    Option::None => false,
+                }
+            }
+        },
+        Option::None => false,
+    }
+    completes == rfc
+}
+
+/// `UTF8-3 = %xE0 %xA0-BF UTF8-tail / %xE1-EC 2( UTF8-tail ) / %xED %x80-9F UTF8-tail /
+/// %xEE-EF 2( UTF8-tail )`.
+#[property]
+pub fn three_byte_utf8_matches_rfc_3629(b0: u8, b1: u8, b2: u8) -> bool {
+    let rfc = (b0 == 0xe0 && b1 >= 0xa0 && b1 <= 0xbf && tail(b2))
+        || (b0 >= 0xe1 && b0 <= 0xec && tail(b1) && tail(b2))
+        || (b0 == 0xed && b1 >= 0x80 && b1 <= 0x9f && tail(b2))
+        || (b0 >= 0xee && b0 <= 0xef && tail(b1) && tail(b2))
+    let completes = match Utf8::new().step(b0) {
+        Option::Some(first) => {
+            if first.remaining != 2 {
+                false
+            } else {
+                match first.step(b1) {
+                    Option::Some(second) => match second.step(b2) {
+                        Option::Some(state) => is_start(state),
+                        Option::None => false,
+                    },
+                    Option::None => false,
+                }
+            }
+        },
+        Option::None => false,
+    }
+    completes == rfc
+}
+
+/// `UTF8-4 = %xF0 %x90-BF 2( UTF8-tail ) / %xF1-F3 3( UTF8-tail ) / %xF4 %x80-8F 2( UTF8-tail )`.
+#[property]
+pub fn four_byte_utf8_matches_rfc_3629(b0: u8, b1: u8, b2: u8, b3: u8) -> bool {
+    let rfc = (b0 == 0xf0 && b1 >= 0x90 && b1 <= 0xbf && tail(b2) && tail(b3))
+        || (b0 >= 0xf1 && b0 <= 0xf3 && tail(b1) && tail(b2) && tail(b3))
+        || (b0 == 0xf4 && b1 >= 0x80 && b1 <= 0x8f && tail(b2) && tail(b3))
+    let completes = match Utf8::new().step(b0) {
+        Option::Some(first) => {
+            if first.remaining != 3 {
+                false
+            } else {
+                match first.step(b1) {
+                    Option::Some(second) => match second.step(b2) {
+                        Option::Some(third) => match third.step(b3) {
+                            Option::Some(state) => is_start(state),
+                            Option::None => false,
+                        },
+                        Option::None => false,
+                    },
+                    Option::None => false,
+                }
+            }
+        },
+        Option::None => false,
+    }
+    completes == rfc
+}
+
+/// A byte that starts no character of RFC 3629 is rejected at once, so no longer sequence
+/// can begin with it.
+#[property]
+pub fn invalid_lead_bytes_are_rejected(b0: u8) -> bool {
+    let leads = b0 <= 0x7f || (b0 >= 0xc2 && b0 <= 0xf4)
+    Utf8::new().step(b0).is_some() == leads
+}

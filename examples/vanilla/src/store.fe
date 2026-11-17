@@ -1,0 +1,7 @@
+use fe_codec_core::{BoundedBuffer, CodecResult, Format}
+use ingot::models::Order
+
+/// Code that works with any format: the caller picks JSON, CBOR or a third-party one.
+pub fn store<F: Format>(_ format: F, _ order: Order) -> CodecResult<BoundedBuffer<192>> {
+    format.encode<Order, 192>(order)
+}

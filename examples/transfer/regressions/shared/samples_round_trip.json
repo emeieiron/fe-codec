@@ -1,0 +1,56 @@
+[
+  {
+    "failure": "violated",
+    "seed": "0x000000000000002a",
+    "case": 56,
+    "choices": [
+      "0",
+      "1",
+      "8",
+      "0"
+    ],
+    "counterexample": {
+      "shape": "args",
+      "args": [
+        {
+          "name": "value",
+          "value": "0"
+        },
+        {
+          "name": "present",
+          "value": "true"
+        },
+        {
+          "name": "length",
+          "value": "8"
+        },
+        {
+          "name": "bytes",
+          "value": "0"
+        }
+      ]
+    },
+    "outcomes": [
+      {
+        "target": "evm",
+        "outcome": "returned false"
+      },
+      {
+        "target": "native",
+        "outcome": "returned false"
+      },
+      {
+        "target": "wasm",
+        "outcome": "returned false"
+      }
+    ],
+    "recorded": {
+      "femp": "0.1.0",
+      "fe": "26.6.0",
+      "optimize": [
+        "1"
+      ],
+      "unix_time": 1794898404
+    }
+  }
+]

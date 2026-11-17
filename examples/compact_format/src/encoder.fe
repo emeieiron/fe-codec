@@ -1,0 +1,210 @@
+use core::num::IntDowncast
+use fe_codec_core::{
+    BoundedBuffer,
+    ByteWriter,
+    CodecError,
+    CodecResult,
+    Encoder,
+    ErrorKind,
+    Frame,
+    Limits,
+    Schema,
+    Structure,
+    Text,
+    checked_signed,
+    checked_unsigned,
+    checked_wide_signed,
+    checked_wide_unsigned,
+}
+
+pub struct CompactEncoder<const N: usize> { output: ByteWriter<N>, structure: Structure }
+
+impl<const N: usize> CompactEncoder<N> {
+    pub fn new(_ limits: Limits) -> Self {
+        Self { output: ByteWriter<N>::new(), structure: Structure::new(limits) }
+    }
+
+    pub fn finish(own self) -> CodecResult<BoundedBuffer<N>> {
+        self.structure.finish(self.offset())?
+        Result::Ok(self.output.finish())
+    }
+
+    fn byte(mut self, _ byte: u8) -> CodecResult<()> {
+        self.output.write(byte).map_err(CodecError::from_io)
+    }
+
+    /// The low `width` bytes of `value`, most significant first.
+    fn fixed(mut self, _ value: u256, _ width: u16) -> CodecResult<()> {
+        var remaining = width
+        while remaining != 0 {
+            remaining -= 1
+            self.byte((value >> ((remaining * 8) as u256)).downcast_truncate())?
+        }
+        Result::Ok(())
+    }
+
+    fn uleb(mut self, _ value: u64) -> CodecResult<()> {
+        var remaining = value
+        loop {
+            let low: u8 = (remaining & 0x7f).downcast_unchecked()
+            remaining = remaining >> 7
+            if remaining == 0 {
+                return self.byte(low)
+            }
+            self.byte(low | 0x80)?
+        }
+    }
+
+    fn length(self, _ length: usize) -> CodecResult<u64> {
+        match length.downcast() {
+            Option::Some(value) => Result::Ok(value),
+            Option::None => Result::Err(
+                CodecError::at(kind: ErrorKind::InvalidLength, offset: self.offset()),
+            ),
+        }
+    }
+
+    fn begin(mut self, _ count: usize) -> CodecResult<Frame> {
+        let offset = self.offset()
+        self.structure.check_items(count, offset)?
+        self.structure.begin(offset)?
+        Result::Ok(Frame::new(count))
+    }
+
+    fn end(mut self, _ frame: own Frame) -> CodecResult<()> {
+        let offset = self.offset()
+        frame.complete(offset)?
+        self.structure.end(offset)
+    }
+}
+
+impl<const N: usize> Encoder for CompactEncoder<N> {
+    const OMIT_NONE: bool = false
+    type Record = Frame
+    type Sequence = Frame
+
+    fn offset(self) -> usize {
+        self.output.offset()
+    }
+
+    fn write_bool(mut self, _ value: bool) -> CodecResult<()> {
+        self.structure.value(self.offset())?
+        self.byte(if value { 1 } else { 0 })
+    }
+
+    fn write_unsigned(mut self, _ value: u64, _ bits: u16) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        checked_unsigned(value, bits, offset)?
+        self.fixed(value as u256, bits / 8)
+    }
+
+    fn write_signed(mut self, _ value: i64, _ bits: u16) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        checked_signed(value, bits, offset)?
+        self.fixed((value as i256).downcast_truncate(), bits / 8)
+    }
+
+    fn write_wide_unsigned(mut self, _ value: u256, _ bits: u16) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        checked_wide_unsigned(value, bits, offset)?
+        self.fixed(value, bits / 8)
+    }
+
+    fn write_wide_signed(mut self, _ value: i256, _ bits: u16) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        checked_wide_signed(value, bits, offset)?
+        self.fixed(value.downcast_truncate(), bits / 8)
+    }
+
+    fn write_text<const M: usize>(mut self, _ value: Text<M>) -> CodecResult<()> {
+        self.structure.value(self.offset())?
+        let length = self.length(value.len())?
+        self.uleb(length)?
+        var index: usize = 0
+        while index < value.len() {
+            self.byte(value.byte_at(index).unwrap())?
+            index += 1
+        }
+        Result::Ok(())
+    }
+
+    fn write_bytes<const M: usize>(mut self, _ value: BoundedBuffer<M>) -> CodecResult<()> {
+        self.structure.value(self.offset())?
+        let length = self.length(value.len())?
+        self.uleb(length)?
+        var index: usize = 0
+        while index < value.len() {
+            self.byte(value.byte_at(index).unwrap())?
+            index += 1
+        }
+        Result::Ok(())
+    }
+
+    fn write_none(mut self) -> CodecResult<()> {
+        self.structure.value(self.offset())?
+        self.byte(0)
+    }
+
+    /// The tag is not a value of its own: the value written next fills the position.
+    fn write_some(mut self) -> CodecResult<()> {
+        self.byte(1)
+    }
+
+    fn write_variant<V: Schema>(mut self, _ index: usize) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        match V::variant(index) {
+            Option::Some(variant) => self.uleb(variant.id),
+            Option::None => Result::Err(CodecError::at(kind: ErrorKind::InvalidState, offset)),
+        }
+    }
+
+    fn begin_record<R: Schema>(mut self, _ present: usize) -> CodecResult<Frame> {
+        var count: usize = 0
+        while R::field(count).is_some() {
+            count += 1
+        }
+        if present != count {
+            return Result::Err(CodecError::at(kind: ErrorKind::InvalidState, offset: self.offset()))
+        }
+        self.begin(present)
+    }
+
+    fn field<R: Schema>(mut self, _ record: mut Frame, _ position: usize) -> CodecResult<()> {
+        let offset = self.offset()
+        let field = match R::field(position) {
+            Option::Some(field) => field,
+            Option::None => {
+                return Result::Err(CodecError::at(kind: ErrorKind::InvalidState, offset))
+            },
+        }
+        // A positional record must hold every field, in order.
+        if position != record.taken() {
+            return Result::Err(CodecError::at(kind: ErrorKind::InvalidState, offset))
+        }
+        self.structure.member(offset)?
+        record.key(field.id, offset)
+    }
+
+    fn end_record(mut self, _ record: own Frame) -> CodecResult<()> {
+        self.end(record)
+    }
+
+    fn begin_sequence(mut self, _ length: usize) -> CodecResult<Frame> {
+        self.begin(length)
+    }
+
+    fn element(mut self, _ sequence: mut Frame) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.member(offset)?
+        sequence.take(offset)
+    }
+
+    fn end_sequence(mut self, _ sequence: own Frame) -> CodecResult<()> {
+        self.end(sequence)
+    }
+}

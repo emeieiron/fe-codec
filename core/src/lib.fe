@@ -1,16 +1,17 @@
-pub use fe_codec_io::BoundedBuffer
-pub use error::{CodecError, ErrorKind, CodecResult, FieldContext, Limits}
+pub use fe_codec_io::{BoundedBuffer, ByteReader, ByteWriter, IoError, IoErrorKind}
+pub use error::{CodecError, ErrorKind, CodecResult, Limits}
 pub use text::{Text, TextWriter}
-pub use descriptor::{
-    SerialDescriptor,
-    TypeDescriptor,
-    SerialKind,
-    FieldDescriptor,
-    VariantDescriptor,
+pub use schema::{
+    Schema,
+    FieldInfo,
+    VariantInfo,
     SchemaName,
     MAX_NAME_BYTES,
+    MAX_MEMBERS,
     schema_name,
+    validate_schema,
 }
-pub use serializer::{Serializer, Encoder, Decoder, Field}
-pub use integer::{checked_signed, checked_unsigned}
-pub use structure::Structure
+pub use serializer::{Serialize, Deserialize, Encoder, Decoder, Format}
+pub use fields::{FieldKey, optional}
+pub use integer::{checked_signed, checked_unsigned, checked_wide_signed, checked_wide_unsigned}
+pub use structure::{Structure, Frame}

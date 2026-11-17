@@ -1,42 +1,66 @@
-use ingot::descriptor::{FieldDescriptor, SerialDescriptor, VariantDescriptor}
+use fe_codec_io::BoundedBuffer
 use ingot::error::CodecResult
+use ingot::fields::FieldKey
+use ingot::schema::Schema
 use ingot::text::Text
 
-/// The field selected by a decoder, with its declaration index and key offset.
-pub struct Field { pub index: usize, pub offset: usize }
-
-/// A statically selected traversal shared by all formats.
-pub trait Serializer<T>: SerialDescriptor {
-    fn encode<E: Encoder>(_ value: T, _ encoder: mut E) -> CodecResult<()>
-    fn decode<D: Decoder>(_ decoder: mut D) -> CodecResult<T>
+/// A value that can be written through any `Encoder`.
+///
+/// `fe-codec-gen` implements this for `#[serializable]` records and unit enums. Write it by
+/// hand to give a type its own representation: a serializer makes exactly one value call on
+/// the encoder, or opens one record or sequence and closes it again.
+pub trait Serialize {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()>
 }
 
-/// A document calls one value operation at the root and one after each
-/// field or element. Format implementations own wire framing and validation.
+/// A value that can be read back through any `Decoder`.
+pub trait Deserialize {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self>
+}
+
+/// A wire format, selected where values are encoded or decoded.
+///
+/// `N` is the buffer capacity in bytes. Encoding fails with `CapacityExceeded` at the first
+/// byte that does not fit. Decoding consumes the whole buffer and rejects trailing data.
+pub trait Format {
+    fn encode<T: Serialize, const N: usize>(self, _ value: T) -> CodecResult<BoundedBuffer<N>>
+    fn decode<T: Deserialize, const N: usize>(self, _ input: own BoundedBuffer<N>) -> CodecResult<T>
+}
+
+/// The data model a format writes.
+///
+/// Values: `bool`; unsigned and signed integers, passed as `u64`/`i64` with a width of 8, 16,
+/// 32 or 64 bits, or as `u256`/`i256` with a width of 128 or 256 bits; UTF-8 text; byte
+/// strings; optional values; unit enum variants; records; and fixed-length sequences.
+///
+/// A record visits its fields in ascending ID order. When `OMIT_NONE` is true, the format
+/// identifies fields by key and a serializer leaves `None` fields out; otherwise it visits
+/// every field. `present` counts the fields the serializer will visit. Each field or
+/// sequence element is announced before its value is written.
+///
+/// Encoders report errors with the offset of the output byte being written.
 pub trait Encoder {
-    /// Formats with canonical numeric keys can request ascending field ID order.
-    const RECORD_FIELDS_BY_ID: bool = false
+    const OMIT_NONE: bool
 
     type Record
     type Sequence
 
     fn offset(self) -> usize
     fn write_bool(mut self, _ value: bool) -> CodecResult<()>
-    fn write_unsigned(mut self, _ value: u64, _ bits: u8) -> CodecResult<()>
-    fn write_signed(mut self, _ value: i64, _ bits: u8) -> CodecResult<()>
+    fn write_unsigned(mut self, _ value: u64, _ bits: u16) -> CodecResult<()>
+    fn write_signed(mut self, _ value: i64, _ bits: u16) -> CodecResult<()>
+    fn write_wide_unsigned(mut self, _ value: u256, _ bits: u16) -> CodecResult<()>
+    fn write_wide_signed(mut self, _ value: i256, _ bits: u16) -> CodecResult<()>
     fn write_text<const N: usize>(mut self, _ value: Text<N>) -> CodecResult<()>
-    fn write_null(mut self) -> CodecResult<()>
-    fn write_variant<S: SerialDescriptor>(
-        mut self,
-        _ node: usize,
-        _ variant: VariantDescriptor,
-    ) -> CodecResult<()>
+    fn write_bytes<const N: usize>(mut self, _ value: BoundedBuffer<N>) -> CodecResult<()>
+    /// An absent optional value.
+    fn write_none(mut self) -> CodecResult<()>
+    /// Marks a present optional value, which the serializer writes next.
+    fn write_some(mut self) -> CodecResult<()>
+    fn write_variant<V: Schema>(mut self, _ index: usize) -> CodecResult<()>
 
-    /// `present` counts fields that the serializer will actually visit.
-    fn begin_record<S: SerialDescriptor>(mut self, _ node: usize, _ present: usize) -> CodecResult<
-        Self::Record,
-    >
-    fn field(mut self, _ record: mut Self::Record, _ field: FieldDescriptor) -> CodecResult<()>
+    fn begin_record<R: Schema>(mut self, _ present: usize) -> CodecResult<Self::Record>
+    fn field<R: Schema>(mut self, _ record: mut Self::Record, _ position: usize) -> CodecResult<()>
     fn end_record(mut self, _ record: own Self::Record) -> CodecResult<()>
 
     fn begin_sequence(mut self, _ length: usize) -> CodecResult<Self::Sequence>
@@ -44,28 +68,28 @@ pub trait Encoder {
     fn end_sequence(mut self, _ sequence: own Self::Sequence) -> CodecResult<()>
 }
 
-/// Calls mirror an encoder, with a format deciding which record field comes
-/// next. Serializers track duplicate assignments and required fields.
+/// The data model a format reads. Calls mirror `Encoder`.
+///
+/// `read_some` reports whether an optional value follows, consuming the format's absence
+/// marker. `next_field` returns the next field present on the wire, positioned at its value,
+/// or `None` at the end of the record; the deserializer tracks duplicate and missing fields.
 pub trait Decoder {
     type Record
     type Sequence
 
     fn offset(self) -> usize
     fn read_bool(mut self) -> CodecResult<bool>
-    fn read_unsigned(mut self, _ bits: u8) -> CodecResult<u64>
-    fn read_signed(mut self, _ bits: u8) -> CodecResult<i64>
+    fn read_unsigned(mut self, _ bits: u16) -> CodecResult<u64>
+    fn read_signed(mut self, _ bits: u16) -> CodecResult<i64>
+    fn read_wide_unsigned(mut self, _ bits: u16) -> CodecResult<u256>
+    fn read_wide_signed(mut self, _ bits: u16) -> CodecResult<i256>
     fn read_text<const N: usize>(mut self) -> CodecResult<Text<N>>
-    /// Consume a null if present and leave a non-null value unread.
-    fn take_null(mut self) -> CodecResult<bool>
-    fn read_variant<S: SerialDescriptor>(mut self, _ node: usize) -> CodecResult<usize>
+    fn read_bytes<const N: usize>(mut self) -> CodecResult<BoundedBuffer<N>>
+    fn read_some(mut self) -> CodecResult<bool>
+    fn read_variant<V: Schema>(mut self) -> CodecResult<usize>
 
-    fn begin_record<S: SerialDescriptor>(mut self, _ node: usize) -> CodecResult<Self::Record>
-    /// Return the next field and position the decoder at its value, or signal the record end.
-    fn next_field<S: SerialDescriptor>(
-        mut self,
-        _ node: usize,
-        _ record: mut Self::Record,
-    ) -> CodecResult<Option<Field>>
+    fn begin_record<R: Schema>(mut self) -> CodecResult<Self::Record>
+    fn next_field<R: Schema>(mut self, _ record: mut Self::Record) -> CodecResult<Option<FieldKey>>
     fn end_record(mut self, _ record: own Self::Record) -> CodecResult<()>
 
     fn begin_sequence(mut self, _ length: usize) -> CodecResult<Self::Sequence>

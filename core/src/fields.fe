@@ -1,0 +1,53 @@
+use core::marker::Copy
+use ingot::error::{CodecError, CodecResult, ErrorKind}
+use ingot::schema::{Schema, SchemaName}
+use ingot::serializer::{Decoder, Deserialize}
+
+/// A record field a decoder found on the wire: its schema position, the byte offset of its
+/// key, and its name for error reports.
+pub struct FieldKey { pub position: usize, pub offset: usize, pub name: SchemaName }
+impl Copy for FieldKey {}
+
+impl FieldKey {
+    /// The key for field `position` of `R`, or `None` when `R` has no such field.
+    pub fn of<R: Schema>(_ position: usize, _ offset: usize) -> Option<Self> {
+        match R::field(position) {
+            Option::Some(field) => Option::Some(Self { position, offset, name: field.name }),
+            Option::None => Option::None,
+        }
+    }
+
+    /// Decodes this field's value into `slot`. Fails with `DuplicateField` when `slot`
+    /// already holds a value, and names this field in any error from the value.
+    pub fn read<T: Deserialize, D: Decoder>(self, _ decoder: mut D, _ slot: mut Option<T>) -> CodecResult<
+        (),
+    > {
+        if slot.is_some() {
+            return Result::Err(
+                CodecError::at(kind: ErrorKind::DuplicateField, offset: self.offset).in_field(
+                    self.name,
+                ),
+            )
+        }
+        match T::deserialize(mut decoder) {
+            Result::Ok(value) => {
+                slot = Option::Some(value)
+                Result::Ok(())
+            },
+            Result::Err(error) => Result::Err(error.in_field(self.name)),
+        }
+    }
+
+    /// The error for a field the deserializer does not handle.
+    pub fn unknown(self) -> CodecError {
+        CodecError::at(kind: ErrorKind::UnknownField, offset: self.offset)
+    }
+}
+
+/// The value collected for an optional field: absent and explicit `None` both give `None`.
+pub fn optional<T>(_ slot: own Option<Option<T>>) -> Option<T> {
+    match slot {
+        Option::Some(value) => value,
+        Option::None => Option::None,
+    }
+}

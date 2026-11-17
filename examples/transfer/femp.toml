@@ -17,6 +17,9 @@ path = "../../formats/json"
 [modules.cbor]
 path = "../../formats/cbor"
 
+[modules.compact]
+path = "../compact_format"
+
 [modules.shared]
 path = "shared"
 
@@ -24,7 +27,7 @@ path = "shared"
 command = [
     "cargo", "run", "--quiet", "--locked",
     "--manifest-path", "../../../Cargo.toml", "--bin", "fe-codec-gen", "--",
-    "--source", "src/models.fe", "--type", "Batch", "--type", "Sample", "--type", "StableTransfer", "--stdout",
+    "--source", "src/models.fe", "--stdout",
 ]
 output = "src/serializers.fe"
 

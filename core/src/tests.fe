@@ -1,4 +1,17 @@
-use ingot::{BoundedBuffer, CodecResult, ErrorKind, Text, TextWriter}
+use ingot::{
+    BoundedBuffer,
+    CodecError,
+    CodecResult,
+    ErrorKind,
+    Frame,
+    Text,
+    TextWriter,
+    checked_signed,
+    checked_unsigned,
+    checked_wide_signed,
+    checked_wide_unsigned,
+    schema_name,
+}
 
 #[test]
 fn valid_text_keeps_nul_and_multibyte_sequences() {
@@ -58,4 +71,49 @@ fn invalid<T>(_ result: own CodecResult<T>, _ offset: usize) {
         ),
         Result::Ok(_) => assert!(false),
     }
+}
+
+fn kind<T>(_ result: own CodecResult<T>) -> u32 {
+    match result {
+        Result::Ok(_) => 0,
+        Result::Err(error) => error.kind.code(),
+    }
+}
+
+#[test]
+fn integer_checks_accept_exactly_their_ranges() {
+    assert!(checked_unsigned(255, 8, 0).is_ok() && kind(checked_unsigned(256, 8, 0)) == 6)
+    assert!(checked_signed(-128, 8, 0).is_ok() && kind(checked_signed(128, 8, 0)) == 6)
+    assert!(kind(checked_unsigned(1, 7, 0)) == 16 && kind(checked_signed(1, 128, 0)) == 16)
+    let u128_max: u256 = 0xffffffffffffffffffffffffffffffff
+    assert!(checked_wide_unsigned(u128_max, 128, 0).is_ok())
+    assert!(kind(checked_wide_unsigned(u128_max + 1, 128, 0)) == 6)
+    let i128_min: i256 = -0x80000000000000000000000000000000
+    assert!(checked_wide_signed(i128_min, 128, 0).is_ok())
+    assert!(kind(checked_wide_signed(i128_min - 1, 128, 0)) == 6)
+    assert!(kind(checked_wide_signed(-i128_min, 128, 0)) == 6)
+    assert!(kind(checked_wide_unsigned(1, 64, 0)) == 16)
+}
+
+#[test]
+fn frames_count_entries_and_require_ascending_keys() {
+    var frame = Frame::new(2)
+    assert!(kind(frame.key(0, 0)) == 7)
+    assert!(frame.key(3, 0).is_ok() && frame.taken() == 1)
+    assert!(kind(frame.key(3, 4)) == 8)
+    assert!(kind(frame.key(2, 4)) == 17)
+    assert!(kind(frame.complete(5)) == 11)
+    assert!(frame.key(9, 6).is_ok() && frame.remaining() == 0)
+    assert!(kind(frame.take(7)) == 11)
+    assert!(frame.complete(8).is_ok())
+}
+
+#[test]
+fn errors_keep_the_innermost_field() {
+    let inner = CodecError::at(kind: ErrorKind::InvalidUtf8, offset: 3).in_field(schema_name<5>("label"))
+    let outer = inner.in_field(schema_name<9>("recipient"))
+    let label: [u8; 5] = "label"
+    assert!(outer.field().unwrap().as_bytes().equals(BoundedBuffer<5>::from_array(label)))
+    assert!(outer.offset == 3 && outer.kind == ErrorKind::InvalidUtf8)
+    assert!(CodecError::at(kind: ErrorKind::UnknownField, offset: 0).field().is_none())
 }

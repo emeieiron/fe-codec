@@ -1,0 +1,30 @@
+//! Claims for `femp prove` about the canonical head rule. They are ordinary public functions
+//! so FeMP can find them; nothing else calls them.
+
+use ingot::canonical::{additional_info, head_width, minimum_argument}
+
+fn fits(_ argument: u64, _ width: u8) -> bool {
+    width == 8 || (argument >> ((width as u64) * 8)) == 0
+}
+
+/// The encoder's head for any argument fits it, and the decoder accepts it.
+#[property]
+pub fn encoded_heads_are_accepted(argument: u64) -> bool {
+    let width = head_width(argument)
+    if width == 0 {
+        return argument < 24
+    }
+    fits(argument, width) && argument >= minimum_argument(width) && additional_info(width) >= 24
+        && additional_info(width) <= 27
+}
+
+/// Of the widths an argument fits, the decoder accepts exactly the one the encoder writes,
+/// so every argument has a single accepted head.
+#[property]
+pub fn each_argument_has_one_accepted_head(argument: u64, choice: u8) -> bool {
+    let width: u8 = if choice % 4 == 0 { 1 } else if choice % 4 == 1 { 2 } else if choice % 4 == 2 { 4 } else { 8 }
+    if !fits(argument, width) {
+        return true
+    }
+    (argument >= minimum_argument(width)) == (head_width(argument) == width)
+}

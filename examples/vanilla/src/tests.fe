@@ -1,0 +1,87 @@
+// The README's examples, run by `fe test` with no FeMP involved.
+
+use fe_codec_cbor::Cbor
+use fe_codec_core::{BoundedBuffer, CodecResult, ErrorKind, Limits, Text}
+use fe_codec_json::Json
+use std::evm::Address
+use ingot::models::{Order, OrderStatus, Reading}
+use ingot::store::store
+use ingot::temperature::Celsius
+
+const ORDER_JSON: [u8; 119] = "{\"id\":7,\"buyer\":\"0xd8da6bf26964af9d7eed9e03e53415d37aa96045\",\"total\":1000000000000000000,\"status\":\"Paid\",\"note\":\"gift\"}"
+const ORDER_CBOR: [u8; 43] = [0xa5, 0x01, 0x07, 0x02, 0x54, 0xd8, 0xda, 0x6b, 0xf2, 0x69, 0x64, 0xaf, 0x9d, 0x7e, 0xed, 0x9e, 0x03, 0xe5, 0x34, 0x15, 0xd3, 0x7a, 0xa9, 0x60, 0x45, 0x03, 0x1b, 0x0d, 0xe0, 0xb6, 0xb3, 0xa7, 0x64, 0x00, 0x00, 0x04, 0x01, 0x05, 0x64, 0x67, 0x69, 0x66, 0x74]
+
+fn order() -> CodecResult<Order> {
+    Result::Ok(
+        Order {
+            id: 7,
+            buyer: Address::new(0xd8da6bf26964af9d7eed9e03e53415d37aa96045),
+            total: 1000000000000000000,
+            status: OrderStatus::Paid,
+            note: Option::Some(Text<32>::from_array([0x67, 0x69, 0x66, 0x74])?),
+        },
+    )
+}
+
+// Example 1: encode and decode a struct. The annotated bindings choose the type and
+// the buffer capacity.
+fn encode_and_decode() -> CodecResult<bool> {
+    let order = order()?
+    let bytes: BoundedBuffer<192> = fe_codec_json::encode(order)?
+    let back: Order = fe_codec_json::decode(bytes)?
+    Result::Ok(
+        bytes.equals(BoundedBuffer<119>::from_array(ORDER_JSON)) && back.id == 7
+            && back.total == 1000000000000000000,
+    )
+}
+
+#[test]
+fn example_1_encodes_and_decodes_a_struct() {
+    assert!(encode_and_decode().unwrap())
+}
+
+// Example 2: the same value in CBOR, through code generic over the format.
+#[test]
+fn example_2_switches_formats_without_touching_the_serializer() {
+    let order = order().unwrap()
+    let cbor = fe_codec_cbor::encode<Order, 64>(order).unwrap()
+    assert!(cbor.equals(BoundedBuffer<43>::from_array(ORDER_CBOR)))
+    let json = store(Json::new(), order).unwrap()
+    assert!(json.equals(BoundedBuffer<119>::from_array(ORDER_JSON)))
+    let tight = Cbor::with_limits(Limits { max_depth: 1, max_items: 5 })
+    assert!(store(tight, order).unwrap().equals(cbor))
+}
+
+// Example 3: a type with a handwritten serializer, used as a generated record's field.
+#[test]
+fn example_3_uses_a_custom_serializer() {
+    let reading = Reading { at: 1, temperature: Celsius { degrees: 21 } }
+    let json = fe_codec_json::encode<Reading, 32>(reading).unwrap()
+    let expected: [u8; 28] = "{\"at\":1,\"temperature\":\"21C\"}"
+    assert!(json.equals(BoundedBuffer<28>::from_array(expected)))
+    let back = fe_codec_cbor::decode<Reading, 32>(fe_codec_cbor::encode<Reading, 32>(reading).unwrap())
+    assert!(back.unwrap().temperature.degrees == 21)
+}
+
+// Example 5: errors carry a kind, a byte offset and the field they belong to.
+#[test]
+fn example_5_reports_typed_errors_with_field_names() {
+    let input: [u8; 25] = "{\"id\":7,\"status\":\"Later\"}"
+    match fe_codec_json::decode<Order, 25>(BoundedBuffer<25>::from_array(input)) {
+        Result::Err(error) => {
+            assert!(error.kind == ErrorKind::UnknownVariant && error.offset == 17)
+            let name: [u8; 6] = "status"
+            assert!(error.field().unwrap().as_bytes().equals(BoundedBuffer<6>::from_array(name)))
+        },
+        Result::Ok(_) => assert!(false),
+    }
+    let missing: [u8; 8] = "{\"id\":7}"
+    match fe_codec_json::decode<Order, 8>(BoundedBuffer<8>::from_array(missing)) {
+        Result::Err(error) => {
+            assert!(error.kind == ErrorKind::MissingField && error.offset == 8)
+            let name: [u8; 5] = "buyer"
+            assert!(error.field().unwrap().as_bytes().equals(BoundedBuffer<5>::from_array(name)))
+        },
+        Result::Ok(_) => assert!(false),
+    }
+}

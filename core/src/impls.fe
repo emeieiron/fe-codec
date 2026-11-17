@@ -1,0 +1,316 @@
+use core::bytes::PackedBytes
+use core::marker::Copy
+use core::num::IntDowncast
+use fe_codec_io::BoundedBuffer
+use ingot::error::{CodecError, CodecResult, ErrorKind}
+use ingot::serializer::{Decoder, Deserialize, Encoder, Serialize}
+use ingot::text::Text
+use std::evm::Address
+
+// Integers narrower than 64 bits travel as `u64`/`i64`, wider ones as `u256`/`i256`. Every
+// decoded value is range-checked again here, so a format that skips its own check cannot
+// produce a wrapped value. `usize` and `isize` have no impls: their width differs per target.
+
+impl Serialize for bool {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_bool(self)
+    }
+}
+
+impl Deserialize for bool {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        decoder.read_bool()
+    }
+}
+
+impl Serialize for u8 {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_unsigned(self as u64, 8)
+    }
+}
+
+impl Deserialize for u8 {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        narrow(decoder.read_unsigned(8), decoder.offset())
+    }
+}
+
+impl Serialize for u16 {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_unsigned(self as u64, 16)
+    }
+}
+
+impl Deserialize for u16 {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        narrow(decoder.read_unsigned(16), decoder.offset())
+    }
+}
+
+impl Serialize for u32 {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_unsigned(self as u64, 32)
+    }
+}
+
+impl Deserialize for u32 {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        narrow(decoder.read_unsigned(32), decoder.offset())
+    }
+}
+
+impl Serialize for u64 {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_unsigned(self, 64)
+    }
+}
+
+impl Deserialize for u64 {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        decoder.read_unsigned(64)
+    }
+}
+
+impl Serialize for i8 {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_signed(self as i64, 8)
+    }
+}
+
+impl Deserialize for i8 {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        narrow(decoder.read_signed(8), decoder.offset())
+    }
+}
+
+impl Serialize for i16 {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_signed(self as i64, 16)
+    }
+}
+
+impl Deserialize for i16 {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        narrow(decoder.read_signed(16), decoder.offset())
+    }
+}
+
+impl Serialize for i32 {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_signed(self as i64, 32)
+    }
+}
+
+impl Deserialize for i32 {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        narrow(decoder.read_signed(32), decoder.offset())
+    }
+}
+
+impl Serialize for i64 {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_signed(self, 64)
+    }
+}
+
+impl Deserialize for i64 {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        decoder.read_signed(64)
+    }
+}
+
+impl Serialize for u128 {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_wide_unsigned(self as u256, 128)
+    }
+}
+
+impl Deserialize for u128 {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        narrow(decoder.read_wide_unsigned(128), decoder.offset())
+    }
+}
+
+impl Serialize for u256 {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_wide_unsigned(self, 256)
+    }
+}
+
+impl Deserialize for u256 {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        decoder.read_wide_unsigned(256)
+    }
+}
+
+impl Serialize for i128 {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_wide_signed(self as i256, 128)
+    }
+}
+
+impl Deserialize for i128 {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        narrow(decoder.read_wide_signed(128), decoder.offset())
+    }
+}
+
+impl Serialize for i256 {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_wide_signed(self, 256)
+    }
+}
+
+impl Deserialize for i256 {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        decoder.read_wide_signed(256)
+    }
+}
+
+fn narrow<S: IntDowncast<T>, T>(_ value: own CodecResult<S>, _ offset: usize) -> CodecResult<T> {
+    match value?.downcast() {
+        Option::Some(narrowed) => Result::Ok(narrowed),
+        Option::None => Result::Err(CodecError::at(kind: ErrorKind::IntegerOutOfRange, offset)),
+    }
+}
+
+impl<const N: usize> Serialize for Text<N> {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_text(self)
+    }
+}
+
+impl<const N: usize> Deserialize for Text<N> {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        decoder.read_text<N>()
+    }
+}
+
+/// A byte string of at most `N` bytes.
+impl<const N: usize> Serialize for BoundedBuffer<N> {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_bytes(self)
+    }
+}
+
+impl<const N: usize> Deserialize for BoundedBuffer<N> {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        decoder.read_bytes<N>()
+    }
+}
+
+/// A byte string of exactly `N` bytes.
+impl<const N: usize> Serialize for PackedBytes<N> {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_bytes(BoundedBuffer<N>::from_array(self.to_array()))
+    }
+}
+
+impl<const N: usize> Deserialize for PackedBytes<N> {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        let start = decoder.offset()
+        let bytes = decoder.read_bytes<N>()?
+        if bytes.len() != N {
+            return Result::Err(CodecError::at(kind: ErrorKind::InvalidLength, offset: start))
+        }
+        var array: [u8; N] = [0; N]
+        var index: usize = 0
+        while index < N {
+            array[index] = bytes.byte_at(index).unwrap()
+            index += 1
+        }
+        Result::Ok(PackedBytes<N>::from_array(array))
+    }
+}
+
+/// An EVM address: a byte string of exactly 20 bytes, most significant first.
+impl Serialize for Address {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        let word = self.word()
+        var bytes: [u8; 20] = [0; 20]
+        var index: usize = 0
+        while index < 20 {
+            bytes[index] = (word >> (((19 - index) * 8) as u256)).downcast_truncate()
+            index += 1
+        }
+        encoder.write_bytes(BoundedBuffer<20>::from_array(bytes))
+    }
+}
+
+impl Deserialize for Address {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        let start = decoder.offset()
+        let bytes = decoder.read_bytes<20>()?
+        if bytes.len() != 20 {
+            return Result::Err(CodecError::at(kind: ErrorKind::InvalidLength, offset: start))
+        }
+        var word: u256 = 0
+        var index: usize = 0
+        while index < 20 {
+            word = (word << 8) | (bytes.byte_at(index).unwrap() as u256)
+            index += 1
+        }
+        Result::Ok(Address::new(word))
+    }
+}
+
+/// `None` and `Some` as the format represents optional values. `Option<Option<T>>` does not
+/// round-trip in formats that write `None` as null, so the generator rejects it.
+impl<T: Serialize> Serialize for Option<T> {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        match self {
+            Option::Some(ref value) => {
+                encoder.write_some()?
+                value.serialize(mut encoder)
+            },
+            Option::None => encoder.write_none(),
+        }
+    }
+}
+
+impl<T: Deserialize> Deserialize for Option<T> {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        if decoder.read_some()? {
+            return Result::Ok(Option::Some(T::deserialize(mut decoder)?))
+        }
+        Result::Ok(Option::None)
+    }
+}
+
+/// A fixed-length sequence.
+impl<T: Serialize, const N: usize> Serialize for [T; N] {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        var sequence = encoder.begin_sequence(N)?
+        for ref element in self {
+            encoder.element(mut sequence)?
+            element.serialize(mut encoder)?
+        }
+        encoder.end_sequence(sequence)
+    }
+}
+
+/// Decoding builds the array from its first element, so elements must be `Copy`, and an
+/// empty array cannot be produced generically: `[T; 0]` decodes the empty sequence and then
+/// fails with `Unsupported`. Generated serializers decode literal-length arrays, including
+/// empty ones and arrays of non-`Copy` records, without this impl.
+impl<T: Deserialize + Copy, const N: usize> Deserialize for [T; N] {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        let start = decoder.offset()
+        var sequence = decoder.begin_sequence(N)?
+        if N == 0 {
+            decoder.end_sequence(sequence)?
+            return Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: start))
+        }
+        decoder.element(mut sequence)?
+        let first = T::deserialize(mut decoder)?
+        var array: [T; N] = [first; N]
+        var index: usize = 1
+        while index < N {
+            decoder.element(mut sequence)?
+            array[index] = T::deserialize(mut decoder)?
+            index += 1
+        }
+        decoder.end_sequence(sequence)?
+        Result::Ok(array)
+    }
+}

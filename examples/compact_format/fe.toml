@@ -1,0 +1,6 @@
+[ingot]
+name = "codec_compact"
+version = "0.1.0"
+
+[dependencies]
+fe_codec_core = "../../core"

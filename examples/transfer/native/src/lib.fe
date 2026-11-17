@@ -42,7 +42,7 @@ pub fn main() -> i32 uses (args: Args, out: mut Stdout, err: mut Stderr) {
 }
 
 fn report(_ error: CodecError) -> i32 uses (err: mut Stderr) {
-    if let Option::Some(field) = codec_transfer::sample_error_field(error) {
+    if let Option::Some(field) = error.field() {
         let name = field.as_bytes()
         var display = MemBuffer::new(name.len())
         if name.copy_to(mut display.slice(offset: 0, len: name.len())).is_ok() {

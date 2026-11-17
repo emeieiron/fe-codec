@@ -1,0 +1,248 @@
+use core::num::IntDowncast
+use fe_codec_core::{
+    BoundedBuffer,
+    ByteReader,
+    ByteWriter,
+    CodecError,
+    CodecResult,
+    Decoder,
+    ErrorKind,
+    FieldKey,
+    Frame,
+    Limits,
+    Schema,
+    Structure,
+    Text,
+    TextWriter,
+    checked_signed,
+    checked_unsigned,
+    checked_wide_signed,
+    checked_wide_unsigned,
+}
+
+pub struct CompactDecoder<const N: usize> { input: ByteReader<N>, structure: Structure }
+
+impl<const N: usize> CompactDecoder<N> {
+    pub fn new(_ input: own BoundedBuffer<N>, _ limits: Limits) -> Self {
+        Self { input: ByteReader<N>::new(input), structure: Structure::new(limits) }
+    }
+
+    pub fn finish(self) -> CodecResult<()> {
+        self.structure.finish(self.offset())?
+        if self.input.remaining() != 0 {
+            return Result::Err(CodecError::at(kind: ErrorKind::TrailingData, offset: self.offset()))
+        }
+        Result::Ok(())
+    }
+
+    fn byte(mut self) -> CodecResult<u8> {
+        self.input.read().map_err(CodecError::from_io)
+    }
+
+    fn fixed(mut self, _ width: u16) -> CodecResult<u256> {
+        var value: u256 = 0
+        var remaining = width
+        while remaining != 0 {
+            value = (value << 8) | (self.byte()? as u256)
+            remaining -= 1
+        }
+        Result::Ok(value)
+    }
+
+    /// Two's complement of `width` bytes, sign-extended.
+    fn signed(mut self, _ width: u16) -> CodecResult<i256> {
+        let raw = self.fixed(width)?
+        let bits = (width * 8) as u256
+        if bits < 256 && (raw >> (bits - 1)) != 0 {
+            let extended = raw | (0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff << bits)
+            return Result::Ok(extended.downcast_truncate())
+        }
+        Result::Ok(raw.downcast_truncate())
+    }
+
+    /// A ULEB128 number in its shortest form.
+    fn uleb(mut self) -> CodecResult<u64> {
+        let offset = self.offset()
+        var value: u64 = 0
+        var shift: u64 = 0
+        loop {
+            let byte = self.byte()?
+            let low = (byte & 0x7f) as u64
+            if shift == 63 && low > 1 {
+                return Result::Err(CodecError::at(kind: ErrorKind::IntegerOutOfRange, offset))
+            }
+            value = value | (low << shift)
+            if byte & 0x80 == 0 {
+                if byte == 0 && shift != 0 {
+                    return Result::Err(CodecError::at(kind: ErrorKind::NonCanonical, offset))
+                }
+                return Result::Ok(value)
+            }
+            shift += 7
+            if shift > 63 {
+                return Result::Err(CodecError::at(kind: ErrorKind::IntegerOutOfRange, offset))
+            }
+        }
+    }
+
+    fn length(mut self, _ capacity: usize) -> CodecResult<usize> {
+        let offset = self.offset()
+        let length = self.uleb()?
+        if (length as u256) > (capacity as u256) {
+            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset))
+        }
+        Result::Ok(length.downcast_unchecked())
+    }
+
+    fn begin(mut self, _ count: usize) -> CodecResult<Frame> {
+        let offset = self.offset()
+        self.structure.check_items(count, offset)?
+        self.structure.begin(offset)?
+        Result::Ok(Frame::new(count))
+    }
+
+    fn end(mut self, _ frame: own Frame) -> CodecResult<()> {
+        let offset = self.offset()
+        frame.complete(offset)?
+        self.structure.end(offset)
+    }
+}
+
+impl<const N: usize> Decoder for CompactDecoder<N> {
+    type Record = Frame
+    type Sequence = Frame
+
+    fn offset(self) -> usize {
+        self.input.offset()
+    }
+
+    fn read_bool(mut self) -> CodecResult<bool> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        match self.byte()? {
+            0 => Result::Ok(false),
+            1 => Result::Ok(true),
+            _ => Result::Err(CodecError::at(kind: ErrorKind::InvalidSyntax, offset)),
+        }
+    }
+
+    fn read_unsigned(mut self, _ bits: u16) -> CodecResult<u64> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        checked_unsigned(0, bits, offset)?
+        let value = self.fixed(bits / 8)?
+        checked_unsigned(value.downcast_unchecked(), bits, offset)
+    }
+
+    fn read_signed(mut self, _ bits: u16) -> CodecResult<i64> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        checked_signed(0, bits, offset)?
+        let value = self.signed(bits / 8)?
+        checked_signed(value.downcast_unchecked(), bits, offset)
+    }
+
+    fn read_wide_unsigned(mut self, _ bits: u16) -> CodecResult<u256> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        checked_wide_unsigned(0, bits, offset)?
+        let value = self.fixed(bits / 8)?
+        checked_wide_unsigned(value, bits, offset)
+    }
+
+    fn read_wide_signed(mut self, _ bits: u16) -> CodecResult<i256> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        checked_wide_signed(0, bits, offset)?
+        let value = self.signed(bits / 8)?
+        checked_wide_signed(value, bits, offset)
+    }
+
+    fn read_text<const M: usize>(mut self) -> CodecResult<Text<M>> {
+        self.structure.value(self.offset())?
+        let length = self.length(M)?
+        var text = TextWriter<M>::new()
+        var index: usize = 0
+        while index < length {
+            let at = self.offset()
+            text.write(self.byte()?, at)?
+            index += 1
+        }
+        text.finish(self.offset())
+    }
+
+    fn read_bytes<const M: usize>(mut self) -> CodecResult<BoundedBuffer<M>> {
+        self.structure.value(self.offset())?
+        let length = self.length(M)?
+        var output = ByteWriter<M>::new()
+        var index: usize = 0
+        while index < length {
+            output.write(self.byte()?).map_err(CodecError::from_io)?
+            index += 1
+        }
+        Result::Ok(output.finish())
+    }
+
+    fn read_some(mut self) -> CodecResult<bool> {
+        let offset = self.offset()
+        match self.byte()? {
+            0 => {
+                self.structure.value(offset)?
+                Result::Ok(false)
+            },
+            1 => Result::Ok(true),
+            _ => Result::Err(CodecError::at(kind: ErrorKind::InvalidSyntax, offset)),
+        }
+    }
+
+    fn read_variant<V: Schema>(mut self) -> CodecResult<usize> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        let id = self.uleb()?
+        var index: usize = 0
+        while let Option::Some(variant) = V::variant(index) {
+            if variant.id == id {
+                return Result::Ok(index)
+            }
+            index += 1
+        }
+        Result::Err(CodecError::at(kind: ErrorKind::UnknownVariant, offset))
+    }
+
+    fn begin_record<R: Schema>(mut self) -> CodecResult<Frame> {
+        var count: usize = 0
+        while R::field(count).is_some() {
+            count += 1
+        }
+        self.begin(count)
+    }
+
+    fn next_field<R: Schema>(mut self, _ record: mut Frame) -> CodecResult<Option<FieldKey>> {
+        if record.remaining() == 0 {
+            return Result::Ok(Option::None)
+        }
+        let offset = self.offset()
+        let position = record.taken()
+        record.take(offset)?
+        self.structure.member(offset)?
+        Result::Ok(FieldKey::of<R>(position, offset))
+    }
+
+    fn end_record(mut self, _ record: own Frame) -> CodecResult<()> {
+        self.end(record)
+    }
+
+    fn begin_sequence(mut self, _ length: usize) -> CodecResult<Frame> {
+        self.begin(length)
+    }
+
+    fn element(mut self, _ sequence: mut Frame) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.member(offset)?
+        sequence.take(offset)
+    }
+
+    fn end_sequence(mut self, _ sequence: own Frame) -> CodecResult<()> {
+        self.end(sequence)
+    }
+}

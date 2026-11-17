@@ -1,0 +1,26 @@
+use fe_codec_core::Text
+use std::evm::Address
+use ingot::temperature::Celsius
+
+#[serializable]
+pub struct Order {
+    #[codec_id = 1]
+    pub id: u64,
+    #[codec_id = 2]
+    pub buyer: Address,
+    #[codec_id = 3]
+    pub total: u256,
+    #[codec_id = 4]
+    pub status: OrderStatus,
+    #[codec_id = 5]
+    pub note: Option<Text<32>>,
+}
+
+#[serializable]
+pub enum OrderStatus {
+    Open,
+    Paid,
+}
+
+#[serializable]
+pub struct Reading { pub at: u64, pub temperature: Celsius }

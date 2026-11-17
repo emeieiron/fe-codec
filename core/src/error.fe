@@ -1,7 +1,9 @@
+use core::abi::{AbiFrame, AbiSize, Encode}
 use core::marker::Copy
-use core::num::IntDowncast
 use core::ops::Eq
 use fe_codec_io::{IoError, IoErrorKind}
+use std::abi::Sol
+use ingot::schema::SchemaName
 
 pub enum ErrorKind {
     UnexpectedEnd,
@@ -56,37 +58,35 @@ impl Eq for ErrorKind {
     }
 }
 
-pub struct FieldContext { pub node: usize, pub index: usize }
-impl Copy for FieldContext {}
-
-pub struct CodecError { pub kind: ErrorKind, pub offset: usize, context: u64 }
+/// A failure with its kind and the zero-based byte offset where it was found.
+///
+/// The offset can equal the input length when data is missing. For output capacity errors it
+/// is the first byte that did not fit. `field()` names the innermost record field whose value
+/// failed, or the field that was missing or duplicated.
+pub struct CodecError { pub kind: ErrorKind, pub offset: usize, name: u256 }
 impl Copy for CodecError {}
 
 pub type CodecResult<T> = Result<CodecError, T>
 
 impl CodecError {
     pub fn at(kind: ErrorKind, offset: usize) -> Self {
-        Self { kind, offset, context: 0 }
+        Self { kind, offset, name: 0 }
     }
 
-    pub fn at_field(self, _ node: usize, _ index: usize) -> Self {
-        // Zero denotes absence. The schema graph and its fields are indexed
-        // by their declaration positions, which fit into two 32-bit halves.
-        if (node as u256) >= 0xffffffff || (index as u256) > 0xffffffff {
+    /// The error attributed to field `name`, unless an inner field already claimed it.
+    pub fn in_field(self, _ name: SchemaName) -> Self {
+        if self.name != 0 {
             return self
         }
-        let record: u64 = node.downcast_unchecked()
-        let member: u64 = index.downcast_unchecked()
-        Self { kind: self.kind, offset: self.offset, context: ((record + 1) << 32) | member }
+        Self { kind: self.kind, offset: self.offset, name: name.word() }
     }
 
-    pub fn field(self) -> Option<FieldContext> {
-        if self.context == 0 {
+    /// The field the error belongs to, if any.
+    pub fn field(self) -> Option<SchemaName> {
+        if self.name == 0 {
             return Option::None
         }
-        let node: usize = ((self.context >> 32) - 1).downcast_unchecked()
-        let index: usize = (self.context & 0xffffffff).downcast_unchecked()
-        Option::Some(FieldContext { node, index })
+        Option::Some(SchemaName::from_word(self.name))
     }
 
     pub fn from_io(_ error: own IoError) -> Self {
@@ -98,11 +98,28 @@ impl CodecError {
     }
 }
 
+/// On the EVM, a panic carries its value as revert data, so `unwrap` on a `CodecResult`
+/// reverts with two ABI words: the kind's `code()` and the byte offset. The field name is not
+/// included.
+impl AbiSize for CodecError {
+    const HEAD_SIZE: u256 = 64
+    const IS_DYNAMIC: bool = false
+}
+
+impl Encode<Sol> for CodecError {
+    fn encode(self, _ out: AbiFrame) {
+        out.store_word(at: 0, value: self.kind.code() as u256)
+        out.store_word(at: 32, value: self.offset as u256)
+    }
+}
+
+/// Bounds a decoder or encoder enforces besides its buffer capacity.
 pub struct Limits { pub max_depth: usize, pub max_items: usize }
 impl Copy for Limits {}
 
 impl Limits {
-    pub fn standard() -> Self {
+    /// 32 nested containers and 256 entries per container.
+    pub const fn standard() -> Self {
         Self { max_depth: 32, max_items: 256 }
     }
 }

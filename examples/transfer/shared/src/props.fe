@@ -1,0 +1,282 @@
+//! Properties for `femp prop`, which runs each one with generated inputs on every target and
+//! compares the targets, and for `femp prove`, which tries to prove them for all inputs.
+//!
+//! Entry points take primitive parameters. Wide integers are built from 64-bit limbs so the
+//! properties also run on WebAssembly, whose exports cannot carry wider values.
+
+use core::num::IntDowncast
+use fe_codec_cbor::Cbor
+use fe_codec_core::{
+    BoundedBuffer,
+    ByteWriter,
+    CodecResult,
+    Deserialize,
+    Format,
+    Serialize,
+    Text,
+    checked_signed,
+    checked_unsigned,
+}
+use fe_codec_json::Json
+use codec_compact::Compact
+use ingot::models::{Sample, Wallet, Wide}
+
+fn round_trips<T: Serialize + Deserialize + core::ops::Eq, const N: usize>(_ value: T) -> bool {
+    same<T, Json, N>(Json::new(), value)
+        && same<T, Cbor, N>(Cbor::new(), value)
+        && same<T, Compact, N>(Compact::new(), value)
+}
+
+fn same<T: Serialize + Deserialize + core::ops::Eq, F: Format, const N: usize>(_ format: F, _ value: T) -> bool {
+    match format.encode<T, N>(value) {
+        Result::Ok(bytes) => match format.decode<T, N>(bytes) {
+            Result::Ok(decoded) => decoded == value,
+            Result::Err(_) => false,
+        },
+        Result::Err(_) => false,
+    }
+}
+
+fn wide(_ a: u64, _ b: u64, _ c: u64, _ d: u64) -> u256 {
+    ((a as u256) << 192) | ((b as u256) << 128) | ((c as u256) << 64) | (d as u256)
+}
+
+#[property(cases = 500)]
+pub fn every_narrow_integer_round_trips(value: u64) -> bool {
+    let signed: i64 = value.downcast_truncate()
+    round_trips<u8, 8>(value.downcast_truncate())
+        && round_trips<u16, 8>(value.downcast_truncate())
+        && round_trips<u32, 16>(value.downcast_truncate())
+        && round_trips<u64, 32>(value)
+        && round_trips<i8, 8>(signed.downcast_truncate())
+        && round_trips<i16, 8>(signed.downcast_truncate())
+        && round_trips<i32, 16>(signed.downcast_truncate())
+        && round_trips<i64, 32>(signed)
+}
+
+#[property(cases = 500)]
+pub fn every_wide_integer_round_trips(a: u64, b: u64, c: u64, d: u64) -> bool {
+    let unsigned = wide(a, b, c, d)
+    let signed: i256 = unsigned.downcast_truncate()
+    let narrow: u128 = unsigned.downcast_truncate()
+    let narrow_signed: i128 = unsigned.downcast_truncate()
+    round_trips<u256, 96>(unsigned)
+        && round_trips<i256, 96>(signed)
+        && round_trips<u128, 64>(narrow)
+        && round_trips<i128, 64>(narrow_signed)
+}
+
+/// Encodings stay canonical: a value that fits 64 bits never uses a CBOR bignum, and the
+/// CBOR encoding of a wide value is at least as short as its JSON decimal.
+#[property(cases = 300)]
+pub fn cbor_integers_use_the_shortest_form(a: u64, b: u64, c: u64, d: u64) -> bool {
+    let value = wide(a, b, c, d)
+    match Cbor::new().encode<u256, 48>(value) {
+        Result::Ok(bytes) => {
+            let first = bytes.byte_at(0).unwrap()
+            if value <= 0xffffffffffffffff { first >> 5 == 0 } else { first == 0xc2 }
+        },
+        Result::Err(_) => false,
+    }
+}
+
+#[property(cases = 300)]
+#[gen(length = "0..=8")]
+pub fn samples_round_trip(value: u8, present: bool, length: u8, bytes: u64) -> bool {
+    var text = ByteWriter<8>::new()
+    var index: u8 = 0
+    while index < length {
+        let byte: u8 = (bytes >> ((index * 8) as u64)).downcast_truncate()
+        if text.write(byte).is_err() {
+            return false
+        }
+        index += 1
+    }
+    // Arbitrary bytes are rarely UTF-8; those cases test nothing about the formats.
+    let note = match Text<8>::from_bytes(text.finish()) {
+        Result::Ok(note) => note,
+        Result::Err(_) => {
+            return true
+        },
+    }
+    let sample = Sample { value, note: if present { Option::Some(note) } else { Option::None } }
+    sample_survives(Json::new(), sample) && sample_survives(Cbor::new(), sample)
+        && sample_survives(Compact::new(), sample)
+}
+
+/// The buffer fits the longest JSON form: eight bytes escaped as `\u0000` each.
+fn sample_survives<F: Format>(_ format: F, _ sample: Sample) -> bool {
+    match format.encode<Sample, 96>(sample) {
+        Result::Ok(bytes) => match format.decode<Sample, 96>(bytes) {
+            Result::Ok(decoded) => {
+                decoded.value == sample.value
+                    && match (decoded.note, sample.note) {
+                        (Option::Some(left), Option::Some(right)) => left.equals(right),
+                        (Option::None, Option::None) => true,
+                        _ => false,
+                    }
+            },
+            Result::Err(_) => false,
+        },
+        Result::Err(_) => false,
+    }
+}
+
+#[property(cases = 300)]
+#[gen(length = "0..=8")]
+pub fn byte_strings_round_trip(length: u8, bytes: u64) -> bool {
+    var output = ByteWriter<8>::new()
+    var index: u8 = 0
+    while index < length {
+        if output.write((bytes >> ((index * 8) as u64)).downcast_truncate()).is_err() {
+            return false
+        }
+        index += 1
+    }
+    let value = output.finish()
+    bytes_survive(Json::new(), value) && bytes_survive(Cbor::new(), value)
+        && bytes_survive(Compact::new(), value)
+}
+
+fn bytes_survive<F: Format>(_ format: F, _ value: BoundedBuffer<8>) -> bool {
+    match format.encode<BoundedBuffer<8>, 32>(value) {
+        Result::Ok(bytes) => match format.decode<BoundedBuffer<8>, 32>(bytes) {
+            Result::Ok(decoded) => decoded.equals(value),
+            Result::Err(_) => false,
+        },
+        Result::Err(_) => false,
+    }
+}
+
+/// Up to 64 arbitrary bytes from eight limbs, most significant byte first.
+fn input(_ length: u8, _ limbs: [u64; 8]) -> BoundedBuffer<64> {
+    var output = ByteWriter<64>::new()
+    var index: usize = 0
+    while index < (length as usize) && index < 64 {
+        let limb = limbs[index / 8]
+        let shift: u64 = ((7 - index % 8) * 8).downcast_truncate()
+        let byte: u8 = (limb >> shift).downcast_truncate()
+        let _ = output.write(byte)
+        index += 1
+    }
+    output.finish()
+}
+
+/// 0 for success, otherwise the error kind's code in the high bits and its offset.
+fn outcome<T>(_ result: own CodecResult<T>) -> u32 {
+    match result {
+        Result::Ok(_) => 0,
+        Result::Err(error) => (error.kind.code() << 16) | error.offset.downcast_truncate(),
+    }
+}
+
+fn decodes_any<F: Format>(_ format: F, _ bytes: BoundedBuffer<64>) -> u32 {
+    outcome(format.decode<Wide, 64>(bytes))
+        ^ (outcome(format.decode<Sample, 64>(bytes)) << 1)
+        ^ (outcome(format.decode<Wallet, 64>(bytes)) << 2)
+}
+
+/// No input makes a decoder panic: any failure is a returned error.
+#[property(cases = 1000)]
+#[gen(length = "0..=64")]
+pub fn decoders_never_panic(
+    length: u8,
+    a: u64,
+    b: u64,
+    c: u64,
+    d: u64,
+    e: u64,
+    f: u64,
+    g: u64,
+    h: u64,
+) -> bool {
+    let bytes = input(length, [a, b, c, d, e, f, g, h])
+    let _ = decodes_any(Json::new(), bytes)
+    let _ = decodes_any(Cbor::new(), bytes)
+    let _ = decodes_any(Compact::new(), bytes)
+    true
+}
+
+/// Every target reports the same outcome, kind and offset for the same arbitrary input.
+#[differential]
+#[gen(length = "0..=64")]
+pub fn decoding_outcomes_agree(
+    length: u8,
+    a: u64,
+    b: u64,
+    c: u64,
+    d: u64,
+    e: u64,
+    f: u64,
+    g: u64,
+    h: u64,
+) -> u32 {
+    let bytes = input(length, [a, b, c, d, e, f, g, h])
+    decodes_any(Json::new(), bytes) ^ (decodes_any(Cbor::new(), bytes) << 3)
+        ^ (decodes_any(Compact::new(), bytes) << 6)
+}
+
+/// Every target writes the same bytes for the same wide value.
+#[differential]
+pub fn encodings_agree(a: u64, b: u64, c: u64, d: u64) -> u64 {
+    let value = Wide {
+        big: wide(a, b, c, d),
+        signed: wide(d, c, b, a).downcast_truncate(),
+        mid: wide(0, 0, a, b).downcast_truncate(),
+        small: wide(0, 0, c, d).downcast_truncate(),
+    }
+    fold(Json::new().encode<Wide, 320>(value)) ^ (fold(Cbor::new().encode<Wide, 160>(value)) << 1)
+        ^ (fold(Compact::new().encode<Wide, 160>(value)) << 2)
+}
+
+/// A position-dependent digest of an encoding, or zero for an error. It is 64 bits wide so
+/// the differential also runs on WebAssembly.
+fn fold<const N: usize>(_ result: own CodecResult<BoundedBuffer<N>>) -> u64 {
+    match result {
+        Result::Ok(bytes) => {
+            var digest: u64 = bytes.len().downcast_truncate()
+            var index: usize = 0
+            while index < bytes.len() {
+                digest = (digest << 5 | digest >> 59) ^ (bytes.byte_at(index).unwrap() as u64)
+                index += 1
+            }
+            digest
+        },
+        Result::Err(_) => 0,
+    }
+}
+
+// Kernels small enough for `femp prove`.
+
+/// The range check accepts exactly the values below 2^bits.
+#[property]
+pub fn unsigned_range_check_is_exact(value: u64, width: u8) -> bool {
+    let bits: u16 = if width % 4 == 0 { 8 } else if width % 4 == 1 { 16 } else if width % 4 == 2 { 32 } else { 64 }
+    let fits = bits == 64 || (value >> (bits as u64)) == 0
+    checked_unsigned(value, bits, 0).is_ok() == fits
+}
+
+/// The range check accepts exactly the values in [-2^(bits-1), 2^(bits-1)).
+#[property]
+pub fn signed_range_check_is_exact(value: i64, width: u8) -> bool {
+    let bits: u16 = if width % 4 == 0 { 8 } else if width % 4 == 1 { 16 } else if width % 4 == 2 { 32 } else { 64 }
+    let fits = if bits == 64 {
+        true
+    } else {
+        let limit: i64 = 1 << ((bits - 1) as i64)
+        value >= -limit && value < limit
+    }
+    checked_signed(value, bits, 0).is_ok() == fits
+}
+
+/// A CBOR head decodes to the argument it was written with.
+#[property]
+pub fn cbor_heads_round_trip(value: u64) -> bool {
+    match Cbor::new().encode<u64, 9>(value) {
+        Result::Ok(bytes) => match Cbor::new().decode<u64, 9>(bytes) {
+            Result::Ok(decoded) => decoded == value,
+            Result::Err(_) => false,
+        },
+        Result::Err(_) => false,
+    }
+}

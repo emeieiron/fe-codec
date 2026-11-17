@@ -1,12 +1,18 @@
-use fe_codec_core::Text
+use core::bytes::PackedBytes
+use fe_codec_core::{BoundedBuffer, Text}
+use std::evm::Address
+use ingot::custom::Celsius
 
+#[serializable]
 pub struct Recipient { pub active: bool, pub label: Text<8> }
 
+#[serializable]
 pub enum Status {
     Pending,
     Sent,
 }
 
+#[serializable]
 pub struct Transfer {
     pub recipient: Recipient,
     pub amount: u64,
@@ -17,10 +23,13 @@ pub struct Transfer {
     pub nonce: Option<u16>,
 }
 
+#[serializable]
 pub struct Batch { pub transfers: [Transfer; 1] }
 
+#[serializable]
 pub struct Sample { pub value: u8, pub note: Option<Text<8>> }
 
+#[serializable]
 pub enum StableStatus {
     #[codec_id = 62]
     Ready,
@@ -28,9 +37,73 @@ pub enum StableStatus {
     Waiting,
 }
 
+#[serializable]
 pub struct StableTransfer {
     #[codec_id = 9]
     pub amount: u8,
     #[codec_id = 2]
     pub status: StableStatus,
+}
+
+/// Every integer wider than 64 bits.
+#[serializable]
+pub struct Wide { pub big: u256, pub signed: i256, pub mid: u128, pub small: i128 }
+
+/// Byte strings: an exact-length hash, a bounded memo and an EVM address.
+#[serializable]
+pub struct Wallet {
+    pub owner: Address,
+    pub hash: PackedBytes<4>,
+    pub memo: BoundedBuffer<8>,
+    pub tag: Option<PackedBytes<2>>,
+}
+
+/// A generic record. Decoding the array makes `T` need `Copy`.
+#[serializable]
+pub struct Page<T, const N: usize> { pub items: [T; N], pub next: Option<u64> }
+
+/// Optional values inside a sequence.
+#[serializable]
+pub struct Slots { pub values: [Option<u8>; 3] }
+
+/// A field whose type has a handwritten serializer in another module.
+#[serializable]
+pub struct Reading { pub at: u64, pub temperature: Celsius }
+
+/// A record with IDs 1 and 3, matching RFC 8949's map example `{1: 2, 3: 4}`.
+#[serializable]
+pub struct Pairs {
+    #[codec_id = 1]
+    pub first: u8,
+    #[codec_id = 3]
+    pub second: u8,
+}
+
+/// Three revisions of one record, for schema evolution.
+#[serializable]
+pub struct AccountV1 {
+    #[codec_id = 1]
+    pub owner: u64,
+    #[codec_id = 2]
+    pub balance: u64,
+}
+
+/// Version 2 appends an optional field with a new ID.
+#[serializable]
+pub struct AccountV2 {
+    #[codec_id = 1]
+    pub owner: u64,
+    #[codec_id = 2]
+    pub balance: u64,
+    #[codec_id = 3]
+    pub label: Option<Text<8>>,
+}
+
+/// Renames both fields but keeps their IDs.
+#[serializable]
+pub struct AccountRenamed {
+    #[codec_id = 1]
+    pub holder: u64,
+    #[codec_id = 2]
+    pub funds: u64,
 }

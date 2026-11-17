@@ -1,10 +1,11 @@
-use fe_codec_core::{BoundedBuffer, CodecError, CodecResult, Limits, SchemaName, SerialDescriptor}
+use fe_codec_core::{BoundedBuffer, CodecResult}
 use ingot::models::Sample
-use ingot::serializers::SampleSerializer
 
 const JSON: [u8; 12] = "{\"value\":24}"
 const CBOR: [u8; 4] = [0xa1, 0x01, 0x18, 0x18]
 
+/// Encodes a sample in both formats, compares the bytes with fixed vectors and decodes
+/// them again. Each target exports this so the same check runs everywhere.
 pub fn verify_formats() -> bool {
     match check_formats() {
         Result::Ok(valid) => valid,
@@ -14,42 +15,32 @@ pub fn verify_formats() -> bool {
 
 fn check_formats() -> CodecResult<bool> {
     let sample = Sample { value: 24, note: Option::None }
-    let limits = Limits::standard()
-    let json = fe_codec_json::encode<Sample, SampleSerializer, 16>(sample, limits)?
-    let cbor = fe_codec_cbor::encode<Sample, SampleSerializer, 16>(sample, limits)?
-    let decoded_json = fe_codec_json::decode<Sample, SampleSerializer, 16>(json, limits)?
-    let decoded_cbor = fe_codec_cbor::decode<Sample, SampleSerializer, 16>(cbor, limits)?
+    let json: BoundedBuffer<16> = fe_codec_json::encode(sample)?
+    let cbor: BoundedBuffer<16> = fe_codec_cbor::encode(sample)?
+    let from_json: Sample = fe_codec_json::decode(json)?
+    let from_cbor: Sample = fe_codec_cbor::decode(cbor)?
     Result::Ok(
         json.equals(BoundedBuffer<12>::from_array(JSON))
             && cbor.equals(BoundedBuffer<4>::from_array(CBOR))
-            && decoded_json.value == sample.value
-            && decoded_cbor.value == sample.value
-            && decoded_json.note.is_none()
-            && decoded_cbor.note.is_none(),
+            && from_json.value == sample.value
+            && from_cbor.value == sample.value
+            && from_json.note.is_none()
+            && from_cbor.note.is_none(),
     )
 }
 
 pub fn decode_sample<const N: usize>(_ json: own BoundedBuffer<N>) -> CodecResult<Sample> {
-    fe_codec_json::decode<Sample, SampleSerializer, N>(json, Limits::standard())
+    fe_codec_json::decode(json)
 }
 
+/// Decodes a JSON sample and encodes it again as CBOR or JSON.
 pub fn transcode_sample<const N: usize>(_ json: own BoundedBuffer<N>, _ cbor: bool) -> CodecResult<
     BoundedBuffer<96>,
 > {
     let sample = decode_sample(json)?
     if cbor {
-        fe_codec_cbor::encode<Sample, SampleSerializer, 96>(sample, Limits::standard())
+        fe_codec_cbor::encode(sample)
     } else {
-        fe_codec_json::encode<Sample, SampleSerializer, 96>(sample, Limits::standard())
-    }
-}
-
-pub fn sample_error_field(_ error: CodecError) -> Option<SchemaName> {
-    match error.field() {
-        Option::Some(field) => match SampleSerializer::field(field.node, field.index) {
-            Option::Some(info) => Option::Some(info.name),
-            Option::None => Option::None,
-        },
-        Option::None => Option::None,
+        fe_codec_json::encode(sample)
     }
 }

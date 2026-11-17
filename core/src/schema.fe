@@ -1,0 +1,160 @@
+use core::marker::Copy
+use core::num::IntDowncast
+use fe_codec_io::{BoundedBuffer, ByteWriter}
+use ingot::error::{CodecError, CodecResult, ErrorKind}
+use ingot::text::Text
+
+/// The longest field or variant name a schema can hold, in UTF-8 bytes. A name fits in one
+/// word, which keeps errors and field keys small on the EVM.
+pub const MAX_NAME_BYTES: usize = 31
+
+/// The most fields or variants `validate_schema` inspects before it gives up.
+pub const MAX_MEMBERS: usize = 1024
+
+/// A field or variant name of 1 to 31 UTF-8 bytes, packed into one word: the bytes from the
+/// most significant end, and the length in the lowest byte. Names are never empty, so the
+/// zero word stands for no name.
+pub struct SchemaName { word: u256 }
+impl Copy for SchemaName {}
+
+impl SchemaName {
+    pub fn len(self) -> usize {
+        (self.word & 0xff).downcast_truncate()
+    }
+
+    pub fn byte_at(self, _ index: usize) -> Option<u8> {
+        if index >= self.len() {
+            return Option::None
+        }
+        Option::Some((self.word >> (((31 - index) * 8) as u256)).downcast_truncate())
+    }
+
+    pub fn as_bytes(self) -> BoundedBuffer<MAX_NAME_BYTES> {
+        var bytes = ByteWriter<MAX_NAME_BYTES>::new()
+        var index: usize = 0
+        while index < self.len() {
+            let _ = bytes.write(self.byte_at(index).unwrap())
+            index += 1
+        }
+        bytes.finish()
+    }
+
+    /// Whether `other` holds the same bytes.
+    pub fn equals<const N: usize>(self, _ other: Text<N>) -> bool {
+        if self.len() != other.len() {
+            return false
+        }
+        var index: usize = 0
+        while index < self.len() {
+            if self.byte_at(index) != other.byte_at(index) {
+                return false
+            }
+            index += 1
+        }
+        true
+    }
+
+    pub fn same(self, _ other: SchemaName) -> bool {
+        self.word == other.word
+    }
+
+    pub(ingot) fn word(self) -> u256 {
+        self.word
+    }
+
+    pub(ingot) fn from_word(_ word: u256) -> Self {
+        Self { word }
+    }
+}
+
+/// A name from a UTF-8 literal of 1 to `MAX_NAME_BYTES` bytes.
+pub const fn schema_name<const N: usize>(_ bytes: [u8; N]) -> SchemaName {
+    assert!(N > 0 && N <= MAX_NAME_BYTES)
+    var word: u256 = N as u256
+    var index: usize = 0
+    while index < N {
+        word = word | ((bytes[index] as u256) << (((31 - index) * 8) as u256))
+        index += 1
+    }
+    SchemaName { word }
+}
+
+/// One field of a record.
+///
+/// `id` is the field's wire identity: a positive number, unique within the record. Formats
+/// with numeric keys write it, and every format visits fields in ascending `id` order.
+/// `optional` marks a field whose type is `Option<T>`.
+pub struct FieldInfo { pub name: SchemaName, pub id: u64, pub optional: bool }
+impl Copy for FieldInfo {}
+
+/// One variant of a unit enum. `id` is unique within the enum and may be zero.
+pub struct VariantInfo { pub name: SchemaName, pub id: u64 }
+impl Copy for VariantInfo {}
+
+/// The names and wire identities of a record's fields or an enum's variants.
+///
+/// A record lists its fields by *position*: position 0 is the field with the smallest ID,
+/// and `field` returns `None` past the last one. IDs ascend strictly and are positive, and
+/// names are unique. An enum lists its variants by declaration index. `validate_schema`
+/// checks these rules, and generated schemas always meet them.
+pub trait Schema {
+    fn field(_ position: usize) -> Option<FieldInfo> {
+        Option::None
+    }
+
+    fn variant(_ index: usize) -> Option<VariantInfo> {
+        Option::None
+    }
+
+    /// The value a record decoder collected for the field at `position`, or a
+    /// `MissingField` error naming it at `offset`.
+    fn required<T>(_ slot: own Option<T>, _ position: usize, _ offset: usize) -> CodecResult<T> {
+        match slot {
+            Option::Some(value) => Result::Ok(value),
+            Option::None => {
+                let error = CodecError::at(kind: ErrorKind::MissingField, offset)
+                match Self::field(position) {
+                    Option::Some(field) => Result::Err(error.in_field(field.name)),
+                    Option::None => Result::Err(error),
+                }
+            },
+        }
+    }
+}
+
+/// Whether `R` follows the schema rules: positive, strictly ascending field IDs, unique
+/// field names, unique variant IDs and names, and at most `MAX_MEMBERS` of each.
+pub fn validate_schema<R: Schema>() -> bool {
+    var position: usize = 0
+    var last: u64 = 0
+    while let Option::Some(field) = R::field(position) {
+        if position >= MAX_MEMBERS || field.id <= last {
+            return false
+        }
+        var earlier: usize = 0
+        while earlier < position {
+            if R::field(earlier).unwrap().name.same(field.name) {
+                return false
+            }
+            earlier += 1
+        }
+        last = field.id
+        position += 1
+    }
+    var index: usize = 0
+    while let Option::Some(variant) = R::variant(index) {
+        if index >= MAX_MEMBERS {
+            return false
+        }
+        var earlier: usize = 0
+        while earlier < index {
+            let other = R::variant(earlier).unwrap()
+            if other.id == variant.id || other.name.same(variant.name) {
+                return false
+            }
+            earlier += 1
+        }
+        index += 1
+    }
+    true
+}

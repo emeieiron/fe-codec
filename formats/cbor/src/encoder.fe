@@ -4,17 +4,20 @@ use fe_codec_core::{
     CodecResult,
     Encoder,
     ErrorKind,
-    FieldDescriptor,
+    Frame,
     Limits,
+    Schema,
     Structure,
-    SerialDescriptor,
     Text,
-    VariantDescriptor,
     checked_signed,
     checked_unsigned,
+    checked_wide_signed,
+    checked_wide_unsigned,
 }
 use fe_codec_io::{BoundedBuffer, ByteWriter}
-use ingot::frame::Frame
+use ingot::canonical::{additional_info, head_width}
+
+const MAX_ARGUMENT: u256 = 0xffffffffffffffff
 
 pub struct CborEncoder<const N: usize> { output: ByteWriter<N>, structure: Structure }
 
@@ -43,26 +46,36 @@ impl<const N: usize> CborEncoder<N> {
 
     fn header(mut self, _ major: u8, _ argument: u64) -> CodecResult<()> {
         let tag = major << 5
-        if argument < 24 {
+        let width = head_width(argument)
+        if width == 0 {
             return self.byte(tag | argument.downcast_unchecked())
         }
-        let width: u8 = if argument <= 0xff {
-            1
-        } else if argument <= 0xffff {
-            2
-        } else if argument <= 0xffffffff { 4 } else { 8 }
-        let additional: u8 = if width == 1 {
-            24
-        } else if width == 2 {
-            25
-        } else if width == 4 { 26 } else { 27 }
-        self.byte(tag | additional)?
+        self.byte(tag | additional_info(width))?
         var remaining = width
         while remaining != 0 {
             remaining -= 1
             self.byte(
                 (argument >> ((remaining * 8) as u64)).downcast_truncate(),
             )?
+        }
+        Result::Ok(())
+    }
+
+    /// A non-negative integer: major type `major` when it fits 64 bits, otherwise the
+    /// bignum tag `tag` around its big-endian bytes without leading zeros.
+    fn integer(mut self, _ major: u8, _ tag: u8, _ value: u256) -> CodecResult<()> {
+        if value <= MAX_ARGUMENT {
+            return self.header(major, value.downcast_unchecked())
+        }
+        var width: u64 = 32
+        while (value >> (((width - 1) * 8) as u256)) == 0 {
+            width -= 1
+        }
+        self.header(6, tag as u64)?
+        self.header(2, width)?
+        while width != 0 {
+            width -= 1
+            self.byte((value >> ((width * 8) as u256)).downcast_truncate())?
         }
         Result::Ok(())
     }
@@ -84,7 +97,7 @@ impl<const N: usize> CborEncoder<N> {
 }
 
 impl<const N: usize> Encoder for CborEncoder<N> {
-    const RECORD_FIELDS_BY_ID: bool = true
+    const OMIT_NONE: bool = true
     type Record = Frame
     type Sequence = Frame
 
@@ -98,14 +111,14 @@ impl<const N: usize> Encoder for CborEncoder<N> {
         self.byte(if value { 0xf5 } else { 0xf4 })
     }
 
-    fn write_unsigned(mut self, _ value: u64, _ bits: u8) -> CodecResult<()> {
+    fn write_unsigned(mut self, _ value: u64, _ bits: u16) -> CodecResult<()> {
         let offset = self.offset()
         self.structure.value(offset)?
         checked_unsigned(value, bits, offset)?
         self.header(0, value)
     }
 
-    fn write_signed(mut self, _ value: i64, _ bits: u8) -> CodecResult<()> {
+    fn write_signed(mut self, _ value: i64, _ bits: u16) -> CodecResult<()> {
         let offset = self.offset()
         self.structure.value(offset)?
         checked_signed(value, bits, offset)?
@@ -114,6 +127,37 @@ impl<const N: usize> Encoder for CborEncoder<N> {
         } else {
             self.header(0, value.downcast_unchecked())
         }
+    }
+
+    fn write_wide_unsigned(mut self, _ value: u256, _ bits: u16) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        checked_wide_unsigned(value, bits, offset)?
+        self.integer(0, 2, value)
+    }
+
+    fn write_wide_signed(mut self, _ value: i256, _ bits: u16) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        checked_wide_signed(value, bits, offset)?
+        if value < 0 {
+            self.integer(1, 3, (-(value + 1)).downcast_unchecked())
+        } else {
+            self.integer(0, 2, value.downcast_unchecked())
+        }
+    }
+
+    fn write_bytes<const M: usize>(mut self, _ value: BoundedBuffer<M>) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        let length = self.length(value.len())?
+        self.header(2, length)?
+        var index: usize = 0
+        while index < value.len() {
+            self.byte(value.byte_at(index).unwrap())?
+            index += 1
+        }
+        Result::Ok(())
     }
 
     fn write_text<const M: usize>(mut self, _ value: Text<M>) -> CodecResult<()> {
@@ -129,30 +173,37 @@ impl<const N: usize> Encoder for CborEncoder<N> {
         Result::Ok(())
     }
 
-    fn write_null(mut self) -> CodecResult<()> {
+    fn write_none(mut self) -> CodecResult<()> {
         let offset = self.offset()
         self.structure.value(offset)?
         self.byte(0xf6)
     }
 
-    fn write_variant<S: SerialDescriptor>(
-        mut self,
-        _ node: usize,
-        _ variant: VariantDescriptor,
-    ) -> CodecResult<()> {
-        let offset = self.offset()
-        self.structure.value(offset)?
-        self.header(0, variant.id)
+    fn write_some(mut self) -> CodecResult<()> {
+        Result::Ok(())
     }
 
-    fn begin_record<S: SerialDescriptor>(mut self, _ node: usize, _ present: usize) -> CodecResult<
-        Frame,
-    > {
+    fn write_variant<V: Schema>(mut self, _ index: usize) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.value(offset)?
+        match V::variant(index) {
+            Option::Some(variant) => self.header(0, variant.id),
+            Option::None => Result::Err(CodecError::at(kind: ErrorKind::InvalidState, offset)),
+        }
+    }
+
+    fn begin_record<R: Schema>(mut self, _ present: usize) -> CodecResult<Frame> {
         self.begin(5, present)
     }
 
-    fn field(mut self, _ record: mut Frame, _ field: FieldDescriptor) -> CodecResult<()> {
+    fn field<R: Schema>(mut self, _ record: mut Frame, _ position: usize) -> CodecResult<()> {
         let offset = self.offset()
+        let field = match R::field(position) {
+            Option::Some(field) => field,
+            Option::None => {
+                return Result::Err(CodecError::at(kind: ErrorKind::InvalidState, offset))
+            },
+        }
         self.structure.member(offset)?
         record.key(field.id, offset)?
         self.header(0, field.id)
