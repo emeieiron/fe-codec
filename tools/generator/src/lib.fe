@@ -1,0 +1,22 @@
+use core::MemBuffer
+use std::env::Args
+use std::fs::Fs
+use std::io::{Stderr, Stdout}
+
+/// Probe: reads the file named by the first argument and reports its length.
+pub fn main() -> i32 uses (out: mut Stdout, err: mut Stderr, args: Args, fs: mut Fs) {
+    if args.count() != 2 {
+        eprintln!("usage: fe_codec_gen FILE")
+        return 2
+    }
+    match fs.read(args.get(1)) {
+        Result::Ok(contents) => {
+            println!("read ", contents.len(), " bytes, syntax ", fe_syntax::VERSION)
+            0
+        },
+        Result::Err(error) => {
+            eprintln!(args.get(1), ": error: cannot read: ", error.code())
+            1
+        },
+    }
+}
