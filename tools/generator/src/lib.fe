@@ -1,6 +1,6 @@
-//! `fe_codec_gen`: generates Fe Codec impls for `#[serializable]` structs and enums. A Fe port
-//! of `generator/src/main.rs`; `cli` has the command line and files, `schema` reads the
-//! declarations and `render` writes the module.
+//! `fe_codec_gen`: generates Fe Codec impls for `#[serializable]` structs and enums, and with
+//! `--eip712` static EIP-712 hashing. `cli` has the command line and files, `schema` reads the
+//! declarations, and `render` and `eip712` write the module.
 use core::{MemBuffer, MemVec, Option, Result}
 use ingot::cli::{Options, at_path, module_name, parse_args, source_dir, write_output}
 use ingot::eip712::render as render_eip712

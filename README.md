@@ -304,16 +304,11 @@ with its evidence, and what has not been established.
 ```text
 core/ io/ formats/       runtime ingots
 tools/                   fe_codec_gen and its parser fe_syntax (Fe)
-generator/               fe-codec-gen (Rust), the parity reference
 examples/vanilla/        plain-Fe consumer, used by tests/vanilla.py
 examples/transfer/       FeMP project: conformance, properties, proofs, platform demos
 examples/compact_format/ third-party format example
 tests/                   consumer checks, reference vector encoders and the viem cross-check
 docs/                    design, wire profiles, extension guides
-```
-
-```bash
-cargo test --locked
 ```
 
 ```bash
@@ -326,8 +321,11 @@ cd tools/syntax && fe test --backend native && fe test
 ```
 
 ```bash
-cargo build --locked
-python3 tests/generator_parity.py --rust target/debug/fe-codec-gen --fe target/fe/fe_codec_gen
+python3 tests/generator_cases.py && python3 tests/generator_fuzz.py
+```
+
+```bash
+fe build --backend native tools/syntax-dump --out-dir target/fe && python3 tests/parser_vs_fe.py
 ```
 
 ```bash
@@ -342,7 +340,10 @@ python3 -I tests/vectors/eip712.py && node tests/eip712_viem.mjs --viem <path to
 python3 tests/consumer.py
 ```
 
-The FeMP project pins Fe 26.6.0. `tests/vanilla.py` checks a plain-Fe copy with
+The FeMP project pins Fe 26.6.0. `tests/generator_cases.py` checks the generator's diagnostics,
+command line and compiled output, `tests/generator_fuzz.py` checks generated code for random
+models against reference encoders and the EIP-712 specification, and `tests/parser_vs_fe.py`
+checks its parser against `fe check`. `tests/vanilla.py` checks a plain-Fe copy with
 `fe test` on the `sonatina` and `native` backends. `tests/consumer.py` checks a downstream
 FeMP project against a temporary Git release, including its native executable and
 WebAssembly bindings.

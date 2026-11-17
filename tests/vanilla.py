@@ -28,7 +28,7 @@ def main():
     parser.add_argument("--fe", default="fe", help="the Fe compiler to use")
     parser.add_argument(
         "--generator", default="fe_codec_gen",
-        help="the generator: fe_codec_gen, or the Rust reference fe-codec-gen",
+        help="the fe_codec_gen executable",
     )
     args = parser.parse_args()
     fe, generator = shutil.which(args.fe), shutil.which(args.generator)

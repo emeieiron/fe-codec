@@ -116,8 +116,7 @@ CASE_KEYS = {
 DIAGNOSTIC = re.compile(r"^(?P<path>[^:\n]+):(?P<line>\d+):(?P<col>\d+): error: (?P<message>[^\n]+)\n$")
 
 # Messages in the Fe sources that no input can produce, each with the reason. The parser
-# rejects these inputs first, or the code is unreachable by construction (the Rust original has
-# the same dead checks).
+# rejects these inputs first, or the code is unreachable by construction.
 UNREACHABLE = {
     "missing name": "a struct, enum, field or variant without a name is a syntax error, which the parser reports first",
     "missing generic parameter name": "a generic parameter without a name is a syntax error (`expected a generic parameter`)",

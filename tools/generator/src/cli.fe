@@ -1,5 +1,4 @@
-//! The command line, paths and the output file: a port of `generator/src/main.rs` apart from
-//! `main` itself, which is in `lib.fe`.
+//! The command line, paths and the output file. `main` itself is in `lib.fe`.
 use core::{MemBuffer, MemVec, Option, Result}
 use fe_syntax::is_keyword
 use ingot::render::header
@@ -240,13 +239,13 @@ pub fn parse_args() -> Result<Exit, Options> uses (args: Args) {
     Result::Ok(options)
 }
 
-/// `path: error: <reason> (os error N)`, how Rust prints an OS error for a path.
+/// `path: error: <reason> (os error N)` for an OS error on `path`.
 pub fn at_path(_ path: ref MemBuffer, _ error: Error) -> MemBuffer {
     format!(path, ": error: ", error, " (os error ", error.code(), ")")
 }
 
-/// The start and end of the last normal component of `path`, as Rust's `Path::file_name`
-/// finds it, which skips trailing separators and `.` components.
+/// The start and end of the last normal component of `path`, skipping trailing separators
+/// and `.` components.
 fn file_name_range(_ path: ref MemBuffer) -> Option<(usize, usize)> {
     var end = path.len()
     while true {
@@ -272,8 +271,7 @@ fn file_name_range(_ path: ref MemBuffer) -> Option<(usize, usize)> {
     Option::None
 }
 
-/// The directory part of `path` as Rust's `Path::parent` gives it, with an empty parent
-/// standing for `.`.
+/// The directory part of `path`, with an empty parent standing for `.`.
 fn parent_of(_ path: ref MemBuffer) -> MemBuffer {
     var end = path.len()
     while end > 0 && path[end - 1] == b'/' {
@@ -389,8 +387,8 @@ pub fn source_dir(_ path: ref MemBuffer) -> Result<MemBuffer, MemBuffer> uses (f
 /// Writes `output` to `path`, or with `check` only verifies it. A handwritten file, one that
 /// does not start with the generated header, is never replaced.
 ///
-/// Rust writes a temporary file and renames it over `path`; Fe has no rename, so the file is
-/// written in place, and only after every check has passed.
+/// Fe's file system has no rename, so the file is written in place, and only after every
+/// check has passed.
 pub fn write_output(
     _ path: ref MemBuffer,
     _ output: ref MemBuffer,

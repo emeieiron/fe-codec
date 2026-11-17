@@ -1,5 +1,4 @@
-//! Renders `Schema`, `Serialize` and `Deserialize` impls as ordinary Fe source: a port of
-//! `generator/src/render.rs`.
+//! Renders `Schema`, `Serialize` and `Deserialize` impls as ordinary Fe source.
 //!
 //! The output has the shape a handwritten impl would have, uses only the public
 //! `fe_codec_core` API, and depends on nothing but its inputs, so the same sources always

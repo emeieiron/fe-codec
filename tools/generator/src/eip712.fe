@@ -1,5 +1,4 @@
-//! Renders static EIP-712 struct hashing for `#[eip712]` structs and the types they use: a
-//! port of `generator/src/eip712.rs`.
+//! Renders static EIP-712 struct hashing for `#[eip712]` structs and the types they use.
 //!
 //! The generator knows every struct's members, so it computes each `encodeType` string here
 //! and emits its type hash as a `core::keccak` constant, which the Fe compiler evaluates.
@@ -20,7 +19,7 @@ struct Definition {
     dependencies: MemVec<MemBuffer>,
 }
 
-/// Byte-wise lexicographic comparison, as Rust orders `String`s: -1, 0 or 1.
+/// Byte-wise lexicographic comparison: -1, 0 or 1.
 fn compare(_ a: ref MemBuffer, _ b: ref MemBuffer) -> i32 {
     var i: usize = 0
     while i < a.len() && i < b.len() {

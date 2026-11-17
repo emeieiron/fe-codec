@@ -21,9 +21,8 @@ def run(command, cwd, env=None, **kwargs):
 def fixture_release(root):
     repo = root / "release"
     repo.mkdir()
-    for name in ("fe.toml", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml"):
-        shutil.copy(ROOT / name, repo)
-    for name in ("core", "formats", "io", "generator", "tools"):
+    shutil.copy(ROOT / "fe.toml", repo)
+    for name in ("core", "formats", "io", "tools"):
         shutil.copytree(ROOT / name, repo / name, ignore=shutil.ignore_patterns("out", "build"))
     run(["git", "init", "-q"], repo)
     run(["git", "add", "."], repo)
@@ -75,7 +74,7 @@ def main():
     parser.add_argument("--femp", default="femp")
     parser.add_argument(
         "--generator", default="fe_codec_gen",
-        help="the generator: fe_codec_gen, or the Rust reference fe-codec-gen",
+        help="the fe_codec_gen executable",
     )
     parser.add_argument("--source", help="Git repository for a published release")
     parser.add_argument("--rev", help="Full Git revision of the release")

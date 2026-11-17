@@ -1,4 +1,4 @@
-//! Reads `#[serializable]` declarations from Fe source files: a port of `generator/src/schema.rs`.
+//! Reads `#[serializable]` declarations from Fe source files.
 //!
 //! The generator does not resolve types. Field types are copied into the generated module,
 //! which imports everything its source modules import, and the Fe compiler checks that each
@@ -147,7 +147,7 @@ pub enum TyKind {
 
 impl Copy for TyKind {}
 
-/// How the type `ty` of `file` reads to the generator, as `parse_ty` in `schema.rs` decides.
+/// How the generator reads the type `ty` of `file`.
 pub fn ty_kind(_ file: ref File, _ ty: usize) -> TyKind {
     let node = file.types[ty]
     match node.kind {

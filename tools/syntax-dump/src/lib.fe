@@ -1,5 +1,6 @@
-//! Prints what `fe_syntax` parses from Fe source files, in the format of the Rust
-//! `syntax_dump` example, so the two parsers can be compared node by node.
+//! Prints what `fe_syntax` parses from Fe source files: items with their offsets, attributes,
+//! modifiers, generic parameters, fields, variants and types, or `error <offset>` after a
+//! syntax error. `tests/parser_vs_fe.py` compares its errors with `fe check`'s.
 use core::{MemBuffer, Option, Result}
 use fe_syntax::{
     ArgKind, File, FieldsKind, GenericKind, ItemKind, Modifiers, Run, Span, TypeKind, VariantKind, lex,
