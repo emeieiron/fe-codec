@@ -1,0 +1,150 @@
+//! Struct hashing with type hashes known at compile time.
+//!
+//! `fe-codec-gen --eip712` implements these traits for `#[eip712]` structs and the types they
+//! reference: each type hash is a `core::keccak` constant, and each `hash_struct` is one
+//! `keccak_words` over the members' words, as a hand-written implementation would be. The
+//! generic `hash_struct` function gives the same results for any `Serialize + Describe` type,
+//! at a higher cost on the EVM.
+
+use core::bytes::PackedBytes
+use core::num::IntDowncast
+use fe_codec_core::{BoundedBuffer, Text}
+use std::evm::Address
+use std::evm::crypto::keccak_words
+use ingot::domain::hash_bytes
+
+/// An EIP-712 struct with its type hash known at compile time.
+pub trait Eip712Struct {
+    /// `keccak256(encodeType(Self))`.
+    const TYPE_HASH: u256
+
+    /// `hashStruct(self)`.
+    fn hash_struct(self) -> u256
+}
+
+/// A value's EIP-712 member encoding: the one word `encodeData` writes for it.
+pub trait Eip712Member {
+    fn member(self) -> u256
+}
+
+impl Eip712Member for bool {
+    fn member(self) -> u256 {
+        if self { 1 } else { 0 }
+    }
+}
+
+impl Eip712Member for u8 {
+    fn member(self) -> u256 {
+        self as u256
+    }
+}
+
+impl Eip712Member for u16 {
+    fn member(self) -> u256 {
+        self as u256
+    }
+}
+
+impl Eip712Member for u32 {
+    fn member(self) -> u256 {
+        self as u256
+    }
+}
+
+impl Eip712Member for u64 {
+    fn member(self) -> u256 {
+        self as u256
+    }
+}
+
+impl Eip712Member for u128 {
+    fn member(self) -> u256 {
+        self as u256
+    }
+}
+
+impl Eip712Member for u256 {
+    fn member(self) -> u256 {
+        self
+    }
+}
+
+// Signed integers are sign-extended to 256 bits.
+
+impl Eip712Member for i8 {
+    fn member(self) -> u256 {
+        (self as i256).downcast_truncate()
+    }
+}
+
+impl Eip712Member for i16 {
+    fn member(self) -> u256 {
+        (self as i256).downcast_truncate()
+    }
+}
+
+impl Eip712Member for i32 {
+    fn member(self) -> u256 {
+        (self as i256).downcast_truncate()
+    }
+}
+
+impl Eip712Member for i64 {
+    fn member(self) -> u256 {
+        (self as i256).downcast_truncate()
+    }
+}
+
+impl Eip712Member for i128 {
+    fn member(self) -> u256 {
+        (self as i256).downcast_truncate()
+    }
+}
+
+impl Eip712Member for i256 {
+    fn member(self) -> u256 {
+        self.downcast_truncate()
+    }
+}
+
+/// `string`: the keccak256 of its UTF-8 bytes.
+impl<const N: usize> Eip712Member for Text<N> {
+    fn member(self) -> u256 {
+        hash_bytes(self.bytes())
+    }
+}
+
+/// `bytes`: the keccak256 of its contents.
+impl<const N: usize> Eip712Member for BoundedBuffer<N> {
+    fn member(self) -> u256 {
+        hash_bytes(self)
+    }
+}
+
+/// `bytesN`, padded with zeros at the end. `N` must be from 1 to 32, which the generator
+/// checks; any other length panics here rather than hash something EIP-712 cannot type.
+impl<const N: usize> Eip712Member for PackedBytes<N> {
+    fn member(self) -> u256 {
+        assert!(N >= 1 && N <= 32)
+        self.word(0)
+    }
+}
+
+impl Eip712Member for Address {
+    fn member(self) -> u256 {
+        self.word()
+    }
+}
+
+/// `T[N]`: the keccak256 of its elements' words.
+impl<T: Eip712Member, const N: usize> Eip712Member for [T; N] {
+    fn member(self) -> u256 {
+        var words: [u256; N] = [0; N]
+        var index: usize = 0
+        for ref element in self {
+            words[index] = element.member()
+            index += 1
+        }
+        keccak_words(words)
+    }
+}

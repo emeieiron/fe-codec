@@ -1,5 +1,10 @@
-use fe_codec_core::{BoundedBuffer, CodecResult}
+use core::MemBuffer
+use fe_codec_core::{BoundedBuffer, CodecResult, Text}
+use fe_codec_eip712::{Domain, Eip712Struct}
+use std::evm::Address
+use std::evm::crypto::{keccak256, keccak_words}
 use ingot::models::Sample
+use ingot::typed::{Mail, Person}
 
 const JSON: [u8; 12] = "{\"value\":24}"
 const CBOR: [u8; 4] = [0xa1, 0x01, 0x18, 0x18]
@@ -44,3 +49,82 @@ pub fn transcode_sample<const N: usize>(_ json: own BoundedBuffer<N>, _ cbor: bo
         fe_codec_json::encode(sample)
     }
 }
+
+// EIP-712: the EIP's example mail, hashed generically and by hand.
+
+const COW: u256 = 0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826
+const BOB: u256 = 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+const VERIFIER: u256 = 0xcccccccccccccccccccccccccccccccccccccccc
+
+/// The EIP's example message.
+pub fn reference_mail() -> CodecResult<Mail> {
+    Result::Ok(
+        Mail {
+            from: Person { name: Text<16>::from_array("Cow")?, wallet: Address::new(COW) },
+            to: Person { name: Text<16>::from_array("Bob")?, wallet: Address::new(BOB) },
+            contents: Text<32>::from_array("Hello, Bob!")?,
+        },
+    )
+}
+
+fn mail_domain() -> CodecResult<Domain> {
+    Result::Ok(
+        Domain::new()
+            .name(Text<64>::from_array("Ether Mail")?)
+            .version(Text<64>::from_array("1")?)
+            .chain_id(1)
+            .verifying_contract(Address::new(VERIFIER)),
+    )
+}
+
+/// The digest the EIP's example signature covers, from the generic implementation.
+pub fn mail_signing_hash() -> CodecResult<u256> {
+    fe_codec_eip712::signing_hash(mail_domain()?, reference_mail()?)
+}
+
+/// The same digest from the generated static hashing, in a domain set by compile-time
+/// hashes, the way a contract would build it.
+pub fn generated_mail_signing_hash() -> CodecResult<u256> {
+    let domain = Domain::new()
+        .name_hash(core::keccak("Ether Mail"))
+        .version_hash(core::keccak("1"))
+        .chain_id(1)
+        .verifying_contract(Address::new(VERIFIER))
+    Result::Ok(domain.digest(reference_mail()?.hash_struct()))
+}
+
+const PERSON_TYPEHASH: u256 = core::keccak("Person(string name,address wallet)")
+const MAIL_TYPEHASH: u256 = core::keccak(
+    "Mail(Person from,Person to,string contents)Person(string name,address wallet)",
+)
+
+fn text_hash<const N: usize>(_ text: Text<N>) -> u256 {
+    let bytes = text.bytes()
+    let words = (bytes.len() + 31) / 32
+    var buffer = MemBuffer::new(if words == 0 { 32 } else { words * 32 })
+    var index: usize = 0
+    while index < words {
+        buffer.write_word(offset: index * 32, value: bytes.word(index))
+        index += 1
+    }
+    keccak256(buffer.slice(offset: 0, len: bytes.len()))
+}
+
+fn person_hash(_ person: Person) -> u256 {
+    keccak_words([PERSON_TYPEHASH, text_hash(person.name), person.wallet.word()])
+}
+
+/// The same digest written by hand, the way a contract would without Fe Codec: constant
+/// type hashes, std's four-field domain, and each member encoded explicitly.
+pub fn manual_mail_signing_hash() -> CodecResult<u256> {
+    let mail = reference_mail()?
+    let struct_hash = keccak_words([MAIL_TYPEHASH, person_hash(mail.from), person_hash(mail.to), text_hash(mail.contents)])
+    let separator = std::evm::eip712::domain_separator(
+        name_hash: core::keccak("Ether Mail"),
+        version_hash: core::keccak("1"),
+        chain_id: 1,
+        verifying_contract: Address::new(VERIFIER),
+    )
+    Result::Ok(std::evm::eip712::digest(domain_separator: separator, struct_hash))
+}
+

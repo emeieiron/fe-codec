@@ -1,8 +1,8 @@
 # Fe Codec
 
 Fe Codec is a type-safe, extensible serialization framework for Fe. It encodes and decodes
-structured data in JSON and deterministic CBOR, and any developer can add a format of their
-own. A build-time generator writes serializers for your types from ordinary Fe declarations.
+structured data in JSON and deterministic CBOR, hashes it as EIP-712 typed data, and any
+developer can add a format of their own. A build-time generator writes serializers for your types from ordinary Fe declarations.
 The same types and serializers compile for smart contracts, native programs and
 WebAssembly, using fixed-capacity buffers and explicit limits.
 
@@ -11,8 +11,9 @@ WebAssembly, using fixed-capacity buffers and explicit limits.
 | `fe_codec_core` | `Serialize`/`Deserialize`, the `Encoder`/`Decoder` data model, `Format`, schemas, errors, limits, `Text<N>`, byte I/O |
 | `fe_codec_json` | Compact JSON |
 | `fe_codec_cbor` | Deterministic CBOR (RFC 8949 §4.2.1) |
+| `fe_codec_eip712` | EIP-712 struct hashes, signing digests and wallet requests |
 | `fe_codec_io` | Bounded buffers, re-exported by core |
-| `fe-codec-gen` | Writes `Serialize`, `Deserialize` and `Schema` impls for `#[serializable]` types |
+| `fe-codec-gen` | Writes `Serialize`, `Deserialize`, `Schema` and `Describe` impls for `#[serializable]` types, and with `--eip712` static EIP-712 hashing for `#[eip712]` structs |
 
 The runtime ingots are plain Fe and work with the official `fe` toolchain. FeMP is optional:
 it can run the generator for you and test across targets, but nothing you ship depends on it.
@@ -120,8 +121,9 @@ impl Deserialize for Celsius {
 }
 ```
 
-Records can be written by hand with the same helpers the generator uses. See
-[writing serializers](docs/writing-serializers.md).
+A type used as a field of a generated record also implements `Describe`, which states its
+shape without a value; here that is one line, `describer.text(4)`. Records can be written by
+hand with the same helpers the generator uses. See [writing serializers](docs/writing-serializers.md).
 
 **4. A new format.** Implement `Encoder`, `Decoder` and `Format` in your own ingot, against
 `fe_codec_core` alone. Every serializable type works with it at once. `examples/compact_format`
@@ -159,6 +161,86 @@ pub struct Account {
 
 See [wire profiles](docs/formats.md#schema-evolution) for what each change preserves.
 
+## EIP-712 typed data
+
+`fe_codec_eip712` hashes values as [EIP-712](https://eips.ethereum.org/EIPS/eip-712) typed
+structured data. It also writes the `eth_signTypedData_v4` request a wallet signs. Hashes
+cannot be decoded, so it has its own API rather than being a `Format`.
+
+Mark the structs you sign `#[eip712]`, and run the generator a second time in its EIP-712
+mode:
+
+```bash
+fe-codec-gen --source src/models.fe --eip712 --out src/eip712.fe
+```
+
+The generator computes each struct's `encodeType` string and emits its type hash as a
+`core::keccak` constant, which the compiler evaluates. Each struct's `hash_struct` is then one
+`keccak_words` over its members, as hand-written code would be. Structs and enums they
+reference are included automatically.
+
+```fe
+use fe_codec_eip712::{Domain, Eip712Struct}
+
+// In a contract: name and version by compile-time hash.
+let domain = Domain::new()
+    .name_hash(core::keccak("Ether Mail"))
+    .version_hash(core::keccak("1"))
+    .chain_id(1)
+    .verifying_contract(verifier)
+let digest = domain.digest(mail.hash_struct())
+let signer = std::evm::crypto::ecrecover(hash: digest, v, r, s)
+
+// Off-chain: name and version as text, and the request for the wallet.
+let domain = Domain::new().name(Text<64>::from_array("Ether Mail")?).version(Text<64>::from_array("1")?).chain_id(1)
+let request: BoundedBuffer<1024> = fe_codec_eip712::typed_data_json(domain, mail)?
+```
+
+The generic functions `hash_struct(value)`, `signing_hash(domain, value)`, `type_hash<T>()` and
+`encode_type<T, N>()` work for any `Serialize + Describe` type, including handwritten ones,
+without the EIP-712 generator. They give the same results, at a higher cost on the EVM.
+
+| Fe type | EIP-712 type |
+| --- | --- |
+| `bool` | `bool` |
+| `u8`–`u256`, `i8`–`i256` | `uint8`–`uint256`, `int8`–`int256` |
+| `Text<N>` | `string` |
+| `BoundedBuffer<N>` | `bytes` |
+| `PackedBytes<N>`, N from 1 to 32 | `bytesN` |
+| `Address` | `address` |
+| `[T; N]` | `T[N]` |
+| Unit enums | `uint8`, holding the variant ID |
+| Records | The struct's name |
+
+- **Field order.** Members follow the field order, which is declaration order unless the type
+  assigns `#[codec_id]`s.
+- **Rejected types.** EIP-712 has no optional values, so `Option` fields are rejected. So are
+  a variant ID above 255 and a struct named `EIP712Domain`. The generator reports these at
+  generation time. The generic path reports them as `Unsupported` at runtime, naming the
+  field, along with a root that isn't a struct and two different structs with one name.
+- **What the generator needs.** It must see every struct an `#[eip712]` struct uses, so
+  pass their modules with `--source`. It rejects generic structs, whose type depends on their
+  arguments; use the generic path for those.
+- **Arrays.** Fe arrays have a fixed length, so dynamic `T[]` members cannot be expressed.
+- **Wallet JSON.** The request writes integers as decimal strings, which JavaScript reads
+  without losing precision, and addresses and bytes as lowercase `0x` hex. It needs the
+  domain's name and version as text, not hashes.
+- **Generic path limits.** It handles up to 8 struct types per message and uses 4 KB of
+  working memory, which `Eip712::new().with_capacity(..)` changes.
+
+**Gas,** measured on the EVM for the EIP's example mail, signature digest included:
+
+| Path | Gas |
+| --- | --- |
+| Generated, domain by hash | 13,900 |
+| Hand-written, constant type hashes | 14,600 |
+| Generic | 70,900 |
+
+The test suite checks the EIP's own reference values and a contract that recovers the EIP's
+example signer. Every vector is checked through both the generated and the generic path.
+The vectors were computed by an independent transcription of the specification and re-checked
+with viem, including the digest viem computes from each wallet request.
+
 ## Supported types
 
 | Type | Notes |
@@ -195,6 +277,11 @@ source tree:
 [modules.shared.generate.serializers]
 command = ["fe-codec-gen", "--source", "src/models.fe", "--stdout"]
 output = "src/serializers.fe"
+
+# Only if you sign #[eip712] structs:
+[modules.shared.generate.eip712]
+command = ["fe-codec-gen", "--source", "src/models.fe", "--eip712", "--stdout"]
+output = "src/eip712.fe"
 ```
 
 `--stdout` is the generator's mode for the Fe Source Generator Protocol (FSGP), which FeMP
@@ -216,7 +303,7 @@ generator/               fe-codec-gen (Rust)
 examples/vanilla/        plain-Fe consumer, used by tests/vanilla.py
 examples/transfer/       FeMP project: conformance, properties, proofs, platform demos
 examples/compact_format/ third-party format example
-tests/                   consumer checks and the reference vector encoder
+tests/                   consumer checks, reference vector encoders and the viem cross-check
 docs/                    design, wire profiles, extension guides
 ```
 
@@ -230,6 +317,10 @@ cd examples/transfer && femp test -t evm -t native -t wasm && femp prop -t evm -
 
 ```bash
 python3 tests/vanilla.py --generator target/debug/fe-codec-gen
+```
+
+```bash
+python3 -I tests/vectors/eip712.py && node tests/eip712_viem.mjs --viem <path to a viem install>
 ```
 
 ```bash

@@ -1,0 +1,157 @@
+use core::bytes::PackedBytes
+use fe_codec_io::BoundedBuffer
+use ingot::error::CodecResult
+use ingot::schema::Schema
+use ingot::text::Text
+use std::evm::Address
+
+/// A type's shape, described without a value.
+///
+/// Formats that hash or print types use it, as EIP-712 does for `encodeType`. A description
+/// covers every type a value could contain, including the element type of an empty array.
+/// `fe-codec-gen` implements it for `#[serializable]` types. A handwritten serializer needs it
+/// only for formats that ask for it.
+pub trait Describe {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()>
+}
+
+/// The type vocabulary a description is written in, mirroring the `Encoder` data model.
+///
+/// An option or sequence opens, describes its one inner type, and closes. A record opens,
+/// then for each field in position order calls `field` and describes the field's type,
+/// then closes.
+pub trait Describer {
+    fn bool(mut self) -> CodecResult<()>
+    fn unsigned(mut self, _ bits: u16) -> CodecResult<()>
+    fn signed(mut self, _ bits: u16) -> CodecResult<()>
+    fn text(mut self, _ capacity: usize) -> CodecResult<()>
+    fn bytes(mut self, _ capacity: usize) -> CodecResult<()>
+    fn fixed_bytes(mut self, _ length: usize) -> CodecResult<()>
+    fn address(mut self) -> CodecResult<()>
+    fn begin_option(mut self) -> CodecResult<()>
+    fn end_option(mut self) -> CodecResult<()>
+    fn begin_sequence(mut self, _ length: usize) -> CodecResult<()>
+    fn end_sequence(mut self, _ length: usize) -> CodecResult<()>
+    fn enumeration<V: Schema>(mut self) -> CodecResult<()>
+    fn begin_record<R: Schema>(mut self) -> CodecResult<()>
+    fn field<R: Schema>(mut self, _ position: usize) -> CodecResult<()>
+    fn end_record<R: Schema>(mut self) -> CodecResult<()>
+}
+
+impl Describe for bool {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.bool()
+    }
+}
+
+impl Describe for u8 {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.unsigned(8)
+    }
+}
+
+impl Describe for u16 {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.unsigned(16)
+    }
+}
+
+impl Describe for u32 {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.unsigned(32)
+    }
+}
+
+impl Describe for u64 {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.unsigned(64)
+    }
+}
+
+impl Describe for u128 {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.unsigned(128)
+    }
+}
+
+impl Describe for u256 {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.unsigned(256)
+    }
+}
+
+impl Describe for i8 {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.signed(8)
+    }
+}
+
+impl Describe for i16 {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.signed(16)
+    }
+}
+
+impl Describe for i32 {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.signed(32)
+    }
+}
+
+impl Describe for i64 {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.signed(64)
+    }
+}
+
+impl Describe for i128 {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.signed(128)
+    }
+}
+
+impl Describe for i256 {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.signed(256)
+    }
+}
+
+impl<const N: usize> Describe for Text<N> {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.text(N)
+    }
+}
+
+impl<const N: usize> Describe for BoundedBuffer<N> {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.bytes(N)
+    }
+}
+
+impl<const N: usize> Describe for PackedBytes<N> {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.fixed_bytes(N)
+    }
+}
+
+impl Describe for Address {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.address()
+    }
+}
+
+impl<T: Describe> Describe for Option<T> {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.begin_option()?
+        T::describe(mut describer)?
+        describer.end_option()
+    }
+}
+
+impl<T: Describe, const N: usize> Describe for [T; N] {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.begin_sequence(N)?
+        T::describe(mut describer)?
+        describer.end_sequence(N)
+    }
+}

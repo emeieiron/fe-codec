@@ -636,7 +636,8 @@ fn compact_writes_positional_records() {
     )
     assert!(vector<i128, Compact, 16>(compact, -2, [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe]))
     assert!(encodes(compact, StableStatus::Ready, [62]))
-    assert!(encodes(compact, Wallet { owner: Address::zero(), hash: PackedBytes<4>::from_array([1, 2, 3, 4]), memo: BoundedBuffer<8>::empty(), tag: Option::None }, [20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 1, 2, 3, 4, 0, 0]))
+    // Addresses and fixed-length bytes carry no length: the type fixes it.
+    assert!(encodes(compact, Wallet { owner: Address::zero(), hash: PackedBytes<4>::from_array([1, 2, 3, 4]), memo: BoundedBuffer<8>::empty(), tag: Option::None }, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 0, 0]))
 }
 
 #[test]

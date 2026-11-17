@@ -19,7 +19,11 @@ use fe_codec_core::{
 }
 use fe_codec_json::Json
 use codec_compact::Compact
+use std::evm::Address
+use std::evm::crypto::keccak_words
 use ingot::models::{Sample, Wallet, Wide}
+use fe_codec_eip712::Eip712Struct
+use ingot::typed::{Asset, Contact, Flat, Order, Party, Terms}
 
 fn round_trips<T: Serialize + Deserialize + core::ops::Eq, const N: usize>(_ value: T) -> bool {
     same<T, Json, N>(Json::new(), value)
@@ -278,5 +282,48 @@ pub fn cbor_heads_round_trip(value: u64) -> bool {
             Result::Err(_) => false,
         },
         Result::Err(_) => false,
+    }
+}
+
+// EIP-712.
+
+/// The generic hash of a struct of atomic members equals its definition written out: the
+/// type hash of a constant type string, then each member's word.
+#[property(cases = 300)]
+pub fn flat_struct_hashes_match_their_definition(a0: u64, a1: u64, a2: u64, a3: u64, b: u64, c: bool) -> bool {
+    let a = wide(a0, a1, a2, a3)
+    let who = Address::new(((b as u256) << 96) | 0x1234)
+    let expected = keccak_words([
+        core::keccak("Flat(uint256 a,address b,bool c)"),
+        a,
+        who.word(),
+        if c { 1 } else { 0 },
+    ])
+    let flat = Flat { a, b: who, c }
+    let generated = flat.hash_struct() == expected
+    match fe_codec_eip712::hash_struct(flat) {
+        Result::Ok(hash) => generated && hash == expected,
+        Result::Err(_) => false,
+    }
+}
+
+/// Every target computes the same typed-data digest for the same values.
+#[differential]
+pub fn typed_data_digests_agree(amount: u64, deadline: u64, who: u64, partial: bool) -> u64 {
+    let email = match Text<32>::from_array([0x61, 0x40, 0x62]) {
+        Result::Ok(email) => email,
+        Result::Err(_) => {
+            return 0
+        },
+    }
+    let order = Order {
+        maker: Party { who: Address::new(who as u256), contact: Contact { email } },
+        item: Asset { token: Address::new((amount as u256) << 64), amount: (amount as u256) << 128 },
+        terms: Terms { deadline, partial },
+    }
+    let domain = fe_codec_eip712::Domain::new().chain_id(deadline as u256).verifying_contract(Address::new(who as u256))
+    match fe_codec_eip712::signing_hash(domain, order) {
+        Result::Ok(digest) => digest.downcast_truncate(),
+        Result::Err(error) => error.kind.code() as u64,
     }
 }

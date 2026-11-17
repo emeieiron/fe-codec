@@ -47,6 +47,11 @@ pub struct Output {
 
 pub struct Model {
     pub name: String,
+    /// Marked `#[eip712]`: `--eip712` generates static struct hashing for it.
+    pub eip712: bool,
+    /// The source file and byte offset of the declaration, for diagnostics.
+    pub source: usize,
+    pub offset: usize,
     pub generics: Vec<Generic>,
     /// Type parameters whose decoding builds arrays of them, so they must be `Copy`.
     pub copy_params: BTreeSet<String>,
@@ -80,6 +85,10 @@ pub struct Field {
     pub id: u64,
     /// For a literal-length array decoded element by element: the element type and length.
     pub unrolled: Option<(String, usize)>,
+    /// The declared type, parsed.
+    pub kind: Ty,
+    /// Byte offset of the field in its source, for diagnostics.
+    pub offset: usize,
 }
 
 pub struct Variant {
@@ -174,10 +183,15 @@ pub fn extract(sources: &[Source]) -> Result<Output> {
                     }
                 }
                 Some(ItemKind::Struct(model)) if serializable(&model, index)? => {
-                    output.models.push(extraction.record(&model)?);
+                    let mut record = extraction.record(&model)?;
+                    record.eip712 = marked(&model, "eip712");
+                    output.models.push(record);
                 }
                 Some(ItemKind::Enum(model)) if serializable(&model, index)? => {
                     output.models.push(extraction.enumeration(&model)?);
+                }
+                Some(ItemKind::Struct(model)) if marked(&model, "eip712") => {
+                    return Err(at(index, model.syntax(), "#[eip712] types must also be #[serializable]"));
                 }
                 _ => {}
             }
@@ -191,6 +205,12 @@ pub fn extract(sources: &[Source]) -> Result<Output> {
         });
     }
     Ok(output)
+}
+
+/// Whether `item` carries the attribute `name`.
+fn marked(item: &impl AttrListOwner, name: &str) -> bool {
+    item.attr_list()
+        .is_some_and(|attributes| attributes.normal_attrs().any(|attribute| attribute.is_named(name)))
 }
 
 /// Whether `item` carries `#[serializable]`, which takes no arguments.
@@ -230,9 +250,12 @@ enum Copyness {
     Unknown,
 }
 
-/// The parts of a field type the checks inspect.
-enum Ty {
-    Path { name: String, args: Vec<Option<Ty>> },
+/// The parts of a field type the checks and renderers inspect. `args` are the type
+/// arguments and `consts` the integer-literal const arguments, each `None` where the
+/// argument has the other kind or is not a literal.
+#[derive(Clone)]
+pub enum Ty {
+    Path { name: String, args: Vec<Option<Ty>>, consts: Vec<Option<u64>> },
     Array { element: Box<Ty>, length: Option<usize> },
     Other,
 }
@@ -292,6 +315,8 @@ impl Extraction<'_> {
                 optional,
                 id: 0,
                 unrolled,
+                kind: ty,
+                offset: u32::from(field.syntax().text_range().start()) as usize,
             });
         }
         let ids = self.resolve_ids(&ids, 1, model.syntax())?;
@@ -301,6 +326,9 @@ impl Extraction<'_> {
         result.sort_by_key(|field| field.id);
         Ok(Model {
             name,
+            eip712: false,
+            source: self.source,
+            offset: u32::from(model.syntax().text_range().start()) as usize,
             generics,
             copy_params,
             shape: Shape::Record(result),
@@ -344,6 +372,9 @@ impl Extraction<'_> {
         }
         Ok(Model {
             name,
+            eip712: false,
+            source: self.source,
+            offset: u32::from(model.syntax().text_range().start()) as usize,
             generics: Vec::new(),
             copy_params: BTreeSet::new(),
             shape: Shape::Enum(variants),
@@ -381,7 +412,7 @@ impl Extraction<'_> {
                     let name = parameter.name().ok_or_else(|| {
                         self.error(parameter.syntax(), "missing generic parameter name")
                     })?;
-                    if name.text() == "CodecEncoder" || name.text() == "CodecDecoder" {
+                    if matches!(name.text(), "CodecEncoder" | "CodecDecoder" | "CodecDescriber") {
                         return Err(self.error(
                             parameter.syntax(),
                             "this parameter name is reserved for generated code",
@@ -421,7 +452,7 @@ impl Extraction<'_> {
     /// Rejects types that cannot be serialized faithfully.
     fn check(&self, ty: &Ty, model: &str, site: &SyntaxNode) -> Result<()> {
         match ty {
-            Ty::Path { name, args } => {
+            Ty::Path { name, args, .. } => {
                 if name == "usize" || name == "isize" {
                     return Err(self.error(
                         site,
@@ -458,7 +489,7 @@ impl Extraction<'_> {
 
     fn copyness(&self, ty: &Ty, parameters: &BTreeSet<String>) -> Copyness {
         match ty {
-            Ty::Path { name, args } => {
+            Ty::Path { name, args, .. } => {
                 let last = name.rsplit("::").next().unwrap_or(name);
                 if is_primitive(last)
                     || matches!(last, "Text" | "BoundedBuffer" | "PackedBytes" | "Address")
@@ -685,7 +716,7 @@ fn is_primitive(name: &str) -> bool {
 
 fn option_payload(ty: &Ty) -> Option<&Ty> {
     match ty {
-        Ty::Path { name, args } if is_option(name) => match args.as_slice() {
+        Ty::Path { name, args, .. } if is_option(name) => match args.as_slice() {
             [Some(inner)] => Some(inner),
             _ => None,
         },
@@ -735,7 +766,14 @@ fn parse_ty(ty: &Type) -> Ty {
                 _ => None,
             })
             .collect();
-        return Ty::Path { name, args };
+        let consts = arguments
+            .iter()
+            .map(|argument| match argument {
+                GenericArgKind::Const(argument) => argument.expr().and_then(|expr| literal_u64(expr.syntax())),
+                _ => None,
+            })
+            .collect();
+        return Ty::Path { name, args, consts };
     }
     Ty::Other
 }

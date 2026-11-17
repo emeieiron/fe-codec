@@ -1,0 +1,126 @@
+//! EIP-712 typed structured data (https://eips.ethereum.org/EIPS/eip-712): struct hashes,
+//! type hashes, the domain separator, the digest a signature covers, and the
+//! `eth_signTypedData_v4` request a wallet signs.
+//!
+//! A type needs `Serialize` and `Describe`, which `fe-codec-gen` writes for
+//! `#[serializable]` types. EIP-712 hashes cannot be decoded, so this is not a `Format`.
+
+use fe_codec_core::{BoundedBuffer, CodecResult, Describe, Limits, Serialize, Text, TextWriter}
+use ingot::domain::Domain
+use ingot::hash::Eip712Encoder
+use ingot::json::{TypedDataJsonEncoder, write_domain, write_types}
+use ingot::types::TypeTable
+
+pub use ingot::domain::Domain
+pub use ingot::hash::Eip712Encoder
+pub use ingot::json::TypedDataJsonEncoder
+pub use ingot::member::{Eip712Member, Eip712Struct}
+pub use ingot::types::{MAX_TYPES, TypeTable}
+
+/// Bytes of working memory for hashing one value: its open structs' and arrays' words, and
+/// the longest string or byte string in it.
+pub const DEFAULT_CAPACITY: usize = 4096
+
+/// EIP-712 with its limits and working memory.
+pub struct Eip712 { pub limits: Limits, pub capacity: usize }
+impl Copy for Eip712 {}
+
+impl Eip712 {
+    pub const fn new() -> Self {
+        Self { limits: Limits::standard(), capacity: DEFAULT_CAPACITY }
+    }
+
+    pub const fn with_limits(_ limits: Limits) -> Self {
+        Self { limits, capacity: DEFAULT_CAPACITY }
+    }
+
+    pub const fn with_capacity(self, _ capacity: usize) -> Self {
+        Self { limits: self.limits, capacity }
+    }
+
+    /// `keccak256(encodeType(T))`.
+    pub fn type_hash<T: Describe>(self) -> CodecResult<u256> {
+        // Each operation builds its table in place: the table is large, and moving it
+        // through a `Result` costs gas on the EVM.
+        var table = TypeTable::new()
+        T::describe(mut table)?
+        table.finish()?
+        Result::Ok(table.entry(table.primary()?).hash)
+    }
+
+    /// `encodeType(T)`, such as `Mail(Person from,Person to,string contents)Person(string name,address wallet)`.
+    pub fn encode_type<T: Describe, const N: usize>(self) -> CodecResult<Text<N>> {
+        var table = TypeTable::new()
+        T::describe(mut table)?
+        table.finish()?
+        let len = table.write_encode_type(table.primary()?)?
+        var text = TextWriter<N>::new()
+        var index: usize = 0
+        while index < len {
+            text.write(table.work_byte(index), index)?
+            index += 1
+        }
+        text.finish(len)
+    }
+
+    /// `hashStruct(value)`.
+    pub fn hash_struct<T: Serialize + Describe>(self, _ value: T) -> CodecResult<u256> {
+        var table = TypeTable::new()
+        T::describe(mut table)?
+        table.finish()?
+        var encoder = Eip712Encoder::new(table, self.limits, self.capacity)
+        value.serialize(mut encoder)?
+        encoder.finish()
+    }
+
+    /// `keccak256("\x19\x01" ‖ domainSeparator ‖ hashStruct(message))`, the digest a wallet
+    /// signs and a contract passes to `ecrecover`.
+    pub fn signing_hash<T: Serialize + Describe>(self, _ domain: Domain, _ message: T) -> CodecResult<u256> {
+        let struct_hash = self.hash_struct(message)?
+        Result::Ok(std::evm::eip712::digest(domain_separator: domain.separator(), struct_hash))
+    }
+
+    /// The `eth_signTypedData_v4` request for `message` in `domain`, as compact JSON.
+    pub fn typed_data_json<T: Serialize + Describe, const N: usize>(
+        self,
+        _ domain: Domain,
+        _ message: T,
+    ) -> CodecResult<BoundedBuffer<N>> {
+        var table = TypeTable::new()
+        T::describe(mut table)?
+        table.finish()?
+        var out = TypedDataJsonEncoder<N>::new(self.limits)
+        out.byte(b'{')?
+        write_types(mut out, table, domain)?
+        out.literal<15>(",\"primaryType\":")?
+        out.quoted_name(table.entry(table.primary()?).name)?
+        out.byte(b',')?
+        write_domain(mut out, domain)?
+        out.literal<11>(",\"message\":")?
+        message.serialize(mut out)?
+        out.byte(b'}')?
+        out.finish()
+    }
+}
+
+pub fn type_hash<T: Describe>() -> CodecResult<u256> {
+    Eip712::new().type_hash<T>()
+}
+
+pub fn encode_type<T: Describe, const N: usize>() -> CodecResult<Text<N>> {
+    Eip712::new().encode_type<T, N>()
+}
+
+pub fn hash_struct<T: Serialize + Describe>(_ value: T) -> CodecResult<u256> {
+    Eip712::new().hash_struct(value)
+}
+
+pub fn signing_hash<T: Serialize + Describe>(_ domain: Domain, _ message: T) -> CodecResult<u256> {
+    Eip712::new().signing_hash(domain, message)
+}
+
+pub fn typed_data_json<T: Serialize + Describe, const N: usize>(_ domain: Domain, _ message: T) -> CodecResult<
+    BoundedBuffer<N>,
+> {
+    Eip712::new().typed_data_json<T, N>(domain, message)
+}

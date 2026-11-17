@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import tomllib
 import os
 from pathlib import Path
 import shutil
@@ -44,9 +45,16 @@ def consumer_project(app, generator, source, rev):
     text = manifest.read_text()
     start, stop = text.index("[modules.io]"), text.index("[modules.compact]")
     text = text[:start] + text[stop:]
-    start, stop = text.index("command = ["), text.index("output =")
-    command = [generator, "--source", "src/models.fe", "--stdout"]
-    manifest.write_text(text[:start] + f"command = {json.dumps(command)}\n" + text[stop:])
+    # The demo runs each generator through cargo; keep its arguments, after `--`.
+    demo = tomllib.loads((DEMO / "femp.toml").read_text())
+    for name, section in demo["modules"]["shared"]["generate"].items():
+        header = text.index(f"[modules.shared.generate.{name}]")
+        start = text.index("command = [", header)
+        stop = text.index("output =", start)
+        original = section["command"]
+        command = [generator, *original[original.index("--") + 1:]]
+        text = text[:start] + f"command = {json.dumps(command)}\n" + text[stop:]
+    manifest.write_text(text)
 
     for ingot in [app / module / "fe.toml" for module in ("shared", "native", "wasm")] + [
         app.parent / "compact_format/fe.toml"

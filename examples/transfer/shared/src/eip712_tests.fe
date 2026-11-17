@@ -1,0 +1,288 @@
+// EIP-712 against the EIP's reference values and vectors computed independently by
+// tests/vectors/eip712.py and checked again with viem by tests/eip712_viem.mjs.
+
+use core::bytes::PackedBytes
+use core::num::IntDowncast
+use fe_codec_core::{BoundedBuffer, CodecResult, Describe, ErrorKind, Limits, Serialize, Text}
+use fe_codec_eip712::{Domain, Eip712, Eip712Struct}
+use std::evm::Address
+use ingot::typed::{
+    Asset,
+    Conflict,
+    Contact,
+    EIP712Domain,
+    Flat,
+    Grid,
+    Group,
+    Holder,
+    Inbox,
+    Kinds,
+    Level,
+    Mail,
+    Many,
+    Maybe,
+    Order,
+    Party,
+    Person,
+    Ranked,
+    Terms,
+    TooLong,
+}
+
+const MAIL_ENCODE_TYPE: [u8; 77] = "Mail(Person from,Person to,string contents)Person(string name,address wallet)"
+const MAIL_TYPE_HASH: u256 = 0xa0cedeb2dc280ba39b857546d74f5549c3a1d7bdc2dd96bf881f76108e23dac2
+const MAIL_HASH: u256 = 0xc52c0ee5d84264471806290a3f2c4cecfc5490626bf912d01f240d7a274b371e
+const MAIL_DIGEST: u256 = 0xbe609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957bd2
+const MAIL_JSON: [u8; 694] = "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"}],\"Mail\":[{\"name\":\"from\",\"type\":\"Person\"},{\"name\":\"to\",\"type\":\"Person\"},{\"name\":\"contents\",\"type\":\"string\"}],\"Person\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"wallet\",\"type\":\"address\"}]},\"primaryType\":\"Mail\",\"domain\":{\"name\":\"Ether Mail\",\"version\":\"1\",\"chainId\":\"1\",\"verifyingContract\":\"0xcccccccccccccccccccccccccccccccccccccccc\"},\"message\":{\"from\":{\"name\":\"Cow\",\"wallet\":\"0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826\"},\"to\":{\"name\":\"Bob\",\"wallet\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"contents\":\"Hello, Bob!\"}}"
+const GROUP_ENCODE_TYPE: [u8; 70] = "Group(string name,Person[2] members)Person(string name,address wallet)"
+const GROUP_TYPE_HASH: u256 = 0x7b659ee8a02954aa9cbe27ed4cc1444eafa7778e5a54d47b9124df3d6f761e05
+const GROUP_HASH: u256 = 0xd1cbc7553031ead2f37314261dd75b714a7c8fc5626ad816fc34ffb5797cf68c
+const GROUP_DIGEST: u256 = 0xd2186cebe070380ead0a7ff0b2f22fdf20b5fa4b3573a2801d0769a758efdba1
+const GROUP_JSON: [u8; 762] = "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"},{\"name\":\"salt\",\"type\":\"bytes32\"}],\"Group\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"members\",\"type\":\"Person[2]\"}],\"Person\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"wallet\",\"type\":\"address\"}]},\"primaryType\":\"Group\",\"domain\":{\"name\":\"Full\",\"version\":\"2\",\"chainId\":\"137\",\"verifyingContract\":\"0xcccccccccccccccccccccccccccccccccccccccc\",\"salt\":\"0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20\"},\"message\":{\"name\":\"Team\",\"members\":[{\"name\":\"Cow\",\"wallet\":\"0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826\"},{\"name\":\"Bob\",\"wallet\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}]}}"
+const GRID_ENCODE_TYPE: [u8; 23] = "Grid(uint8[2][3] cells)"
+const GRID_TYPE_HASH: u256 = 0xc23983d0892f97f736bca787205f102256cd5ee4b58174cc47d9c4d0997bbedd
+const GRID_HASH: u256 = 0x9328901d6a23593db92d7b1fcb15d9ee1f40c5be7ed33a3e13dc0001b640a45e
+const GRID_DIGEST: u256 = 0xd55063dcb32e35ce8a75a3e1d57a8a4620fa165a3ee36f8934c1570731c61347
+const GRID_JSON: [u8; 261] = "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"}],\"Grid\":[{\"name\":\"cells\",\"type\":\"uint8[2][3]\"}]},\"primaryType\":\"Grid\",\"domain\":{\"name\":\"Partial\",\"chainId\":\"10\"},\"message\":{\"cells\":[[\"1\",\"2\"],[\"3\",\"4\"],[\"5\",\"255\"]]}}"
+const INBOX_ENCODE_TYPE: [u8; 111] = "Inbox(address owner,Mail[0] mails)Mail(Person from,Person to,string contents)Person(string name,address wallet)"
+const INBOX_TYPE_HASH: u256 = 0x7e017abd4736b4928f48a5e05cd587b36b333f85f2c5da98d220a124672645c0
+const INBOX_HASH: u256 = 0x4d101175709c9027244610de0b425ed2533cf543816f3fd14bae641f227e49ca
+const INBOX_DIGEST: u256 = 0xfa9a9be3275d238d9efd08dd9c557784886daeb3fe51ddad8a069b2496fcb2fc
+const INBOX_JSON: [u8; 402] = "{\"types\":{\"EIP712Domain\":[],\"Inbox\":[{\"name\":\"owner\",\"type\":\"address\"},{\"name\":\"mails\",\"type\":\"Mail[0]\"}],\"Mail\":[{\"name\":\"from\",\"type\":\"Person\"},{\"name\":\"to\",\"type\":\"Person\"},{\"name\":\"contents\",\"type\":\"string\"}],\"Person\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"wallet\",\"type\":\"address\"}]},\"primaryType\":\"Inbox\",\"domain\":{},\"message\":{\"owner\":\"0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826\",\"mails\":[]}}"
+const KINDS_ENCODE_TYPE: [u8; 125] = "Kinds(bool flag,int8 small,int256 big,uint256 ubig,bytes data,bytes32 hash,bytes4 short,string label,address who,uint8 level)"
+const KINDS_TYPE_HASH: u256 = 0x8a706f40f74e79dbc24bb701514461ed772a35b854e3cf5d418a115dbfdbe757
+const KINDS_HASH: u256 = 0xb9c692e93c76aa1011684548f69db0a03085625b8dfcff46bf15698f90650c9e
+const KINDS_DIGEST: u256 = 0x5e3cfbe57b38c3511d8b241dbfc52ef4fdd92f0de2d13b2b50d17931d671a2c2
+const KINDS_JSON: [u8; 1050] = "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"}],\"Kinds\":[{\"name\":\"flag\",\"type\":\"bool\"},{\"name\":\"small\",\"type\":\"int8\"},{\"name\":\"big\",\"type\":\"int256\"},{\"name\":\"ubig\",\"type\":\"uint256\"},{\"name\":\"data\",\"type\":\"bytes\"},{\"name\":\"hash\",\"type\":\"bytes32\"},{\"name\":\"short\",\"type\":\"bytes4\"},{\"name\":\"label\",\"type\":\"string\"},{\"name\":\"who\",\"type\":\"address\"},{\"name\":\"level\",\"type\":\"uint8\"}]},\"primaryType\":\"Kinds\",\"domain\":{\"name\":\"Ether Mail\",\"version\":\"1\",\"chainId\":\"1\",\"verifyingContract\":\"0xcccccccccccccccccccccccccccccccccccccccc\"},\"message\":{\"flag\":true,\"small\":\"-12\",\"big\":\"-1606938044258990275541962092341162602522202993782792835301376\",\"ubig\":\"57896044618658097711785492504343953926634992332820282019728792003956564819975\",\"data\":\"0x010203\",\"hash\":\"0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\",\"short\":\"0xdeadbeef\",\"label\":\"say \\\"hi\\\" ü\",\"who\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"level\":\"1\"}}"
+const ORDER_ENCODE_TYPE: [u8; 166] = "Order(Party maker,Asset item,Terms terms)Asset(address token,uint256 amount)Contact(string email)Party(address who,Contact contact)Terms(uint64 deadline,bool partial)"
+const ORDER_TYPE_HASH: u256 = 0x4cfb7620b30b04b38e34abdcac7d5f7f41bb556d37f4954edbcc9bf97c374218
+const ORDER_HASH: u256 = 0x4644b4f75a4a1d0cc9bf5774fef30e8f43c20a0a72a7b0a9b26a2dbb4b0d5c4a
+const ORDER_DIGEST: u256 = 0x0889a96d73bdd82a5019683a1dffee0b508aba14e578ee92e94f0408541a6865
+const ORDER_JSON: [u8; 1068] = "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"},{\"name\":\"salt\",\"type\":\"bytes32\"}],\"Order\":[{\"name\":\"maker\",\"type\":\"Party\"},{\"name\":\"item\",\"type\":\"Asset\"},{\"name\":\"terms\",\"type\":\"Terms\"}],\"Asset\":[{\"name\":\"token\",\"type\":\"address\"},{\"name\":\"amount\",\"type\":\"uint256\"}],\"Contact\":[{\"name\":\"email\",\"type\":\"string\"}],\"Party\":[{\"name\":\"who\",\"type\":\"address\"},{\"name\":\"contact\",\"type\":\"Contact\"}],\"Terms\":[{\"name\":\"deadline\",\"type\":\"uint64\"},{\"name\":\"partial\",\"type\":\"bool\"}]},\"primaryType\":\"Order\",\"domain\":{\"name\":\"Full\",\"version\":\"2\",\"chainId\":\"137\",\"verifyingContract\":\"0xcccccccccccccccccccccccccccccccccccccccc\",\"salt\":\"0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20\"},\"message\":{\"maker\":{\"who\":\"0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826\",\"contact\":{\"email\":\"cow@example.org\"}},\"item\":{\"token\":\"0x0000000000000000000000000000000000000001\",\"amount\":\"1000000000000000000\"},\"terms\":{\"deadline\":\"1700000000\",\"partial\":false}}}"
+const MAIL_SEPARATOR: u256 = 0xf2cee375fa42b42143804025fc449deafd50cc031ca257e0b194a650a912090f
+const FULL_SEPARATOR: u256 = 0x689beec36d8fc1b869233213ddb6b2fd7336e233af826094adbec714fa6ff3a1
+const PARTIAL_SEPARATOR: u256 = 0x8d045f17569257da61874b78b18c6570bedc492bb70ffcac8db1ff6a94521e8a
+const EMPTY_SEPARATOR: u256 = 0x6192106f129ce05c9075d319c1fa6ea9b3ae37cbd0c1ef92e2be7137bb07baa1
+// Flat: Flat(uint256 a,address b,bool c)
+
+const COW: u256 = 0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826
+const BOB: u256 = 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+const VERIFIER: u256 = 0xcccccccccccccccccccccccccccccccccccccccc
+
+fn must<T>(_ result: own CodecResult<T>) -> T {
+    match result {
+        Result::Ok(value) => value,
+        Result::Err(_) => core::panic(),
+    }
+}
+
+fn text<const M: usize, const N: usize>(_ bytes: [u8; M]) -> Text<N> {
+    must(Text<N>::from_array(bytes))
+}
+
+fn expect_error<T>(_ result: own CodecResult<T>, _ kind: ErrorKind) {
+    match result {
+        Result::Err(error) => assert!(error.kind == kind),
+        Result::Ok(_) => assert!(false),
+    }
+}
+
+fn expect_field<T, const M: usize>(_ result: own CodecResult<T>, _ kind: ErrorKind, _ name: [u8; M]) {
+    match result {
+        Result::Err(error) => {
+            assert!(error.kind == kind)
+            assert!(error.field().unwrap().as_bytes().equals(BoundedBuffer<M>::from_array(name)))
+        },
+        Result::Ok(_) => assert!(false),
+    }
+}
+
+/// Every EIP-712 output for one value: its type string and hash, its struct hash, the digest
+/// in `domain`, and the wallet request, byte for byte. The generated static hashing must
+/// agree with the generic path.
+fn check<T: Serialize + Describe + Eip712Struct, const E: usize, const J: usize>(
+    _ value: T,
+    _ domain: Domain,
+    _ encode_type: [u8; E],
+    _ type_hash: u256,
+    _ hash: u256,
+    _ digest: u256,
+    _ json: [u8; J],
+) {
+    let eip712 = Eip712::new()
+    let expected = text<E, E>(encode_type)
+    assert!(must(eip712.encode_type<T, E>()).equals(expected))
+    assert!(must(eip712.type_hash<T>()) == type_hash)
+    assert!(must(eip712.hash_struct(value)) == hash)
+    assert!(must(eip712.signing_hash(domain, value)) == digest)
+    let request = must(eip712.typed_data_json<T, J>(domain, value))
+    assert!(request.equals(BoundedBuffer<J>::from_array(json)))
+    assert!(T::TYPE_HASH == type_hash)
+    assert!(value.hash_struct() == hash)
+    assert!(domain.digest(value.hash_struct()) == digest)
+}
+
+fn cow() -> Person {
+    Person { name: text("Cow"), wallet: Address::new(COW) }
+}
+
+fn bob() -> Person {
+    Person { name: text("Bob"), wallet: Address::new(BOB) }
+}
+
+fn mail() -> Mail {
+    Mail { from: cow(), to: bob(), contents: text("Hello, Bob!") }
+}
+
+fn mail_domain() -> Domain {
+    Domain::new().name(text("Ether Mail")).version(text("1")).chain_id(1).verifying_contract(Address::new(VERIFIER))
+}
+
+fn salt() -> PackedBytes<32> {
+    var bytes: [u8; 32] = [0; 32]
+    var index: usize = 0
+    while index < 32 {
+        bytes[index] = (index + 1).downcast_truncate()
+        index += 1
+    }
+    PackedBytes<32>::from_array(bytes)
+}
+
+fn full_domain() -> Domain {
+    Domain::new().name(text("Full")).version(text("2")).chain_id(137).verifying_contract(Address::new(VERIFIER)).salt(salt())
+}
+
+fn partial_domain() -> Domain {
+    Domain::new().name(text("Partial")).chain_id(10)
+}
+
+#[test]
+fn matches_the_eip_reference_mail() {
+    check(mail(), mail_domain(), MAIL_ENCODE_TYPE, MAIL_TYPE_HASH, MAIL_HASH, MAIL_DIGEST, MAIL_JSON)
+}
+
+#[test]
+fn hashes_arrays_of_structs() {
+    check(
+        Group { name: text("Team"), members: [cow(), bob()] },
+        full_domain(),
+        GROUP_ENCODE_TYPE,
+        GROUP_TYPE_HASH,
+        GROUP_HASH,
+        GROUP_DIGEST,
+        GROUP_JSON,
+    )
+}
+
+#[test]
+fn hashes_nested_arrays() {
+    check(
+        Grid { cells: [[1, 2], [3, 4], [5, 255]] },
+        partial_domain(),
+        GRID_ENCODE_TYPE,
+        GRID_TYPE_HASH,
+        GRID_HASH,
+        GRID_DIGEST,
+        GRID_JSON,
+    )
+}
+
+#[test]
+fn includes_types_reachable_only_through_empty_arrays() {
+    check(
+        Inbox { owner: Address::new(COW), mails: [] },
+        Domain::new(),
+        INBOX_ENCODE_TYPE,
+        INBOX_TYPE_HASH,
+        INBOX_HASH,
+        INBOX_DIGEST,
+        INBOX_JSON,
+    )
+}
+
+#[test]
+fn encodes_every_atomic_and_dynamic_type() {
+    var hash: [u8; 32] = [0; 32]
+    var index: usize = 0
+    while index < 32 {
+        hash[index] = index.downcast_truncate()
+        index += 1
+    }
+    let big: i256 = -(1 << 200)
+    let ubig: u256 = (1 << 255) + 7
+    let kinds = Kinds {
+        flag: true,
+        small: -12,
+        big,
+        ubig,
+        data: BoundedBuffer<8>::from_prefix([1, 2, 3]).unwrap(),
+        hash: PackedBytes<32>::from_array(hash),
+        short: PackedBytes<4>::from_array([0xde, 0xad, 0xbe, 0xef]),
+        label: text("say \"hi\" ü"),
+        who: Address::new(BOB),
+        level: Level::High,
+    }
+    check(kinds, mail_domain(), KINDS_ENCODE_TYPE, KINDS_TYPE_HASH, KINDS_HASH, KINDS_DIGEST, KINDS_JSON)
+}
+
+#[test]
+fn sorts_referenced_types_by_name() {
+    let order = Order {
+        maker: Party { who: Address::new(COW), contact: Contact { email: text("cow@example.org") } },
+        item: Asset { token: Address::new(1), amount: 1000000000000000000 },
+        terms: Terms { deadline: 1700000000, partial: false },
+    }
+    check(order, full_domain(), ORDER_ENCODE_TYPE, ORDER_TYPE_HASH, ORDER_HASH, ORDER_DIGEST, ORDER_JSON)
+}
+
+#[test]
+fn domain_separators_cover_every_field_combination() {
+    assert!(mail_domain().separator() == MAIL_SEPARATOR)
+    assert!(full_domain().separator() == FULL_SEPARATOR)
+    assert!(partial_domain().separator() == PARTIAL_SEPARATOR)
+    assert!(Domain::new().separator() == EMPTY_SEPARATOR)
+    // std's four-field separator agrees with the general one.
+    let standard = std::evm::eip712::domain_separator(
+        name_hash: core::keccak("Ether Mail"),
+        version_hash: core::keccak("1"),
+        chain_id: 1,
+        verifying_contract: Address::new(VERIFIER),
+    )
+    assert!(standard == MAIL_SEPARATOR)
+    // Name and version set by hash give the same separator as text.
+    let hashed = Domain::new()
+        .name_hash(core::keccak("Ether Mail"))
+        .version_hash(core::keccak("1"))
+        .chain_id(1)
+        .verifying_contract(Address::new(VERIFIER))
+    assert!(hashed.separator() == MAIL_SEPARATOR)
+    assert!(hashed.digest(MAIL_HASH) == MAIL_DIGEST)
+    // The wallet request shows the name, so a domain named only by hash has none.
+    expect_error(Eip712::new().typed_data_json<Mail, 1024>(hashed, mail()), ErrorKind::Unsupported)
+}
+
+#[test]
+fn rejects_types_eip712_cannot_express() {
+    let eip712 = Eip712::new()
+    expect_field(eip712.type_hash<Maybe>(), ErrorKind::Unsupported, "value")
+    expect_field(eip712.type_hash<TooLong>(), ErrorKind::Unsupported, "data")
+    expect_field(eip712.type_hash<Conflict>(), ErrorKind::Unsupported, "Holder")
+    expect_error(eip712.type_hash<EIP712Domain>(), ErrorKind::Unsupported)
+    expect_error(eip712.type_hash<u64>(), ErrorKind::Unsupported)
+    // A variant ID must fit the uint8 an enum is encoded as.
+    assert!(eip712.type_hash<Ranked>().is_ok())
+    expect_error(eip712.hash_struct(Ranked { rank: Many::Large }), ErrorKind::IntegerOutOfRange)
+    assert!(eip712.hash_struct(Ranked { rank: Many::Zero }).is_ok())
+    // One instantiation of a generic type is one struct.
+    assert!(eip712.type_hash<Holder<u8>>().is_ok())
+}
+
+#[test]
+fn respects_capacity_and_depth() {
+    expect_error(Eip712::new().with_capacity(64).hash_struct(mail()), ErrorKind::CapacityExceeded)
+    expect_error(
+        Eip712::with_limits(Limits { max_depth: 1, max_items: 256 }).hash_struct(mail()),
+        ErrorKind::DepthLimit,
+    )
+    expect_error(Eip712::new().typed_data_json<Mail, 100>(mail_domain(), mail()), ErrorKind::CapacityExceeded)
+}

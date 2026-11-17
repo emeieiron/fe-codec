@@ -1,5 +1,5 @@
 use core::num::IntDowncast
-use fe_codec_core::{CodecError, CodecResult, Decoder, Deserialize, Encoder, ErrorKind, Serialize}
+use fe_codec_core::{CodecError, CodecResult, Decoder, Describe, Describer, Deserialize, Encoder, ErrorKind, Serialize}
 
 /// Whole degrees, written as text such as `"21C"` in every format.
 pub struct Celsius { pub degrees: u8 }
@@ -16,6 +16,13 @@ impl Serialize for Celsius {
             return encoder.write_text(fe_codec_core::Text<4>::from_array([b'0' + tens, b'0' + ones, b'C'])?)
         }
         encoder.write_text(fe_codec_core::Text<4>::from_array([b'0' + ones, b'C'])?)
+    }
+}
+
+/// Described as the text it is written as.
+impl Describe for Celsius {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.text(4)
     }
 }
 

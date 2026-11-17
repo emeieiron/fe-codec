@@ -35,6 +35,11 @@ impl<const N: usize> Text<N> {
         self.bytes.byte_at(index)
     }
 
+    /// The text's UTF-8 bytes.
+    pub fn bytes(self) -> BoundedBuffer<N> {
+        self.bytes
+    }
+
     pub fn equals<const M: usize>(self, _ other: Text<M>) -> bool {
         self.bytes.equals(other.bytes)
     }

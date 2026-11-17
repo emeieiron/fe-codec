@@ -17,6 +17,9 @@ path = "../../formats/json"
 [modules.cbor]
 path = "../../formats/cbor"
 
+[modules.eip712]
+path = "../../formats/eip712"
+
 [modules.compact]
 path = "../compact_format"
 
@@ -27,9 +30,18 @@ path = "shared"
 command = [
     "cargo", "run", "--quiet", "--locked",
     "--manifest-path", "../../../Cargo.toml", "--bin", "fe-codec-gen", "--",
-    "--source", "src/models.fe", "--stdout",
+    "--source", "src/models.fe", "--source", "src/typed.fe", "--stdout",
 ]
 output = "src/serializers.fe"
+
+# A second generator in the same module: static EIP-712 hashing for #[eip712] structs.
+[modules.shared.generate.eip712]
+command = [
+    "cargo", "run", "--quiet", "--locked",
+    "--manifest-path", "../../../Cargo.toml", "--bin", "fe-codec-gen", "--",
+    "--source", "src/models.fe", "--source", "src/typed.fe", "--eip712", "--stdout",
+]
+output = "src/eip712.fe"
 
 [modules.contract]
 path = "evm"

@@ -1,3 +1,5 @@
+use std::evm::{Ctx, Evm, Log}
+
 msg CodecMsg {
     #[selector = sol("verifyFormats()")]
     VerifyFormats -> bool,
@@ -11,8 +13,55 @@ pub contract TransferCodec {
     }
 }
 
+msg MailMsg {
+    /// The address that signed the EIP-712 example mail with `v`, `r` and `s`, or zero.
+    #[selector = sol("mailSigner(uint256,uint256,uint256)")]
+    MailSigner { v: u256, r: u256, s: u256 } -> u256,
+    /// Emits the gas each way of computing the mail's digest takes, and whether they agree.
+    #[selector = sol("measureGas()")]
+    MeasureGas -> bool,
+}
+
+#[event]
+pub struct DigestGas { pub generic: u256, pub generated: u256, pub manual: u256 }
+
+/// Verifies signatures over the EIP's example mail.
+pub contract MailVerifier uses (ctx: Ctx, log: mut Log) {
+    recv MailMsg {
+        MailSigner { v, r, s } -> u256 {
+            let digest = match codec_transfer::generated_mail_signing_hash() {
+                Result::Ok(digest) => digest,
+                Result::Err(_) => {
+                    return 0
+                },
+            }
+            match std::evm::crypto::ecrecover(hash: digest, v, r, s) {
+                Result::Ok(Option::Some(signer)) => signer,
+                _ => 0,
+            }
+        }
+
+        MeasureGas -> bool uses (ctx, mut log) {
+            // Each measurement runs in a fresh transaction's memory, so the order does not
+            // skew memory-expansion costs between them much; the manual one runs first.
+            let t0 = ctx.gas()
+            let manual = codec_transfer::manual_mail_signing_hash()
+            let t1 = ctx.gas()
+            let generated = codec_transfer::generated_mail_signing_hash()
+            let t2 = ctx.gas()
+            let generic = codec_transfer::mail_signing_hash()
+            let t3 = ctx.gas()
+            log.emit(DigestGas { generic: t2 - t3, generated: t1 - t2, manual: t0 - t1 })
+            match (generic, generated, manual) {
+                (Result::Ok(a), Result::Ok(b), Result::Ok(c)) => a == b && b == c,
+                _ => false,
+            }
+        }
+    }
+}
+
 #[test]
-fn contract_verifies_both_formats() uses (evm: mut std::evm::Evm) {
+fn contract_verifies_both_formats() uses (evm: mut Evm) {
     let contract_address = evm.create2<TransferCodec>(value: Wei::zero(), args: (), salt: 0)
     assert!(
         evm.call(
@@ -22,4 +71,39 @@ fn contract_verifies_both_formats() uses (evm: mut std::evm::Evm) {
             message: CodecMsg::VerifyFormats {},
         ),
     )
+}
+
+#[test]
+fn contract_recovers_the_signer_of_the_eip_example() uses (evm: mut Evm) {
+    let verifier = evm.create2<MailVerifier>(value: Wei::zero(), args: (), salt: 1)
+    // The signature eth_signTypedData returns for the example in EIP-712.
+    let signer: u256 = evm.call(
+        addr: verifier,
+        gas: 2000000,
+        value: Wei::zero(),
+        message: MailMsg::MailSigner {
+            v: 28,
+            r: 0x4355c47d63924e8a72e509b65029052eb6c299d53a04e167c5775fd466751c9d,
+            s: 0x07299936d304c153f6443dfa05f40ff007d72911b6f72307f996231605b91562,
+        },
+    )
+    assert!(signer == 0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826)
+    // Any other signature recovers someone else, or no one.
+    let other: u256 = evm.call(
+        addr: verifier,
+        gas: 2000000,
+        value: Wei::zero(),
+        message: MailMsg::MailSigner {
+            v: 27,
+            r: 0x4355c47d63924e8a72e509b65029052eb6c299d53a04e167c5775fd466751c9d,
+            s: 0x07299936d304c153f6443dfa05f40ff007d72911b6f72307f996231605b91562,
+        },
+    )
+    assert!(other != 0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826)
+}
+
+#[test]
+fn generic_and_hand_written_digests_agree() uses (evm: mut Evm) {
+    let verifier = evm.create2<MailVerifier>(value: Wei::zero(), args: (), salt: 2)
+    assert!(evm.call(addr: verifier, gas: 2000000, value: Wei::zero(), message: MailMsg::MeasureGas {}))
 }

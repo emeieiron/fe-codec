@@ -54,8 +54,19 @@ impl SchemaName {
         true
     }
 
+    /// The name's bytes from the most significant end of a word, zeros after them.
+    pub fn packed(self) -> u256 {
+        self.word & !(0xff as u256)
+    }
+
     pub fn same(self, _ other: SchemaName) -> bool {
         self.word == other.word
+    }
+
+    /// Whether this name sorts before `other` in byte order, as EIP-712 sorts type names.
+    /// The packed word compares bytes first and length last, so a prefix sorts first.
+    pub fn before(self, _ other: SchemaName) -> bool {
+        self.word < other.word
     }
 
     pub(ingot) fn word(self) -> u256 {
@@ -98,6 +109,9 @@ impl Copy for VariantInfo {}
 /// names are unique. An enum lists its variants by declaration index. `validate_schema`
 /// checks these rules, and generated schemas always meet them.
 pub trait Schema {
+    /// The type's name: the struct or enum identifier, without generic arguments.
+    fn name() -> SchemaName
+
     fn field(_ position: usize) -> Option<FieldInfo> {
         Option::None
     }

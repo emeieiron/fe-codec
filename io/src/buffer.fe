@@ -75,6 +75,12 @@ impl<const N: usize> BoundedBuffer<N> {
         N
     }
 
+    /// Word `index` of the packed bytes: 32 bytes, most significant first, with zeros past
+    /// the initialized length. Panics unless `index` is below `(capacity + 31) / 32`.
+    pub fn word(self, _ index: usize) -> u256 {
+        self.words[index]
+    }
+
     pub fn byte_at(self, _ index: usize) -> Option<u8> {
         if index >= self.length {
             return Option::None

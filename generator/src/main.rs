@@ -1,3 +1,4 @@
+mod eip712;
 mod render;
 mod schema;
 
@@ -34,6 +35,11 @@ struct Args {
     /// Report a missing or stale --out module without writing it.
     #[arg(long)]
     check: bool,
+
+    /// Generate static EIP-712 struct hashing for #[eip712] structs instead of serializers.
+    /// The module needs the fe_codec_eip712 ingot.
+    #[arg(long)]
+    eip712: bool,
 }
 
 type Result<T> = std::result::Result<T, String>;
@@ -86,7 +92,14 @@ fn run(args: Args) -> Result<()> {
         let index = error.source;
         diagnostic(&args.source[index], &texts[index], error)
     })?;
-    let output = render::render(&schema);
+    let output = if args.eip712 {
+        eip712::render(&schema).map_err(|error| {
+            let index = error.source;
+            diagnostic(&args.source[index], &texts[index], error)
+        })?
+    } else {
+        render::render(&schema)
+    };
     if args.stdout {
         io::stdout()
             .lock()

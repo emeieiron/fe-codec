@@ -1,0 +1,56 @@
+[
+  {
+    "label": "MAIL",
+    "json": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"}],\"Mail\":[{\"name\":\"from\",\"type\":\"Person\"},{\"name\":\"to\",\"type\":\"Person\"},{\"name\":\"contents\",\"type\":\"string\"}],\"Person\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"wallet\",\"type\":\"address\"}]},\"primaryType\":\"Mail\",\"domain\":{\"name\":\"Ether Mail\",\"version\":\"1\",\"chainId\":\"1\",\"verifyingContract\":\"0xcccccccccccccccccccccccccccccccccccccccc\"},\"message\":{\"from\":{\"name\":\"Cow\",\"wallet\":\"0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826\"},\"to\":{\"name\":\"Bob\",\"wallet\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"contents\":\"Hello, Bob!\"}}",
+    "encodeType": "Mail(Person from,Person to,string contents)Person(string name,address wallet)",
+    "typeHash": "0xa0cedeb2dc280ba39b857546d74f5549c3a1d7bdc2dd96bf881f76108e23dac2",
+    "hashStruct": "0xc52c0ee5d84264471806290a3f2c4cecfc5490626bf912d01f240d7a274b371e",
+    "domainSeparator": "0xf2cee375fa42b42143804025fc449deafd50cc031ca257e0b194a650a912090f",
+    "digest": "0xbe609aee343fb3c4b28e1df9e632fca64fcfaede20f02e86244efddf30957bd2"
+  },
+  {
+    "label": "GROUP",
+    "json": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"},{\"name\":\"salt\",\"type\":\"bytes32\"}],\"Group\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"members\",\"type\":\"Person[2]\"}],\"Person\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"wallet\",\"type\":\"address\"}]},\"primaryType\":\"Group\",\"domain\":{\"name\":\"Full\",\"version\":\"2\",\"chainId\":\"137\",\"verifyingContract\":\"0xcccccccccccccccccccccccccccccccccccccccc\",\"salt\":\"0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20\"},\"message\":{\"name\":\"Team\",\"members\":[{\"name\":\"Cow\",\"wallet\":\"0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826\"},{\"name\":\"Bob\",\"wallet\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}]}}",
+    "encodeType": "Group(string name,Person[2] members)Person(string name,address wallet)",
+    "typeHash": "0x7b659ee8a02954aa9cbe27ed4cc1444eafa7778e5a54d47b9124df3d6f761e05",
+    "hashStruct": "0xd1cbc7553031ead2f37314261dd75b714a7c8fc5626ad816fc34ffb5797cf68c",
+    "domainSeparator": "0x689beec36d8fc1b869233213ddb6b2fd7336e233af826094adbec714fa6ff3a1",
+    "digest": "0xd2186cebe070380ead0a7ff0b2f22fdf20b5fa4b3573a2801d0769a758efdba1"
+  },
+  {
+    "label": "GRID",
+    "json": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"}],\"Grid\":[{\"name\":\"cells\",\"type\":\"uint8[2][3]\"}]},\"primaryType\":\"Grid\",\"domain\":{\"name\":\"Partial\",\"chainId\":\"10\"},\"message\":{\"cells\":[[\"1\",\"2\"],[\"3\",\"4\"],[\"5\",\"255\"]]}}",
+    "encodeType": "Grid(uint8[2][3] cells)",
+    "typeHash": "0xc23983d0892f97f736bca787205f102256cd5ee4b58174cc47d9c4d0997bbedd",
+    "hashStruct": "0x9328901d6a23593db92d7b1fcb15d9ee1f40c5be7ed33a3e13dc0001b640a45e",
+    "domainSeparator": "0x8d045f17569257da61874b78b18c6570bedc492bb70ffcac8db1ff6a94521e8a",
+    "digest": "0xd55063dcb32e35ce8a75a3e1d57a8a4620fa165a3ee36f8934c1570731c61347"
+  },
+  {
+    "label": "INBOX",
+    "json": "{\"types\":{\"EIP712Domain\":[],\"Inbox\":[{\"name\":\"owner\",\"type\":\"address\"},{\"name\":\"mails\",\"type\":\"Mail[0]\"}],\"Mail\":[{\"name\":\"from\",\"type\":\"Person\"},{\"name\":\"to\",\"type\":\"Person\"},{\"name\":\"contents\",\"type\":\"string\"}],\"Person\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"wallet\",\"type\":\"address\"}]},\"primaryType\":\"Inbox\",\"domain\":{},\"message\":{\"owner\":\"0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826\",\"mails\":[]}}",
+    "encodeType": "Inbox(address owner,Mail[0] mails)Mail(Person from,Person to,string contents)Person(string name,address wallet)",
+    "typeHash": "0x7e017abd4736b4928f48a5e05cd587b36b333f85f2c5da98d220a124672645c0",
+    "hashStruct": "0x4d101175709c9027244610de0b425ed2533cf543816f3fd14bae641f227e49ca",
+    "domainSeparator": "0x6192106f129ce05c9075d319c1fa6ea9b3ae37cbd0c1ef92e2be7137bb07baa1",
+    "digest": "0xfa9a9be3275d238d9efd08dd9c557784886daeb3fe51ddad8a069b2496fcb2fc"
+  },
+  {
+    "label": "KINDS",
+    "json": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"}],\"Kinds\":[{\"name\":\"flag\",\"type\":\"bool\"},{\"name\":\"small\",\"type\":\"int8\"},{\"name\":\"big\",\"type\":\"int256\"},{\"name\":\"ubig\",\"type\":\"uint256\"},{\"name\":\"data\",\"type\":\"bytes\"},{\"name\":\"hash\",\"type\":\"bytes32\"},{\"name\":\"short\",\"type\":\"bytes4\"},{\"name\":\"label\",\"type\":\"string\"},{\"name\":\"who\",\"type\":\"address\"},{\"name\":\"level\",\"type\":\"uint8\"}]},\"primaryType\":\"Kinds\",\"domain\":{\"name\":\"Ether Mail\",\"version\":\"1\",\"chainId\":\"1\",\"verifyingContract\":\"0xcccccccccccccccccccccccccccccccccccccccc\"},\"message\":{\"flag\":true,\"small\":\"-12\",\"big\":\"-1606938044258990275541962092341162602522202993782792835301376\",\"ubig\":\"57896044618658097711785492504343953926634992332820282019728792003956564819975\",\"data\":\"0x010203\",\"hash\":\"0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\",\"short\":\"0xdeadbeef\",\"label\":\"say \\\"hi\\\" ü\",\"who\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"level\":\"1\"}}",
+    "encodeType": "Kinds(bool flag,int8 small,int256 big,uint256 ubig,bytes data,bytes32 hash,bytes4 short,string label,address who,uint8 level)",
+    "typeHash": "0x8a706f40f74e79dbc24bb701514461ed772a35b854e3cf5d418a115dbfdbe757",
+    "hashStruct": "0xb9c692e93c76aa1011684548f69db0a03085625b8dfcff46bf15698f90650c9e",
+    "domainSeparator": "0xf2cee375fa42b42143804025fc449deafd50cc031ca257e0b194a650a912090f",
+    "digest": "0x5e3cfbe57b38c3511d8b241dbfc52ef4fdd92f0de2d13b2b50d17931d671a2c2"
+  },
+  {
+    "label": "ORDER",
+    "json": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"},{\"name\":\"salt\",\"type\":\"bytes32\"}],\"Order\":[{\"name\":\"maker\",\"type\":\"Party\"},{\"name\":\"item\",\"type\":\"Asset\"},{\"name\":\"terms\",\"type\":\"Terms\"}],\"Asset\":[{\"name\":\"token\",\"type\":\"address\"},{\"name\":\"amount\",\"type\":\"uint256\"}],\"Contact\":[{\"name\":\"email\",\"type\":\"string\"}],\"Party\":[{\"name\":\"who\",\"type\":\"address\"},{\"name\":\"contact\",\"type\":\"Contact\"}],\"Terms\":[{\"name\":\"deadline\",\"type\":\"uint64\"},{\"name\":\"partial\",\"type\":\"bool\"}]},\"primaryType\":\"Order\",\"domain\":{\"name\":\"Full\",\"version\":\"2\",\"chainId\":\"137\",\"verifyingContract\":\"0xcccccccccccccccccccccccccccccccccccccccc\",\"salt\":\"0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20\"},\"message\":{\"maker\":{\"who\":\"0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826\",\"contact\":{\"email\":\"cow@example.org\"}},\"item\":{\"token\":\"0x0000000000000000000000000000000000000001\",\"amount\":\"1000000000000000000\"},\"terms\":{\"deadline\":\"1700000000\",\"partial\":false}}}",
+    "encodeType": "Order(Party maker,Asset item,Terms terms)Asset(address token,uint256 amount)Contact(string email)Party(address who,Contact contact)Terms(uint64 deadline,bool partial)",
+    "typeHash": "0x4cfb7620b30b04b38e34abdcac7d5f7f41bb556d37f4954edbcc9bf97c374218",
+    "hashStruct": "0x4644b4f75a4a1d0cc9bf5774fef30e8f43c20a0a72a7b0a9b26a2dbb4b0d5c4a",
+    "domainSeparator": "0x689beec36d8fc1b869233213ddb6b2fd7336e233af826094adbec714fa6ff3a1",
+    "digest": "0x0889a96d73bdd82a5019683a1dffee0b508aba14e578ee92e94f0408541a6865"
+  }
+]

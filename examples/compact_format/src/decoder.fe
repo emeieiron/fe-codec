@@ -1,5 +1,8 @@
 use core::num::IntDowncast
+use core::bytes::PackedBytes
+use std::evm::Address
 use fe_codec_core::{
+    address_from_bytes,
     BoundedBuffer,
     ByteReader,
     ByteWriter,
@@ -181,6 +184,21 @@ impl<const N: usize> Decoder for CompactDecoder<N> {
             index += 1
         }
         Result::Ok(output.finish())
+    }
+
+    fn read_fixed_bytes<const M: usize>(mut self) -> CodecResult<PackedBytes<M>> {
+        self.structure.value(self.offset())?
+        var bytes: [u8; M] = [0; M]
+        var index: usize = 0
+        while index < M {
+            bytes[index] = self.byte()?
+            index += 1
+        }
+        Result::Ok(PackedBytes<M>::from_array(bytes))
+    }
+
+    fn read_address(mut self) -> CodecResult<Address> {
+        Result::Ok(address_from_bytes(self.read_fixed_bytes<20>()?))
     }
 
     fn read_some(mut self) -> CodecResult<bool> {

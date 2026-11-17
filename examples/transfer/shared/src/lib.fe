@@ -1,1 +1,9 @@
-pub use ingot::demo::{decode_sample, transcode_sample, verify_formats}
+pub use ingot::demo::{
+    decode_sample,
+    generated_mail_signing_hash,
+    mail_signing_hash,
+    manual_mail_signing_hash,
+    reference_mail,
+    transcode_sample,
+    verify_formats,
+}

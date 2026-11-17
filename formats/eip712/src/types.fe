@@ -1,0 +1,488 @@
+//! EIP-712 struct types, collected from a type's `Describe` impl.
+//!
+//! Each struct type gets one definition, `Name(type1 name1,type2 name2)`, built while the
+//! description runs. A struct's `encodeType` is its own definition followed by the
+//! definitions of every struct it references, directly or not, sorted by name; its type
+//! hash is the keccak256 of that string.
+
+use core::MemBuffer
+use core::num::IntDowncast
+use fe_codec_core::{CodecError, CodecResult, Describer, ErrorKind, Schema, SchemaName, schema_name}
+use std::evm::crypto::keccak256
+
+/// The most struct types one value may involve.
+pub const MAX_TYPES: usize = 8
+
+/// Bytes for the finished definitions of every type.
+const ARENA_BYTES: usize = 2048
+
+/// Bytes for definitions being built, and for the `encodeType` string being hashed.
+const WORK_BYTES: usize = 2048
+
+/// Room past either buffer's limit, so a whole-word write or read at its end stays inside.
+const SLACK: usize = 32
+
+/// `bytes` from the most significant end of a word. Definitions are written a word at a
+/// time, which costs far less on the EVM than a byte at a time.
+const fn word_of<const M: usize>(_ bytes: [u8; M]) -> u256 {
+    var word: u256 = 0
+    var index: usize = 0
+    while index < M {
+        word = word | ((bytes[index] as u256) << (((31 - index) * 8) as u256))
+        index += 1
+    }
+    word
+}
+
+const BOOL: u256 = word_of("bool")
+const UINT: u256 = word_of("uint")
+const INT: u256 = word_of("int")
+const STRING: u256 = word_of("string")
+const BYTES: u256 = word_of("bytes")
+const ADDRESS: u256 = word_of("address")
+const UINT8: u256 = word_of("uint8")
+
+/// A struct type: its name, where its definition lies in the arena, the types it references
+/// directly (one bit per entry index), and its type hash.
+pub struct Entry { pub name: SchemaName, pub start: usize, pub len: usize, pub refs: u32, pub hash: u256 }
+impl Copy for Entry {}
+
+/// A record whose definition is being written: where it starts in the work buffer, the
+/// types it references, the field whose type is being described, and how many fields it
+/// has seen.
+struct Open { start: usize, refs: u32, pending: Option<SchemaName>, members: usize }
+impl Copy for Open {}
+
+pub struct TypeTable {
+    entries: [Entry; MAX_TYPES],
+    count: usize,
+    primary: Option<usize>,
+    open: [Open; MAX_TYPES],
+    depth: usize,
+    arena: MemBuffer,
+    arena_top: usize,
+    work: MemBuffer,
+    work_top: usize,
+    /// A comma owed before the next piece, which the piece's own write includes.
+    comma: bool,
+}
+
+/// The bit for entry `index` in a set of entries.
+pub(ingot) fn bit(_ index: usize) -> u32 {
+    let shift: u32 = index.downcast_truncate()
+    (1 as u32) << shift
+}
+
+fn unsupported() -> CodecError {
+    CodecError::at(kind: ErrorKind::Unsupported, offset: 0)
+}
+
+fn invalid_state() -> CodecError {
+    CodecError::at(kind: ErrorKind::InvalidState, offset: 0)
+}
+
+impl TypeTable {
+    pub fn new() -> Self {
+        let empty = Entry { name: schema_name<1>("_"), start: 0, len: 0, refs: 0, hash: 0 }
+        let closed = Open { start: 0, refs: 0, pending: Option::None, members: 0 }
+        Self {
+            entries: [empty; MAX_TYPES],
+            count: 0,
+            primary: Option::None,
+            open: [closed; MAX_TYPES],
+            depth: 0,
+            arena: MemBuffer::new(ARENA_BYTES + SLACK),
+            arena_top: 0,
+            work: MemBuffer::new(WORK_BYTES + SLACK),
+            work_top: 0,
+            comma: false,
+        }
+    }
+
+    pub fn count(self) -> usize {
+        self.count
+    }
+
+    pub fn entry(self, _ index: usize) -> Entry {
+        self.entries[index]
+    }
+
+    /// The entry index of the type a description started from.
+    pub fn primary(self) -> CodecResult<usize> {
+        match self.primary {
+            Option::Some(index) => Result::Ok(index),
+            Option::None => Result::Err(unsupported()),
+        }
+    }
+
+    pub fn find(self, _ name: SchemaName) -> Option<usize> {
+        var index: usize = 0
+        while index < self.count {
+            if self.entries[index].name.same(name) {
+                return Option::Some(index)
+            }
+            index += 1
+        }
+        Option::None
+    }
+
+    /// The type hash of the struct named `name`, once `finish` has run.
+    pub fn hash_of(self, _ name: SchemaName) -> Option<u256> {
+        match self.find(name) {
+            Option::Some(index) => Option::Some(self.entries[index].hash),
+            Option::None => Option::None,
+        }
+    }
+
+    /// Byte `index` of the arena, where definitions live.
+    pub fn arena_byte(self, _ index: usize) -> u8 {
+        self.arena.read_be<u8>(index)
+    }
+
+    /// Byte `index` of the work buffer, where `write_encode_type` leaves its string.
+    pub fn work_byte(self, _ index: usize) -> u8 {
+        self.work.read_be<u8>(index)
+    }
+
+    /// Completes the table: checks the description was one record, and computes every
+    /// type hash.
+    pub fn finish(mut self) -> CodecResult<()> {
+        if self.depth != 0 {
+            return Result::Err(invalid_state())
+        }
+        self.primary()?
+        var index: usize = 0
+        while index < self.count {
+            let len = self.write_encode_type(index)?
+            let entry = self.entries[index]
+            self.entries[index] = Entry {
+                name: entry.name,
+                start: entry.start,
+                len: entry.len,
+                refs: entry.refs,
+                hash: keccak256(self.work.slice(offset: 0, len: len)),
+            }
+            index += 1
+        }
+        Result::Ok(())
+    }
+
+    /// Writes the `encodeType` string of entry `index` at the start of the work buffer and
+    /// returns its length.
+    pub fn write_encode_type(mut self, _ index: usize) -> CodecResult<usize> {
+        // Every type reachable from this one.
+        var closure: u32 = self.entries[index].refs
+        loop {
+            var next = closure
+            var other: usize = 0
+            while other < self.count {
+                if closure & bit(other) != 0 {
+                    next = next | self.entries[other].refs
+                }
+                other += 1
+            }
+            if next == closure { break }
+            closure = next
+        }
+        closure = closure & !bit(index)
+
+        var len = self.copy_definition(index, 0)?
+        // Then the others in name order: take the smallest name left each time.
+        loop {
+            var best: Option<usize> = Option::None
+            var other: usize = 0
+            while other < self.count {
+                if closure & bit(other) != 0 {
+                    best = match best {
+                        Option::Some(current) => {
+                            if self.entries[other].name.before(self.entries[current].name) {
+                                Option::Some(other)
+                            } else {
+                                Option::Some(current)
+                            }
+                        },
+                        Option::None => Option::Some(other),
+                    }
+                }
+                other += 1
+            }
+            match best {
+                Option::Some(chosen) => {
+                    len = self.copy_definition(chosen, len)?
+                    closure = closure & !bit(chosen)
+                },
+                Option::None => {
+                    return Result::Ok(len)
+                },
+            }
+        }
+    }
+
+    fn copy_definition(mut self, _ index: usize, _ at: usize) -> CodecResult<usize> {
+        let entry = self.entries[index]
+        if at + entry.len > WORK_BYTES {
+            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: at))
+        }
+        self.work.copy_from(dest_offset: at, self.arena.slice(offset: entry.start, len: entry.len))
+        Result::Ok(at + entry.len)
+    }
+
+    /// Appends the first `len` bytes of `word`. The whole word is written, and the bytes
+    /// past `len` are overwritten by whatever comes next.
+    fn put_word(mut self, _ word: u256, _ len: usize) -> CodecResult<()> {
+        var piece = word
+        var size = len
+        if self.comma {
+            self.comma = false
+            if size < 32 {
+                piece = ((b',' as u256) << 248) | (piece >> 8)
+                size += 1
+            } else {
+                self.put_word((b',' as u256) << 248, 1)?
+            }
+        }
+        if self.work_top + size > WORK_BYTES {
+            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: self.work_top))
+        }
+        self.work.write_word(offset: self.work_top, value: piece)
+        self.work_top += size
+        Result::Ok(())
+    }
+
+    fn put(mut self, _ byte: u8) -> CodecResult<()> {
+        self.put_word((byte as u256) << 248, 1)
+    }
+
+    fn put_name(mut self, _ name: SchemaName) -> CodecResult<()> {
+        self.put_word(name.packed(), name.len())
+    }
+
+    /// `value` in decimal; a width or a length, so at most 32 digits.
+    fn put_decimal(mut self, _ value: usize) -> CodecResult<()> {
+        var digits: u256 = 0
+        var count: usize = 0
+        var rest = value
+        loop {
+            digits = (digits >> 8) | ((b'0' as u256 + ((rest % 10) as u256)) << 248)
+            count += 1
+            rest /= 10
+            if rest == 0 || count == 32 { break }
+        }
+        self.put_word(digits, count)
+    }
+
+    /// The error for a type EIP-712 cannot express, naming the field being described.
+    fn reject(self) -> CodecError {
+        if self.depth == 0 {
+            return unsupported()
+        }
+        match self.open[self.depth - 1].pending {
+            Option::Some(name) => unsupported().in_field(name),
+            Option::None => unsupported(),
+        }
+    }
+
+    /// Appends an atomic type, the first `len` bytes of `word`, to the field being described.
+    fn leaf(mut self, _ word: u256, _ len: usize) -> CodecResult<()> {
+        if self.depth == 0 {
+            // The root of a description must be a struct.
+            return Result::Err(unsupported())
+        }
+        self.put_word(word, len)
+    }
+
+    /// Writes ` name` for the field whose type has just been described, in one word.
+    fn close_member(mut self) -> CodecResult<()> {
+        if let Option::Some(name) = self.open[self.depth - 1].pending {
+            if name.len() < 32 {
+                return self.put_word(((b' ' as u256) << 248) | (name.packed() >> 8), name.len() + 1)
+            }
+            self.put(b' ')?
+            self.put_name(name)?
+        }
+        Result::Ok(())
+    }
+
+    /// Whether the `len` bytes at `start` in the work buffer match entry `index`'s definition.
+    fn same_definition(self, _ index: usize, _ start: usize, _ len: usize) -> bool {
+        let entry = self.entries[index]
+        if entry.len != len {
+            return false
+        }
+        var at: usize = 0
+        while at < len {
+            let left = self.arena.read_word(entry.start + at)
+            let right = self.work.read_word(start + at)
+            // Only the bytes of the definition count in its last word.
+            let mask: u256 = if len - at >= 32 {
+                0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+            } else {
+                !((1 << (((32 - (len - at)) * 8) as u256)) - 1)
+            }
+            if (left & mask) != (right & mask) {
+                return false
+            }
+            at += 32
+        }
+        true
+    }
+}
+
+impl Describer for TypeTable {
+    fn bool(mut self) -> CodecResult<()> {
+        self.leaf(BOOL, 4)
+    }
+
+    fn unsigned(mut self, _ bits: u16) -> CodecResult<()> {
+        self.leaf(UINT, 4)?
+        self.put_decimal(bits as usize)
+    }
+
+    fn signed(mut self, _ bits: u16) -> CodecResult<()> {
+        self.leaf(INT, 3)?
+        self.put_decimal(bits as usize)
+    }
+
+    fn text(mut self, _ capacity: usize) -> CodecResult<()> {
+        self.leaf(STRING, 6)
+    }
+
+    fn bytes(mut self, _ capacity: usize) -> CodecResult<()> {
+        self.leaf(BYTES, 5)
+    }
+
+    fn fixed_bytes(mut self, _ length: usize) -> CodecResult<()> {
+        if length == 0 || length > 32 {
+            return Result::Err(self.reject())
+        }
+        self.leaf(BYTES, 5)?
+        self.put_decimal(length)
+    }
+
+    fn address(mut self) -> CodecResult<()> {
+        self.leaf(ADDRESS, 7)
+    }
+
+    /// EIP-712 has no optional types.
+    fn begin_option(mut self) -> CodecResult<()> {
+        Result::Err(self.reject())
+    }
+
+    fn end_option(mut self) -> CodecResult<()> {
+        Result::Err(self.reject())
+    }
+
+    fn begin_sequence(mut self, _ length: usize) -> CodecResult<()> {
+        if self.depth == 0 {
+            return Result::Err(unsupported())
+        }
+        Result::Ok(())
+    }
+
+    fn end_sequence(mut self, _ length: usize) -> CodecResult<()> {
+        self.put(b'[')?
+        self.put_decimal(length)?
+        self.put(b']')
+    }
+
+    /// A unit enum is a `uint8` holding the variant's ID.
+    fn enumeration<V: Schema>(mut self) -> CodecResult<()> {
+        self.leaf(UINT8, 5)
+    }
+
+    fn begin_record<R: Schema>(mut self) -> CodecResult<()> {
+        let name = R::name()
+        if name.same(schema_name<12>("EIP712Domain")) {
+            return Result::Err(self.reject())
+        }
+        if self.depth == MAX_TYPES {
+            return Result::Err(CodecError::at(kind: ErrorKind::DepthLimit, offset: self.work_top))
+        }
+        // The struct's name is the type of the field that holds it.
+        if self.depth > 0 {
+            self.put_name(name)?
+        }
+        let start = self.work_top
+        // `Name(` in one word: a name is at most 31 bytes.
+        let paren = (b'(' as u256) << (((31 - name.len()) * 8) as u256)
+        if name.len() < 32 {
+            self.put_word(name.packed() | paren, name.len() + 1)?
+        } else {
+            self.put_name(name)?
+            self.put(b'(')?
+        }
+        self.open[self.depth] = Open { start, refs: 0, pending: Option::None, members: 0 }
+        self.depth += 1
+        Result::Ok(())
+    }
+
+    fn field<R: Schema>(mut self, _ position: usize) -> CodecResult<()> {
+        if self.depth == 0 {
+            return Result::Err(invalid_state())
+        }
+        self.close_member()?
+        let open = self.open[self.depth - 1]
+        // The comma joins the field's type when that is written.
+        self.comma = open.members != 0
+        let field = match R::field(position) {
+            Option::Some(field) => field,
+            Option::None => {
+                return Result::Err(invalid_state())
+            },
+        }
+        self.open[self.depth - 1] = Open {
+            start: open.start,
+            refs: open.refs,
+            pending: Option::Some(field.name),
+            members: open.members + 1,
+        }
+        Result::Ok(())
+    }
+
+    fn end_record<R: Schema>(mut self) -> CodecResult<()> {
+        if self.depth == 0 {
+            return Result::Err(invalid_state())
+        }
+        self.close_member()?
+        self.put(b')')?
+        let open = self.open[self.depth - 1]
+        let len = self.work_top - open.start
+        let name = R::name()
+        let index = match self.find(name) {
+            Option::Some(existing) => {
+                // The same name must always describe the same struct.
+                if !self.same_definition(existing, open.start, len) {
+                    return Result::Err(unsupported().in_field(name))
+                }
+                existing
+            },
+            Option::None => {
+                if self.count == MAX_TYPES {
+                    return Result::Err(CodecError::at(kind: ErrorKind::CollectionLimit, offset: 0))
+                }
+                if self.arena_top + len > ARENA_BYTES {
+                    return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: self.arena_top))
+                }
+                self.arena.copy_from(dest_offset: self.arena_top, self.work.slice(offset: open.start, len: len))
+                self.entries[self.count] = Entry { name, start: self.arena_top, len, refs: open.refs, hash: 0 }
+                self.arena_top += len
+                self.count += 1
+                self.count - 1
+            },
+        }
+        self.work_top = open.start
+        self.depth -= 1
+        if self.depth == 0 {
+            self.primary = Option::Some(index)
+        } else {
+            let parent = self.open[self.depth - 1]
+            self.open[self.depth - 1] = Open {
+                start: parent.start,
+                refs: parent.refs | bit(index),
+                pending: parent.pending,
+                members: parent.members,
+            }
+        }
+        Result::Ok(())
+    }
+}

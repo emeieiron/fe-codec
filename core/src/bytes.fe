@@ -1,0 +1,43 @@
+//! Conversions formats share between the byte kinds of the data model.
+
+use core::bytes::PackedBytes
+use core::num::IntDowncast
+use fe_codec_io::BoundedBuffer
+use std::evm::Address
+
+/// An address's 20 bytes, most significant first.
+pub fn address_bytes(_ address: Address) -> PackedBytes<20> {
+    let word = address.word()
+    var bytes: [u8; 20] = [0; 20]
+    var index: usize = 0
+    while index < 20 {
+        bytes[index] = (word >> (((19 - index) * 8) as u256)).downcast_truncate()
+        index += 1
+    }
+    PackedBytes<20>::from_array(bytes)
+}
+
+/// The address whose 20 bytes, most significant first, are `bytes`.
+pub fn address_from_bytes(_ bytes: PackedBytes<20>) -> Address {
+    // The bytes fill the high 20 of the packed word.
+    Address::new(bytes.word(0) >> 96)
+}
+
+/// `bytes` as exactly `N` bytes, or `None` when it holds fewer.
+pub fn exact_bytes<const N: usize>(_ bytes: BoundedBuffer<N>) -> Option<PackedBytes<N>> {
+    if bytes.len() != N {
+        return Option::None
+    }
+    var array: [u8; N] = [0; N]
+    var index: usize = 0
+    while index < N {
+        array[index] = bytes.byte_at(index).unwrap()
+        index += 1
+    }
+    Option::Some(PackedBytes<N>::from_array(array))
+}
+
+/// The bytes of `value` as a bounded buffer of the same length.
+pub fn bounded_bytes<const N: usize>(_ value: PackedBytes<N>) -> BoundedBuffer<N> {
+    BoundedBuffer<N>::from_array(value.to_array())
+}

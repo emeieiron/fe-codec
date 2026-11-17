@@ -4,7 +4,9 @@
 **/out/
 
 /examples/transfer/shared/src/serializers.fe
+/examples/transfer/shared/src/eip712.fe
 
 # Fe language server state
 /.fe-lsp/
 /.fe-lsp.json
+docs

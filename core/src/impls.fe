@@ -202,55 +202,26 @@ impl<const N: usize> Deserialize for BoundedBuffer<N> {
 /// A byte string of exactly `N` bytes.
 impl<const N: usize> Serialize for PackedBytes<N> {
     fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
-        encoder.write_bytes(BoundedBuffer<N>::from_array(self.to_array()))
+        encoder.write_fixed_bytes(self)
     }
 }
 
 impl<const N: usize> Deserialize for PackedBytes<N> {
     fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
-        let start = decoder.offset()
-        let bytes = decoder.read_bytes<N>()?
-        if bytes.len() != N {
-            return Result::Err(CodecError::at(kind: ErrorKind::InvalidLength, offset: start))
-        }
-        var array: [u8; N] = [0; N]
-        var index: usize = 0
-        while index < N {
-            array[index] = bytes.byte_at(index).unwrap()
-            index += 1
-        }
-        Result::Ok(PackedBytes<N>::from_array(array))
+        decoder.read_fixed_bytes<N>()
     }
 }
 
-/// An EVM address: a byte string of exactly 20 bytes, most significant first.
+/// An EVM address.
 impl Serialize for Address {
     fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
-        let word = self.word()
-        var bytes: [u8; 20] = [0; 20]
-        var index: usize = 0
-        while index < 20 {
-            bytes[index] = (word >> (((19 - index) * 8) as u256)).downcast_truncate()
-            index += 1
-        }
-        encoder.write_bytes(BoundedBuffer<20>::from_array(bytes))
+        encoder.write_address(self)
     }
 }
 
 impl Deserialize for Address {
     fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
-        let start = decoder.offset()
-        let bytes = decoder.read_bytes<20>()?
-        if bytes.len() != 20 {
-            return Result::Err(CodecError::at(kind: ErrorKind::InvalidLength, offset: start))
-        }
-        var word: u256 = 0
-        var index: usize = 0
-        while index < 20 {
-            word = (word << 8) | (bytes.byte_at(index).unwrap() as u256)
-            index += 1
-        }
-        Result::Ok(Address::new(word))
+        decoder.read_address()
     }
 }
 

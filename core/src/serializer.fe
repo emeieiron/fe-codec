@@ -1,8 +1,10 @@
+use core::bytes::PackedBytes
 use fe_codec_io::BoundedBuffer
 use ingot::error::CodecResult
 use ingot::fields::FieldKey
 use ingot::schema::Schema
 use ingot::text::Text
+use std::evm::Address
 
 /// A value that can be written through any `Encoder`.
 ///
@@ -31,7 +33,8 @@ pub trait Format {
 ///
 /// Values: `bool`; unsigned and signed integers, passed as `u64`/`i64` with a width of 8, 16,
 /// 32 or 64 bits, or as `u256`/`i256` with a width of 128 or 256 bits; UTF-8 text; byte
-/// strings; optional values; unit enum variants; records; and fixed-length sequences.
+/// strings of a bounded length; byte strings of an exact length; EVM addresses; optional
+/// values; unit enum variants; records; and fixed-length sequences.
 ///
 /// A record visits its fields in ascending ID order. When `OMIT_NONE` is true, the format
 /// identifies fields by key and a serializer leaves `None` fields out; otherwise it visits
@@ -52,7 +55,11 @@ pub trait Encoder {
     fn write_wide_unsigned(mut self, _ value: u256, _ bits: u16) -> CodecResult<()>
     fn write_wide_signed(mut self, _ value: i256, _ bits: u16) -> CodecResult<()>
     fn write_text<const N: usize>(mut self, _ value: Text<N>) -> CodecResult<()>
+    /// Bytes of any length up to `N`.
     fn write_bytes<const N: usize>(mut self, _ value: BoundedBuffer<N>) -> CodecResult<()>
+    /// Exactly `N` bytes, whose length the type fixes.
+    fn write_fixed_bytes<const N: usize>(mut self, _ value: PackedBytes<N>) -> CodecResult<()>
+    fn write_address(mut self, _ value: Address) -> CodecResult<()>
     /// An absent optional value.
     fn write_none(mut self) -> CodecResult<()>
     /// Marks a present optional value, which the serializer writes next.
@@ -85,6 +92,9 @@ pub trait Decoder {
     fn read_wide_signed(mut self, _ bits: u16) -> CodecResult<i256>
     fn read_text<const N: usize>(mut self) -> CodecResult<Text<N>>
     fn read_bytes<const N: usize>(mut self) -> CodecResult<BoundedBuffer<N>>
+    /// Exactly `N` bytes; any other length is `InvalidLength`.
+    fn read_fixed_bytes<const N: usize>(mut self) -> CodecResult<PackedBytes<N>>
+    fn read_address(mut self) -> CodecResult<Address>
     fn read_some(mut self) -> CodecResult<bool>
     fn read_variant<V: Schema>(mut self) -> CodecResult<usize>
 

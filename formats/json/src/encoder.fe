@@ -1,5 +1,9 @@
 use core::num::IntDowncast
+use core::bytes::PackedBytes
+use std::evm::Address
 use fe_codec_core::{
+    address_bytes,
+    bounded_bytes,
     CodecError,
     CodecResult,
     Encoder,
@@ -229,6 +233,14 @@ impl<const N: usize> Encoder for JsonEncoder<N> {
             index += 1
         }
         self.byte(b'"')
+    }
+
+    fn write_fixed_bytes<const M: usize>(mut self, _ value: PackedBytes<M>) -> CodecResult<()> {
+        self.write_bytes(bounded_bytes(value))
+    }
+
+    fn write_address(mut self, _ value: Address) -> CodecResult<()> {
+        self.write_fixed_bytes(address_bytes(value))
     }
 
     fn write_none(mut self) -> CodecResult<()> {

@@ -1,5 +1,9 @@
 use core::num::IntDowncast
+use core::bytes::PackedBytes
+use std::evm::Address
 use fe_codec_core::{
+    address_from_bytes,
+    exact_bytes,
     CodecError,
     CodecResult,
     Decoder,
@@ -230,6 +234,18 @@ impl<const N: usize> Decoder for CborDecoder<N> {
             index += 1
         }
         text.finish(self.offset())
+    }
+
+    fn read_fixed_bytes<const M: usize>(mut self) -> CodecResult<PackedBytes<M>> {
+        let start = self.offset()
+        match exact_bytes(self.read_bytes<M>()?) {
+            Option::Some(bytes) => Result::Ok(bytes),
+            Option::None => Result::Err(CodecError::at(kind: ErrorKind::InvalidLength, offset: start)),
+        }
+    }
+
+    fn read_address(mut self) -> CodecResult<Address> {
+        Result::Ok(address_from_bytes(self.read_fixed_bytes<20>()?))
     }
 
     fn read_some(mut self) -> CodecResult<bool> {

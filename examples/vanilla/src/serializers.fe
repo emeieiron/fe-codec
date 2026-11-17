@@ -6,6 +6,7 @@ use ingot::temperature::Celsius
 use fe_codec_core::{Serialize as _, Deserialize as _}
 
 impl fe_codec_core::Schema for Order {
+    fn name() -> fe_codec_core::SchemaName { fe_codec_core::schema_name<5>("Order") }
     fn field(_ position: usize) -> Option<fe_codec_core::FieldInfo> {
         match position {
             0 => Option::Some(fe_codec_core::FieldInfo { name: fe_codec_core::schema_name<2>("id"), id: 1, optional: false }),
@@ -70,7 +71,25 @@ impl fe_codec_core::Deserialize for Order {
     }
 }
 
+impl fe_codec_core::Describe for Order {
+    fn describe<CodecDescriber: fe_codec_core::Describer>(_ describer: mut CodecDescriber) -> fe_codec_core::CodecResult<()> {
+        describer.begin_record<Self>()?
+        describer.field<Self>(0)?
+        <u64 as fe_codec_core::Describe>::describe(mut describer)?
+        describer.field<Self>(1)?
+        <Address as fe_codec_core::Describe>::describe(mut describer)?
+        describer.field<Self>(2)?
+        <u256 as fe_codec_core::Describe>::describe(mut describer)?
+        describer.field<Self>(3)?
+        <OrderStatus as fe_codec_core::Describe>::describe(mut describer)?
+        describer.field<Self>(4)?
+        <Option<Text<32>> as fe_codec_core::Describe>::describe(mut describer)?
+        describer.end_record<Self>()
+    }
+}
+
 impl fe_codec_core::Schema for OrderStatus {
+    fn name() -> fe_codec_core::SchemaName { fe_codec_core::schema_name<11>("OrderStatus") }
     fn variant(_ index: usize) -> Option<fe_codec_core::VariantInfo> {
         match index {
             0 => Option::Some(fe_codec_core::VariantInfo { name: fe_codec_core::schema_name<4>("Open"), id: 0 }),
@@ -101,7 +120,14 @@ impl fe_codec_core::Deserialize for OrderStatus {
     }
 }
 
+impl fe_codec_core::Describe for OrderStatus {
+    fn describe<CodecDescriber: fe_codec_core::Describer>(_ describer: mut CodecDescriber) -> fe_codec_core::CodecResult<()> {
+        describer.enumeration<Self>()
+    }
+}
+
 impl fe_codec_core::Schema for Reading {
+    fn name() -> fe_codec_core::SchemaName { fe_codec_core::schema_name<7>("Reading") }
     fn field(_ position: usize) -> Option<fe_codec_core::FieldInfo> {
         match position {
             0 => Option::Some(fe_codec_core::FieldInfo { name: fe_codec_core::schema_name<2>("at"), id: 1, optional: false }),
@@ -140,5 +166,16 @@ impl fe_codec_core::Deserialize for Reading {
             at: <Self as fe_codec_core::Schema>::required(field_0, 0, decoder.offset())?,
             temperature: <Self as fe_codec_core::Schema>::required(field_1, 1, decoder.offset())?,
         })
+    }
+}
+
+impl fe_codec_core::Describe for Reading {
+    fn describe<CodecDescriber: fe_codec_core::Describer>(_ describer: mut CodecDescriber) -> fe_codec_core::CodecResult<()> {
+        describer.begin_record<Self>()?
+        describer.field<Self>(0)?
+        <u64 as fe_codec_core::Describe>::describe(mut describer)?
+        describer.field<Self>(1)?
+        <Celsius as fe_codec_core::Describe>::describe(mut describer)?
+        describer.end_record<Self>()
     }
 }

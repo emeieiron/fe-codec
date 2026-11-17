@@ -15,3 +15,5 @@ pub use serializer::{Serialize, Deserialize, Encoder, Decoder, Format}
 pub use fields::{FieldKey, optional}
 pub use integer::{checked_signed, checked_unsigned, checked_wide_signed, checked_wide_unsigned}
 pub use structure::{Structure, Frame}
+pub use describe::{Describe, Describer}
+pub use bytes::{address_bytes, address_from_bytes, bounded_bytes, exact_bytes}

@@ -1,0 +1,234 @@
+//! `hashStruct`: the EIP-712 encoding of a value, driven by its `Serialize` impl.
+//!
+//! Every encoded member is one word. Atomic values are their ABI word; strings and byte
+//! strings are the keccak256 of their contents; arrays and structs are the keccak256 of
+//! their members' words, a struct's preceded by its type hash.
+
+use core::MemBuffer
+use core::bytes::PackedBytes
+use core::num::IntDowncast
+use fe_codec_core::{
+    BoundedBuffer,
+    CodecError,
+    CodecResult,
+    Encoder,
+    ErrorKind,
+    Frame,
+    Limits,
+    Schema,
+    Structure,
+    Text,
+    checked_signed,
+    checked_unsigned,
+    checked_wide_signed,
+    checked_wide_unsigned,
+}
+use std::evm::Address
+use std::evm::crypto::keccak256
+use ingot::types::TypeTable
+
+/// A struct or array being hashed: where its words start on the stack, and its entries.
+pub struct HashFrame { start: usize, entries: Frame }
+
+/// Hashes one value into a stack of words. `top` is the stack's length in bytes.
+pub struct Eip712Encoder { table: TypeTable, stack: MemBuffer, capacity: usize, top: usize, structure: Structure }
+
+impl Eip712Encoder {
+    /// An encoder over `table`, which must be finished, with `capacity` bytes of stack.
+    pub fn new(_ table: own TypeTable, _ limits: Limits, _ capacity: usize) -> Self {
+        Self {
+            table,
+            stack: MemBuffer::new(capacity),
+            capacity,
+            top: 0,
+            structure: Structure::new(limits),
+        }
+    }
+
+    /// The hash of the one struct written.
+    pub fn finish(self) -> CodecResult<u256> {
+        self.structure.finish(self.top)?
+        if self.top != 32 {
+            return Result::Err(CodecError::at(kind: ErrorKind::InvalidState, offset: self.top))
+        }
+        Result::Ok(self.stack.read_word(0))
+    }
+
+    fn push(mut self, _ word: u256) -> CodecResult<()> {
+        if self.top + 32 > self.capacity {
+            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: self.top))
+        }
+        self.stack.write_word(offset: self.top, value: word)
+        self.top += 32
+        Result::Ok(())
+    }
+
+    fn value_word(mut self, _ word: u256) -> CodecResult<()> {
+        self.structure.value(self.top)?
+        self.push(word)
+    }
+
+    /// Pushes the keccak256 of the first `len` bytes packed in `bytes`.
+    fn push_hash_of<const N: usize>(mut self, _ bytes: BoundedBuffer<N>) -> CodecResult<()> {
+        let len = bytes.len()
+        let words = (len + 31) / 32
+        // The bytes are staged above the stack, then replaced by their hash.
+        let room = if words == 0 { 32 } else { words * 32 }
+        if self.top + room > self.capacity {
+            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: self.top))
+        }
+        var index: usize = 0
+        while index < words {
+            self.stack.write_word(offset: self.top + index * 32, value: bytes.word(index))
+            index += 1
+        }
+        let hash = keccak256(self.stack.slice(offset: self.top, len: len))
+        self.push(hash)
+    }
+
+    /// Replaces the words from `start` with their keccak256.
+    fn collapse(mut self, _ start: usize) -> CodecResult<()> {
+        let hash = keccak256(self.stack.slice(offset: start, len: self.top - start))
+        self.top = start
+        self.push(hash)
+    }
+
+    fn begin(mut self, _ count: usize) -> CodecResult<()> {
+        self.structure.check_items(count, self.top)?
+        self.structure.begin(self.top)
+    }
+}
+
+impl Encoder for Eip712Encoder {
+    /// Every member of an EIP-712 struct is encoded; there are no optional fields.
+    const OMIT_NONE: bool = false
+    type Record = HashFrame
+    type Sequence = HashFrame
+
+    fn offset(self) -> usize {
+        self.top
+    }
+
+    fn write_bool(mut self, _ value: bool) -> CodecResult<()> {
+        self.value_word(if value { 1 } else { 0 })
+    }
+
+    fn write_unsigned(mut self, _ value: u64, _ bits: u16) -> CodecResult<()> {
+        checked_unsigned(value, bits, self.top)?
+        self.value_word(value as u256)
+    }
+
+    /// Signed integers are sign-extended to 256 bits.
+    fn write_signed(mut self, _ value: i64, _ bits: u16) -> CodecResult<()> {
+        checked_signed(value, bits, self.top)?
+        self.value_word((value as i256).downcast_truncate())
+    }
+
+    fn write_wide_unsigned(mut self, _ value: u256, _ bits: u16) -> CodecResult<()> {
+        checked_wide_unsigned(value, bits, self.top)?
+        self.value_word(value)
+    }
+
+    fn write_wide_signed(mut self, _ value: i256, _ bits: u16) -> CodecResult<()> {
+        checked_wide_signed(value, bits, self.top)?
+        self.value_word(value.downcast_truncate())
+    }
+
+    fn write_text<const M: usize>(mut self, _ value: Text<M>) -> CodecResult<()> {
+        self.structure.value(self.top)?
+        self.push_hash_of(value.bytes())
+    }
+
+    fn write_bytes<const M: usize>(mut self, _ value: BoundedBuffer<M>) -> CodecResult<()> {
+        self.structure.value(self.top)?
+        self.push_hash_of(value)
+    }
+
+    /// `bytesN`, padded with zeros at the end.
+    fn write_fixed_bytes<const M: usize>(mut self, _ value: PackedBytes<M>) -> CodecResult<()> {
+        if M == 0 || M > 32 {
+            return Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: self.top))
+        }
+        self.value_word(value.word(0))
+    }
+
+    fn write_address(mut self, _ value: Address) -> CodecResult<()> {
+        self.value_word(value.word())
+    }
+
+    fn write_none(mut self) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: self.top))
+    }
+
+    fn write_some(mut self) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: self.top))
+    }
+
+    /// A unit enum is a `uint8` holding the variant's ID.
+    fn write_variant<V: Schema>(mut self, _ index: usize) -> CodecResult<()> {
+        let variant = match V::variant(index) {
+            Option::Some(variant) => variant,
+            Option::None => {
+                return Result::Err(CodecError::at(kind: ErrorKind::InvalidState, offset: self.top))
+            },
+        }
+        if variant.id > 255 {
+            return Result::Err(CodecError::at(kind: ErrorKind::IntegerOutOfRange, offset: self.top))
+        }
+        self.value_word(variant.id as u256)
+    }
+
+    fn begin_record<R: Schema>(mut self, _ present: usize) -> CodecResult<HashFrame> {
+        var count: usize = 0
+        while R::field(count).is_some() {
+            count += 1
+        }
+        if present != count {
+            return Result::Err(CodecError::at(kind: ErrorKind::InvalidState, offset: self.top))
+        }
+        let type_hash = match self.table.hash_of(R::name()) {
+            Option::Some(hash) => hash,
+            Option::None => {
+                // The value holds a struct its type did not describe.
+                return Result::Err(CodecError::at(kind: ErrorKind::InvalidState, offset: self.top))
+            },
+        }
+        self.begin(count)?
+        let start = self.top
+        self.push(type_hash)?
+        Result::Ok(HashFrame { start, entries: Frame::new(count) })
+    }
+
+    fn field<R: Schema>(mut self, _ record: mut HashFrame, _ position: usize) -> CodecResult<()> {
+        let field = match R::field(position) {
+            Option::Some(field) => field,
+            Option::None => {
+                return Result::Err(CodecError::at(kind: ErrorKind::InvalidState, offset: self.top))
+            },
+        }
+        self.structure.member(self.top)?
+        record.entries.key(field.id, self.top)
+    }
+
+    fn end_record(mut self, _ record: own HashFrame) -> CodecResult<()> {
+        record.entries.complete(self.top)?
+        self.structure.end(self.top)?
+        self.collapse(record.start)
+    }
+
+    fn begin_sequence(mut self, _ length: usize) -> CodecResult<HashFrame> {
+        self.begin(length)?
+        Result::Ok(HashFrame { start: self.top, entries: Frame::new(length) })
+    }
+
+    fn element(mut self, _ sequence: mut HashFrame) -> CodecResult<()> {
+        self.structure.member(self.top)?
+        sequence.entries.take(self.top)
+    }
+
+    fn end_sequence(mut self, _ sequence: own HashFrame) -> CodecResult<()> {
+        sequence.entries.complete(self.top)?
+        self.structure.end(self.top)?
+        self.collapse(sequence.start)
+    }
+}

@@ -1,0 +1,175 @@
+//! The EIP-712 domain: up to five fields, of which a dapp includes those that apply.
+
+use core::MemBuffer
+use core::bytes::PackedBytes
+use fe_codec_core::{BoundedBuffer, Text}
+use std::evm::Address
+use std::evm::crypto::keccak256
+
+/// An `EIP712Domain`. Only the fields that are set take part, in EIP-712's fixed order:
+/// `string name`, `string version`, `uint256 chainId`, `address verifyingContract`,
+/// `bytes32 salt`.
+///
+/// Off-chain code that also writes the wallet request sets the name and version as text.
+/// A contract can set them by hash instead, from compile-time constants, which saves
+/// validating and hashing the text on every call:
+///
+/// ```fe
+/// let domain = Domain::new()
+///     .name_hash(core::keccak("Ether Mail"))
+///     .version_hash(core::keccak("1"))
+///     .chain_id(1)
+///     .verifying_contract(verifier)
+/// ```
+pub struct Domain {
+    pub(ingot) name: Option<u256>,
+    pub(ingot) name_text: Option<Text<64>>,
+    pub(ingot) version: Option<u256>,
+    pub(ingot) version_text: Option<Text<64>>,
+    pub(ingot) chain_id: Option<u256>,
+    pub(ingot) verifying_contract: Option<Address>,
+    pub(ingot) salt: Option<PackedBytes<32>>,
+}
+impl Copy for Domain {}
+
+impl Domain {
+    /// A domain with no fields set.
+    pub fn new() -> Self {
+        Self {
+            name: Option::None,
+            name_text: Option::None,
+            version: Option::None,
+            version_text: Option::None,
+            chain_id: Option::None,
+            verifying_contract: Option::None,
+            salt: Option::None,
+        }
+    }
+
+    pub fn name(self, _ name: Text<64>) -> Self {
+        let hash = hash_bytes(name.bytes())
+        Self { name: Option::Some(hash), name_text: Option::Some(name), version: self.version, version_text: self.version_text, chain_id: self.chain_id, verifying_contract: self.verifying_contract, salt: self.salt }
+    }
+
+    /// The name by its keccak256. The wallet request needs the text, so `typed_data_json`
+    /// rejects a domain named only by hash.
+    pub fn name_hash(self, _ hash: u256) -> Self {
+        Self { name: Option::Some(hash), name_text: Option::None, version: self.version, version_text: self.version_text, chain_id: self.chain_id, verifying_contract: self.verifying_contract, salt: self.salt }
+    }
+
+    pub fn version(self, _ version: Text<64>) -> Self {
+        let hash = hash_bytes(version.bytes())
+        Self { name: self.name, name_text: self.name_text, version: Option::Some(hash), version_text: Option::Some(version), chain_id: self.chain_id, verifying_contract: self.verifying_contract, salt: self.salt }
+    }
+
+    /// The version by its keccak256; see `name_hash`.
+    pub fn version_hash(self, _ hash: u256) -> Self {
+        Self { name: self.name, name_text: self.name_text, version: Option::Some(hash), version_text: Option::None, chain_id: self.chain_id, verifying_contract: self.verifying_contract, salt: self.salt }
+    }
+
+    pub fn chain_id(self, _ chain_id: u256) -> Self {
+        Self { name: self.name, name_text: self.name_text, version: self.version, version_text: self.version_text, chain_id: Option::Some(chain_id), verifying_contract: self.verifying_contract, salt: self.salt }
+    }
+
+    pub fn verifying_contract(self, _ verifier: Address) -> Self {
+        Self { name: self.name, name_text: self.name_text, version: self.version, version_text: self.version_text, chain_id: self.chain_id, verifying_contract: Option::Some(verifier), salt: self.salt }
+    }
+
+    pub fn salt(self, _ salt: PackedBytes<32>) -> Self {
+        Self { name: self.name, name_text: self.name_text, version: self.version, version_text: self.version_text, chain_id: self.chain_id, verifying_contract: self.verifying_contract, salt: Option::Some(salt) }
+    }
+
+    /// `keccak256("\x19\x01" ‖ separator ‖ struct_hash)`: the digest a wallet signs for a
+    /// struct hashed in this domain.
+    pub fn digest(self, _ struct_hash: u256) -> u256 {
+        std::evm::eip712::digest(domain_separator: self.separator(), struct_hash)
+    }
+
+    /// The domain separator: `hashStruct` of the domain with its set fields.
+    pub fn separator(self) -> u256 {
+        var words = MemBuffer::new(192)
+        var mask: u8 = 0
+        var count: usize = 1
+        if let Option::Some(name) = self.name {
+            mask = mask | 1
+            words.write_word(offset: count * 32, value: name)
+            count += 1
+        }
+        if let Option::Some(version) = self.version {
+            mask = mask | 2
+            words.write_word(offset: count * 32, value: version)
+            count += 1
+        }
+        if let Option::Some(chain_id) = self.chain_id {
+            mask = mask | 4
+            words.write_word(offset: count * 32, value: chain_id)
+            count += 1
+        }
+        if let Option::Some(verifier) = self.verifying_contract {
+            mask = mask | 8
+            words.write_word(offset: count * 32, value: verifier.word())
+            count += 1
+        }
+        if let Option::Some(salt) = self.salt {
+            mask = mask | 16
+            words.write_word(offset: count * 32, value: salt.word(0))
+            count += 1
+        }
+        words.write_word(offset: 0, value: domain_type_hash(mask))
+        keccak256(words.slice(offset: 0, len: count * 32))
+    }
+}
+
+/// The type hash of an `EIP712Domain` whose set fields are the bits of `mask`: name,
+/// version, chainId, verifyingContract and salt, from the lowest bit. Every combination is a
+/// compile-time constant.
+fn domain_type_hash(_ mask: u8) -> u256 {
+    match mask {
+        0 => core::keccak("EIP712Domain()"),
+        1 => core::keccak("EIP712Domain(string name)"),
+        2 => core::keccak("EIP712Domain(string version)"),
+        3 => core::keccak("EIP712Domain(string name,string version)"),
+        4 => core::keccak("EIP712Domain(uint256 chainId)"),
+        5 => core::keccak("EIP712Domain(string name,uint256 chainId)"),
+        6 => core::keccak("EIP712Domain(string version,uint256 chainId)"),
+        7 => core::keccak("EIP712Domain(string name,string version,uint256 chainId)"),
+        8 => core::keccak("EIP712Domain(address verifyingContract)"),
+        9 => core::keccak("EIP712Domain(string name,address verifyingContract)"),
+        10 => core::keccak("EIP712Domain(string version,address verifyingContract)"),
+        11 => core::keccak("EIP712Domain(string name,string version,address verifyingContract)"),
+        12 => core::keccak("EIP712Domain(uint256 chainId,address verifyingContract)"),
+        13 => core::keccak("EIP712Domain(string name,uint256 chainId,address verifyingContract)"),
+        14 => core::keccak("EIP712Domain(string version,uint256 chainId,address verifyingContract)"),
+        15 => core::keccak("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+        16 => core::keccak("EIP712Domain(bytes32 salt)"),
+        17 => core::keccak("EIP712Domain(string name,bytes32 salt)"),
+        18 => core::keccak("EIP712Domain(string version,bytes32 salt)"),
+        19 => core::keccak("EIP712Domain(string name,string version,bytes32 salt)"),
+        20 => core::keccak("EIP712Domain(uint256 chainId,bytes32 salt)"),
+        21 => core::keccak("EIP712Domain(string name,uint256 chainId,bytes32 salt)"),
+        22 => core::keccak("EIP712Domain(string version,uint256 chainId,bytes32 salt)"),
+        23 => core::keccak("EIP712Domain(string name,string version,uint256 chainId,bytes32 salt)"),
+        24 => core::keccak("EIP712Domain(address verifyingContract,bytes32 salt)"),
+        25 => core::keccak("EIP712Domain(string name,address verifyingContract,bytes32 salt)"),
+        26 => core::keccak("EIP712Domain(string version,address verifyingContract,bytes32 salt)"),
+        27 => core::keccak("EIP712Domain(string name,string version,address verifyingContract,bytes32 salt)"),
+        28 => core::keccak("EIP712Domain(uint256 chainId,address verifyingContract,bytes32 salt)"),
+        29 => core::keccak("EIP712Domain(string name,uint256 chainId,address verifyingContract,bytes32 salt)"),
+        30 => core::keccak("EIP712Domain(string version,uint256 chainId,address verifyingContract,bytes32 salt)"),
+        31 => core::keccak("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract,bytes32 salt)"),
+        _ => 0,
+    }
+}
+
+/// The keccak256 of the bytes held in `bytes`.
+pub(ingot) fn hash_bytes<const N: usize>(_ bytes: BoundedBuffer<N>) -> u256 {
+    let len = bytes.len()
+    let words = (len + 31) / 32
+    var buffer = MemBuffer::new(if words == 0 { 32 } else { words * 32 })
+    var index: usize = 0
+    while index < words {
+        buffer.write_word(offset: index * 32, value: bytes.word(index))
+        index += 1
+    }
+    keccak256(buffer.slice(offset: 0, len: len))
+}

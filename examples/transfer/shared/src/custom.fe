@@ -6,11 +6,14 @@ use fe_codec_core::{
     CodecError,
     CodecResult,
     Decoder,
+    Describe,
+    Describer,
     Deserialize,
     Encoder,
     ErrorKind,
     FieldInfo,
     Schema,
+    SchemaName,
     Serialize,
     Text,
     TextWriter,
@@ -35,6 +38,13 @@ impl Deserialize for Celsius {
             Option::Some(value) => Result::Ok(value),
             Option::None => Result::Err(CodecError::at(kind: ErrorKind::InvalidSyntax, offset: start)),
         }
+    }
+}
+
+/// Described as the text it is written as.
+impl Describe for Celsius {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.text(24)
     }
 }
 
@@ -128,12 +138,27 @@ pub struct Point { pub x: i64, pub y: i64 }
 impl Copy for Point {}
 
 impl Schema for Point {
+    fn name() -> SchemaName {
+        schema_name<5>("Point")
+    }
+
     fn field(_ position: usize) -> Option<FieldInfo> {
         match position {
             0 => Option::Some(FieldInfo { name: schema_name<1>("x"), id: 1, optional: false }),
             1 => Option::Some(FieldInfo { name: schema_name<1>("y"), id: 2, optional: false }),
             _ => Option::None,
         }
+    }
+}
+
+impl Describe for Point {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.begin_record<Self>()?
+        describer.field<Self>(0)?
+        i64::describe(mut describer)?
+        describer.field<Self>(1)?
+        i64::describe(mut describer)?
+        describer.end_record<Self>()
     }
 }
 
