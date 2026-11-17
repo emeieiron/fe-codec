@@ -1,0 +1,433 @@
+use core::marker::Copy
+use core::ops::Eq
+use core::{MemBuffer, MemVec, Option}
+
+/// What a token is. Keywords are identifiers; the parser decides.
+pub enum TokenKind {
+    Ident,
+    Int,
+    Str,
+    Byte,
+    Punct,
+    ColonColon,
+    Arrow,
+    FatArrow,
+    DotDot,
+    Punct2,
+    Whitespace,
+    Newline,
+    LineComment,
+    DocComment,
+    Unknown,
+}
+
+impl Copy for TokenKind {}
+
+impl TokenKind {
+    pub fn code(self) -> u32 {
+        match self {
+            Self::Ident => 0,
+            Self::Int => 1,
+            Self::Str => 2,
+            Self::Byte => 3,
+            Self::Punct => 4,
+            Self::ColonColon => 5,
+            Self::Arrow => 6,
+            Self::FatArrow => 7,
+            Self::DotDot => 8,
+            Self::Punct2 => 9,
+            Self::Whitespace => 10,
+            Self::Newline => 11,
+            Self::LineComment => 12,
+            Self::DocComment => 13,
+            Self::Unknown => 14,
+        }
+    }
+
+    /// Whitespace, newlines and comments.
+    pub fn is_trivia(self) -> bool {
+        let code = self.code()
+        code >= 10 && code <= 13
+    }
+
+    fn is_space(self) -> bool {
+        let code = self.code()
+        code == 10 || code == 11
+    }
+
+    fn is_comment(self) -> bool {
+        let code = self.code()
+        code == 12 || code == 13
+    }
+}
+
+impl Eq for TokenKind {
+    fn eq(self, _ other: Self) -> bool {
+        self.code() == other.code()
+    }
+}
+
+/// A token: its kind and the byte range `start..end` (end exclusive) of its text.
+pub struct Token {
+    pub kind: TokenKind,
+    pub start: usize,
+    pub end: usize,
+}
+
+impl Copy for Token {}
+
+/// A lexed source: its bytes and its tokens, which cover every byte in order.
+pub struct Lexed {
+    pub source: MemBuffer,
+    pub tokens: MemVec<Token>,
+}
+
+fn at(_ source: ref MemBuffer, _ index: usize) -> u8 {
+    if index < source.len() {
+        source[index]
+    } else {
+        0
+    }
+}
+
+fn is_digit(_ b: u8) -> bool {
+    b >= b'0' && b <= b'9'
+}
+
+fn is_ident_start(_ b: u8) -> bool {
+    (b >= b'a' && b <= b'z') || (b >= b'A' && b <= b'Z') || b == b'_'
+}
+
+fn is_ident_part(_ b: u8) -> bool {
+    is_ident_start(b) || is_digit(b)
+}
+
+fn is_hex(_ b: u8) -> bool {
+    is_digit(b) || (b >= b'a' && b <= b'f') || (b >= b'A' && b <= b'F')
+}
+
+/// The end of a byte literal `b'...'` starting at `start`, if one is well formed there.
+fn byte_literal_end(_ source: ref MemBuffer, _ start: usize) -> Option<usize> {
+    let len = source.len()
+    var i = start + 2
+    while i < len {
+        let c = source[i]
+        if c == b'\'' {
+            return Option::Some(i + 1)
+        }
+        if c == b'\n' || c == b'\r' {
+            return Option::None
+        }
+        if c == b'\\' {
+            if i + 1 >= len || source[i + 1] == b'\n' || source[i + 1] == b'\r' {
+                return Option::None
+            }
+            i += 2
+        } else {
+            i += 1
+        }
+    }
+    Option::None
+}
+
+/// The end of a string literal starting at the `"` at `start`, if one is well formed there.
+fn string_end(_ source: ref MemBuffer, _ start: usize) -> Option<usize> {
+    let len = source.len()
+    var i = start + 1
+    while i < len {
+        let c = source[i]
+        if c == b'"' {
+            return Option::Some(i + 1)
+        }
+        if c == b'\\' {
+            if i + 1 >= len || source[i + 1] == b'\n' {
+                return Option::None
+            }
+            i += 2
+        } else {
+            i += 1
+        }
+    }
+    Option::None
+}
+
+/// The end of the integer literal starting at the digit at `start`.
+fn int_end(_ source: ref MemBuffer, _ start: usize) -> usize {
+    let len = source.len()
+    let next = at(source, start + 1)
+    if source[start] == b'0' {
+        var i = start + 2
+        if next == b'b' || next == b'B' {
+            while i < len && (source[i] == b'0' || source[i] == b'1') {
+                i += 1
+            }
+            if i > start + 2 {
+                return i
+            }
+        } else if next == b'o' || next == b'O' {
+            while i < len && source[i] >= b'0' && source[i] <= b'7' {
+                i += 1
+            }
+            if i > start + 2 {
+                return i
+            }
+        } else if next == b'x' || next == b'X' {
+            while i < len && is_hex(source[i]) {
+                i += 1
+            }
+            if i > start + 2 {
+                return i
+            }
+        }
+    }
+    var i = start
+    while i < len && is_digit(source[i]) {
+        i += 1
+    }
+    // An underscore continues the literal only when digits follow it.
+    while i + 1 < len && source[i] == b'_' && is_digit(source[i + 1]) {
+        i += 1
+        while i < len && is_digit(source[i]) {
+            i += 1
+        }
+    }
+    i
+}
+
+fn is_single_punct(_ b: u8) -> bool {
+    b == b'(' || b == b')' || b == b'{' || b == b'}' || b == b'[' || b == b']'
+        || b == b':' || b == b';' || b == b'.' || b == b',' || b == b'#'
+        || b == b'+' || b == b'-' || b == b'*' || b == b'/' || b == b'%'
+        || b == b'~' || b == b'!' || b == b'?' || b == b'^' || b == b'&'
+        || b == b'|' || b == b'<' || b == b'>' || b == b'='
+}
+
+/// Where the token starting at `start` ends, and its kind.
+fn scan(_ source: ref MemBuffer, _ start: usize) -> (TokenKind, usize) {
+    let len = source.len()
+    let b = source[start]
+    let next = at(source, start + 1)
+    var i = start + 1
+    if b == b'\n' || b == b'\r' {
+        while i < len && (source[i] == b'\n' || source[i] == b'\r') {
+            i += 1
+        }
+        return (TokenKind::Newline, i)
+    }
+    if b == b' ' || b == b'\t' {
+        while i < len && (source[i] == b' ' || source[i] == b'\t') {
+            i += 1
+        }
+        return (TokenKind::Whitespace, i)
+    }
+    if b == b'/' && next == b'/' {
+        var kind = TokenKind::LineComment
+        if at(source, start + 2) == b'/' {
+            kind = TokenKind::DocComment
+        }
+        while i < len && source[i] != b'\n' && source[i] != b'\r' {
+            i += 1
+        }
+        return (kind, i)
+    }
+    if b == b'b' && next == b'\'' {
+        match byte_literal_end(source, start) {
+            Option::Some(end) => return (TokenKind::Byte, end),
+            Option::None => {},
+        }
+    }
+    if is_ident_start(b) {
+        while i < len && is_ident_part(source[i]) {
+            i += 1
+        }
+        return (TokenKind::Ident, i)
+    }
+    if is_digit(b) {
+        return (TokenKind::Int, int_end(source, start))
+    }
+    if b == b'"' {
+        match string_end(source, start) {
+            Option::Some(end) => return (TokenKind::Str, end),
+            Option::None => return (TokenKind::Unknown, i),
+        }
+    }
+    if b == b':' && next == b':' {
+        return (TokenKind::ColonColon, start + 2)
+    }
+    if b == b'-' && next == b'>' {
+        return (TokenKind::Arrow, start + 2)
+    }
+    if b == b'=' && next == b'>' {
+        return (TokenKind::FatArrow, start + 2)
+    }
+    if b == b'.' && next == b'.' {
+        return (TokenKind::DotDot, start + 2)
+    }
+    if (b == b'*' && next == b'*') || (b == b'&' && next == b'&') || (b == b'|' && next == b'|')
+        || (b == b'=' && next == b'=') || (b == b'!' && next == b'=') {
+        return (TokenKind::Punct2, start + 2)
+    }
+    if is_single_punct(b) {
+        return (TokenKind::Punct, i)
+    }
+    (TokenKind::Unknown, i)
+}
+
+/// Splits `source` into tokens. Never fails: unknown bytes become `Unknown` tokens.
+pub fn lex(_ source: own MemBuffer) -> Lexed {
+    var tokens = MemVec<Token>::new()
+    var pos: usize = 0
+    while pos < source.len() {
+        let (kind, end) = scan(source, pos)
+        tokens.push(Token { kind, start: pos, end })
+        pos = end
+    }
+    Lexed { source, tokens }
+}
+
+impl Lexed {
+    pub fn token_count(self) -> usize {
+        self.tokens.len()
+    }
+
+    /// The token at `index`, which must be below `token_count()`.
+    pub fn token(self, _ index: usize) -> Token {
+        self.tokens[index]
+    }
+
+    /// The text of `token`, as a new buffer.
+    pub fn text(self, _ token: Token) -> MemBuffer {
+        MemBuffer::from_span(self.source.slice(offset: token.start, len: token.end - token.start))
+    }
+
+    /// Whether the text of `token` is exactly `word`.
+    pub fn is<const N: usize>(self, _ token: Token, _ word: [u8; N]) -> bool {
+        if token.end - token.start != N {
+            return false
+        }
+        var i: usize = 0
+        while i < N {
+            if self.source[token.start + i] != word[i] {
+                return false
+            }
+            i += 1
+        }
+        true
+    }
+
+    /// The index of the first token at or after `index` that is not trivia.
+    pub fn next_significant(self, _ index: usize) -> Option<usize> {
+        var i = index
+        while i < self.tokens.len() {
+            if !self.tokens[i].kind.is_trivia() {
+                return Option::Some(i)
+            }
+            i += 1
+        }
+        Option::None
+    }
+
+    /// The value of an integer literal token: every `_` is ignored and only the lowercase prefixes
+    /// `0x`, `0o` and `0b` select the base. `None` on a bad digit or overflow.
+    pub fn parse_int(self, _ token: Token) -> Option<u64> {
+        var digits = MemBuffer::new(0)
+        var i = token.start
+        while i < token.end {
+            let b = self.source[i]
+            if b != b'_' {
+                digits.push(b)
+            }
+            i += 1
+        }
+        let n = digits.len()
+        var base: u64 = 10
+        var from: usize = 0
+        if n >= 2 && digits[0] == b'0' {
+            let p = digits[1]
+            if p == b'x' {
+                base = 16
+                from = 2
+            } else if p == b'o' {
+                base = 8
+                from = 2
+            } else if p == b'b' {
+                base = 2
+                from = 2
+            }
+        }
+        if from >= n {
+            return Option::None
+        }
+        var value: u64 = 0
+        var j = from
+        while j < n {
+            let c = digits[j]
+            var d: u64 = 99
+            if c >= b'0' && c <= b'9' {
+                d = (c - b'0') as u64
+            } else if c >= b'a' && c <= b'f' {
+                d = (c - b'a') as u64 + 10
+            } else if c >= b'A' && c <= b'F' {
+                d = (c - b'A') as u64 + 10
+            }
+            if d >= base {
+                return Option::None
+            }
+            if value > (18446744073709551615 - d) / base {
+                return Option::None
+            }
+            value = value * base + d
+            j += 1
+        }
+        Option::Some(value)
+    }
+
+    /// The 1-based line and column (counted in bytes) of byte `offset`; an offset past the
+    /// end counts as the end.
+    pub fn line_col(self, _ offset: usize) -> (usize, usize) {
+        var end = offset
+        if end > self.source.len() {
+            end = self.source.len()
+        }
+        var line: usize = 1
+        var line_start: usize = 0
+        var i: usize = 0
+        while i < end {
+            if self.source[i] == b'\n' {
+                line += 1
+                line_start = i + 1
+            }
+            i += 1
+        }
+        (line, end - line_start + 1)
+    }
+
+    /// The text of tokens `first..=last` with comments dropped and each run of whitespace
+    /// collapsed to one space; leading and trailing whitespace is dropped.
+    pub fn compact(self, _ first: usize, _ last: usize) -> MemBuffer {
+        var out = MemBuffer::new(0)
+        var pending = false
+        var i = first
+        while i <= last && i < self.tokens.len() {
+            let token = self.tokens[i]
+            if token.kind.is_comment() {
+            } else if token.kind.is_space() {
+                if out.len() > 0 {
+                    pending = true
+                }
+            } else {
+                if pending {
+                    out.push(b' ')
+                    pending = false
+                }
+                var j = token.start
+                while j < token.end {
+                    out.push(self.source[j])
+                    j += 1
+                }
+            }
+            i += 1
+        }
+        out
+    }
+}

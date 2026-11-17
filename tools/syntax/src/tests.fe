@@ -1,0 +1,270 @@
+use ingot::{Lexed, Token, TokenKind, lex}
+use core::{MemBuffer, Option}
+
+fn buffer<const N: usize>(_ text: [u8; N]) -> MemBuffer {
+    var out = MemBuffer::new(0)
+    var i: usize = 0
+    while i < N {
+        out.push(text[i])
+        i += 1
+    }
+    out
+}
+
+fn lexed<const N: usize>(_ text: [u8; N]) -> Lexed {
+    lex(buffer(text))
+}
+
+fn same<const N: usize>(_ got: MemBuffer, _ want: [u8; N]) -> bool {
+    if got.len() != N {
+        return false
+    }
+    var i: usize = 0
+    while i < N {
+        if got[i] != want[i] {
+            return false
+        }
+        i += 1
+    }
+    true
+}
+
+fn compact_all(_ lx: Lexed) -> MemBuffer {
+    lx.compact(0, lx.token_count() - 1)
+}
+
+fn kind_at(_ lx: Lexed, _ index: usize) -> TokenKind {
+    lx.token(index).kind
+}
+
+#[test]
+fn compact_keeps_type_syntax() {
+    assert!(same(compact_all(lexed("Option<Text<8>>")), "Option<Text<8>>"))
+    assert!(same(compact_all(lexed("[u8; 2]")), "[u8; 2]"))
+}
+
+#[test]
+fn compact_collapses_whitespace() {
+    assert!(same(
+        compact_all(lexed("fe_codec_core::{\n    BoundedBuffer,\n    Text,\n}")),
+        "fe_codec_core::{ BoundedBuffer, Text, }",
+    ))
+    assert!(same(compact_all(lexed("  lead")), "lead"))
+    assert!(same(compact_all(lexed("trail  \n")), "trail"))
+}
+
+#[test]
+fn compact_skips_comments() {
+    assert!(same(compact_all(lexed("a // c\nb")), "a b"))
+    assert!(same(compact_all(lexed("a/*c*/b")), "a/*c*/b"))
+    assert!(same(compact_all(lexed("x // c\ny")), "x y"))
+    assert!(same(compact_all(lexed("x /// d\ny")), "x y"))
+}
+
+#[test]
+fn compact_range_is_inclusive() {
+    let lx = lexed("a b c")
+    assert!(lx.token_count() == 5)
+    assert!(same(lx.compact(2, 4), "b c"))
+    assert!(same(lx.compact(0, 0), "a"))
+}
+
+#[test]
+fn lexes_identifiers_and_words() {
+    let lx = lexed("pub struct _x1")
+    assert!(lx.token_count() == 5)
+    assert!(kind_at(lx, 0) == TokenKind::Ident)
+    assert!(lx.is(lx.token(0), "pub"))
+    assert!(!lx.is(lx.token(0), "pu"))
+    assert!(!lx.is(lx.token(0), "pubs"))
+    assert!(kind_at(lx, 1) == TokenKind::Whitespace)
+    assert!(lx.is(lx.token(2), "struct"))
+    assert!(lx.is(lx.token(4), "_x1"))
+    assert!(same(lx.text(lx.token(4)), "_x1"))
+}
+
+#[test]
+fn lexes_integers() {
+    let lx = lexed("0x02 1_000 0o17 0b101 7")
+    assert!(lx.token_count() == 9)
+    assert!(kind_at(lx, 0) == TokenKind::Int)
+    assert!(lx.parse_int(lx.token(0)) == Option::Some(2))
+    assert!(lx.parse_int(lx.token(2)) == Option::Some(1000))
+    assert!(lx.parse_int(lx.token(4)) == Option::Some(15))
+    assert!(lx.parse_int(lx.token(6)) == Option::Some(5))
+    assert!(lx.parse_int(lx.token(8)) == Option::Some(7))
+}
+
+/// Lexes `text` and checks the first token is an `Int` of `int` bytes followed by
+/// an `Ident` of `ident` bytes (or nothing when `ident` is 0).
+fn int_then<const N: usize>(_ text: [u8; N], _ int: usize, _ ident: usize) -> bool {
+    let lx = lexed(text)
+    if lx.token(0).kind != TokenKind::Int || lx.token(0).end != int {
+        return false
+    }
+    if ident == 0 {
+        return lx.token_count() == 1
+    }
+    lx.token_count() == 2 && lx.token(1).kind == TokenKind::Ident && lx.token(1).end == int + ident
+}
+
+#[test]
+fn integer_literals_split_like_the_parser() {
+    assert!(int_then("12ab", 2, 2))
+    assert!(int_then("0x", 1, 1))
+    assert!(int_then("0x1_0", 3, 2))
+    assert!(int_then("1__0", 1, 3))
+    assert!(int_then("1_", 1, 1))
+    assert!(int_then("1_0_0", 5, 0))
+    let lx = lexed("0b12")
+    assert!(lx.token_count() == 2)
+    assert!(lx.token(0).end == 3 && kind_at(lx, 1) == TokenKind::Int)
+    let upper = lexed("0XFF 0B1 0O7")
+    assert!(upper.parse_int(upper.token(0)) == Option::None)
+    assert!(upper.parse_int(upper.token(2)) == Option::None)
+    assert!(kind_at(upper, 0) == TokenKind::Int)
+    assert!(upper.token(0).end == 4)
+}
+
+#[test]
+fn parse_int_limits() {
+    let lx = lexed("18446744073709551615 18446744073709551616 0xffffffffffffffff 0x10000000000000000 0")
+    assert!(lx.parse_int(lx.token(0)) == Option::Some(18446744073709551615))
+    assert!(lx.parse_int(lx.token(2)) == Option::None)
+    assert!(lx.parse_int(lx.token(4)) == Option::Some(18446744073709551615))
+    assert!(lx.parse_int(lx.token(6)) == Option::None)
+    assert!(lx.parse_int(lx.token(8)) == Option::Some(0))
+    let word = lexed("abc")
+    assert!(word.parse_int(word.token(0)) == Option::None)
+}
+
+#[test]
+fn lexes_strings_with_escapes() {
+    let lx = lexed("\"a}\\\"b\" x")
+    assert!(kind_at(lx, 0) == TokenKind::Str)
+    assert!(lx.token_count() == 3)
+    assert!(lx.token(0).start == 0)
+    assert!(lx.token(0).end == 7)
+    assert!(lx.is(lx.token(2), "x"))
+    let raw = lexed("\"a\nb\"")
+    assert!(raw.token_count() == 1)
+    assert!(kind_at(raw, 0) == TokenKind::Str)
+    // A backslash before a newline does not continue a string.
+    let broken = lexed("\"a\\\nb\"")
+    assert!(kind_at(broken, 0) == TokenKind::Unknown)
+    assert!(broken.token(0).end == 1)
+    assert!(broken.is(broken.token(1), "a"))
+}
+
+#[test]
+fn lexes_byte_literals() {
+    let lx = lexed("b'0' b'\\'' b'\\\\' b b'' b'ab'")
+    assert!(kind_at(lx, 0) == TokenKind::Byte)
+    assert!(lx.token(0).end == 4)
+    assert!(kind_at(lx, 2) == TokenKind::Byte)
+    assert!(lx.is(lx.token(2), "b'\\''"))
+    assert!(kind_at(lx, 4) == TokenKind::Byte)
+    assert!(kind_at(lx, 6) == TokenKind::Ident)
+    assert!(kind_at(lx, 8) == TokenKind::Byte)
+    assert!(kind_at(lx, 10) == TokenKind::Byte)
+    assert!(lx.token_count() == 11)
+}
+
+#[test]
+fn lexes_multi_character_punctuation() {
+    let lx = lexed("a::b->c=>d..e>>f")
+    assert!(kind_at(lx, 1) == TokenKind::ColonColon)
+    assert!(kind_at(lx, 3) == TokenKind::Arrow)
+    assert!(kind_at(lx, 5) == TokenKind::FatArrow)
+    assert!(kind_at(lx, 7) == TokenKind::DotDot)
+    assert!(kind_at(lx, 9) == TokenKind::Punct)
+    assert!(kind_at(lx, 10) == TokenKind::Punct)
+    assert!(lx.token_count() == 12)
+    let ops = lexed("== != ** && || = !")
+    assert!(ops.token_count() == 13)
+    assert!(ops.is(ops.token(0), "=="))
+    assert!(ops.is(ops.token(2), "!="))
+    assert!(ops.is(ops.token(4), "**"))
+    assert!(ops.is(ops.token(6), "&&"))
+    assert!(ops.is(ops.token(8), "||"))
+    assert!(kind_at(ops, 0) == TokenKind::Punct2)
+    assert!(kind_at(ops, 10) == TokenKind::Punct)
+    assert!(kind_at(ops, 12) == TokenKind::Punct)
+}
+
+#[test]
+fn lexes_comments() {
+    let lx = lexed("// a\n/// b\n//! c\n//// d\n")
+    assert!(kind_at(lx, 0) == TokenKind::LineComment)
+    assert!(lx.token(0).end == 4)
+    assert!(kind_at(lx, 1) == TokenKind::Newline)
+    assert!(kind_at(lx, 2) == TokenKind::DocComment)
+    assert!(kind_at(lx, 4) == TokenKind::LineComment)
+    assert!(kind_at(lx, 6) == TokenKind::DocComment)
+    assert!(lx.token_count() == 8)
+    let cr = lexed("// a\rb")
+    assert!(cr.token_count() == 3)
+    assert!(cr.token(0).end == 4)
+}
+
+#[test]
+fn block_comments_do_not_exist() {
+    let lx = lexed("a/*c*/b")
+    assert!(lx.token_count() == 7)
+    assert!(kind_at(lx, 0) == TokenKind::Ident)
+    assert!(lx.is(lx.token(1), "/"))
+    assert!(lx.is(lx.token(2), "*"))
+    assert!(kind_at(lx, 3) == TokenKind::Ident)
+    assert!(lx.is(lx.token(4), "*"))
+    assert!(lx.is(lx.token(5), "/"))
+    assert!(kind_at(lx, 6) == TokenKind::Ident)
+}
+
+#[test]
+fn newline_runs_are_one_token() {
+    let lx = lexed("a\r\n\r\nb")
+    assert!(lx.token_count() == 3)
+    assert!(kind_at(lx, 1) == TokenKind::Newline)
+    assert!(lx.token(1).start == 1)
+    assert!(lx.token(1).end == 5)
+    let mixed = lexed("a \t\rb")
+    assert!(mixed.token_count() == 4)
+    assert!(kind_at(mixed, 1) == TokenKind::Whitespace)
+    assert!(kind_at(mixed, 2) == TokenKind::Newline)
+}
+
+#[test]
+fn lexes_unknown_bytes_without_failing() {
+    let lx = lexed([0xc3, 0xa9, 0, 0x7f])
+    assert!(lx.token_count() == 4)
+    assert!(kind_at(lx, 0) == TokenKind::Unknown)
+    assert!(kind_at(lx, 2) == TokenKind::Unknown)
+    let open = lexed("\"abc")
+    assert!(open.token_count() == 2)
+    assert!(kind_at(open, 0) == TokenKind::Unknown)
+    assert!(open.token(0).end == 1)
+    let empty = lexed([])
+    assert!(empty.token_count() == 0)
+}
+
+#[test]
+fn next_significant_skips_trivia() {
+    let lx = lexed("a // d\n b")
+    assert!(lx.next_significant(1) == Option::Some(5))
+    assert!(lx.next_significant(0) == Option::Some(0))
+    assert!(lx.next_significant(6) == Option::None)
+}
+
+#[test]
+fn line_col_counts_bytes() {
+    let lx = lexed("ab\ncd\n\nef")
+    assert!(lx.line_col(0) == (1, 1))
+    assert!(lx.line_col(2) == (1, 3))
+    assert!(lx.line_col(3) == (2, 1))
+    assert!(lx.line_col(7) == (4, 1))
+    assert!(lx.line_col(8) == (4, 2))
+    assert!(lx.line_col(9) == (4, 3))
+    assert!(lx.line_col(100) == (4, 3))
+    let wide = lexed([0xc3, 0xa9, b'x'])
+    assert!(wide.line_col(2) == (1, 3))
+}

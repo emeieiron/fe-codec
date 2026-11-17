@@ -1,5 +1,4 @@
-//! A lexer and parser for the declarations of Fe source files: `use` items, structs,
-//! enums and impl headers. Other items are skipped. It knows nothing about any generator.
+//! A lexer for Fe source files, with helpers for token text, integer literals, source
+//! positions and compacted token text. It knows nothing about any generator.
 
-/// The crate's version, until the lexer and parser land.
-pub const VERSION: u32 = 1
+pub use lexer::{Lexed, Token, TokenKind, lex}
