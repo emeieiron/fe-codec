@@ -23,7 +23,7 @@ def fixture_release(root):
     repo.mkdir()
     for name in ("fe.toml", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml"):
         shutil.copy(ROOT / name, repo)
-    for name in ("core", "formats", "io", "generator"):
+    for name in ("core", "formats", "io", "generator", "tools"):
         shutil.copytree(ROOT / name, repo / name, ignore=shutil.ignore_patterns("out", "build"))
     run(["git", "init", "-q"], repo)
     run(["git", "add", "."], repo)
@@ -45,14 +45,15 @@ def consumer_project(app, generator, source, rev):
     text = manifest.read_text()
     start, stop = text.index("[modules.io]"), text.index("[modules.compact]")
     text = text[:start] + text[stop:]
-    # The demo runs each generator through cargo; keep its arguments, after `--`.
+    # The demo runs each generator through the tools/fe-codec-gen wrapper; keep its arguments,
+    # everything after the wrapper.
     demo = tomllib.loads((DEMO / "femp.toml").read_text())
     for name, section in demo["modules"]["shared"]["generate"].items():
         header = text.index(f"[modules.shared.generate.{name}]")
         start = text.index("command = [", header)
         stop = text.index("output =", start)
         original = section["command"]
-        command = [generator, *original[original.index("--") + 1:]]
+        command = [generator, *original[1:]]
         text = text[:start] + f"command = {json.dumps(command)}\n" + text[stop:]
     manifest.write_text(text)
 
@@ -72,7 +73,10 @@ def consumer_project(app, generator, source, rev):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--femp", default="femp")
-    parser.add_argument("--generator", default="fe-codec-gen")
+    parser.add_argument(
+        "--generator", default="fe_codec_gen",
+        help="the generator: fe_codec_gen, or the Rust reference fe-codec-gen",
+    )
     parser.add_argument("--source", help="Git repository for a published release")
     parser.add_argument("--rev", help="Full Git revision of the release")
     args = parser.parse_args()
@@ -80,7 +84,7 @@ def main():
         parser.error("--source and --rev must be provided together")
     femp, generator = shutil.which(args.femp), shutil.which(args.generator)
     if not femp or not generator:
-        parser.error("provide the paths to built femp and fe-codec-gen executables")
+        parser.error("provide the paths to built femp and generator executables")
     femp, generator = str(Path(femp).resolve()), str(Path(generator).resolve())
 
     with tempfile.TemporaryDirectory(prefix="fe-codec-consumer-") as directory:

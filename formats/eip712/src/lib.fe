@@ -2,7 +2,7 @@
 //! type hashes, the domain separator, the digest a signature covers, and the
 //! `eth_signTypedData_v4` request a wallet signs.
 //!
-//! A type needs `Serialize` and `Describe`, which `fe-codec-gen` writes for
+//! A type needs `Serialize` and `Describe`, which `fe_codec_gen` writes for
 //! `#[serializable]` types. EIP-712 hashes cannot be decoded, so this is not a `Format`.
 
 use fe_codec_core::{BoundedBuffer, CodecResult, Describe, Limits, Serialize, Text, TextWriter}

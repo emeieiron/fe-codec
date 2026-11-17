@@ -9,7 +9,7 @@ use std::evm::Address
 ///
 /// Formats that hash or print types use it, as EIP-712 does for `encodeType`. A description
 /// covers every type a value could contain, including the element type of an empty array.
-/// `fe-codec-gen` implements it for `#[serializable]` types. A handwritten serializer needs it
+/// `fe_codec_gen` implements it for `#[serializable]` types. A handwritten serializer needs it
 /// only for formats that ask for it.
 pub trait Describe {
     fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()>

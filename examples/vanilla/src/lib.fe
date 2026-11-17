@@ -1,6 +1,6 @@
 //! Fe Codec used with the official Fe toolchain alone. `src/serializers.fe` is generated
 //! and committed: regenerate it with
-//! `fe-codec-gen --source src/models.fe --out src/serializers.fe`, and check it is current
+//! `fe_codec_gen --source src/models.fe --out src/serializers.fe`, and check it is current
 //! with `--check`.
 
 pub use ingot::models::{Order, OrderStatus, Reading}

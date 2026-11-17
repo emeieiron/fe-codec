@@ -1,6 +1,6 @@
 //! Struct hashing with type hashes known at compile time.
 //!
-//! `fe-codec-gen --eip712` implements these traits for `#[eip712]` structs and the types they
+//! `fe_codec_gen --eip712` implements these traits for `#[eip712]` structs and the types they
 //! reference: each type hash is a `core::keccak` constant, and each `hash_struct` is one
 //! `keccak_words` over the members' words, as a hand-written implementation would be. The
 //! generic `hash_struct` function gives the same results for any `Serialize + Describe` type,

@@ -13,7 +13,7 @@ WebAssembly, using fixed-capacity buffers and explicit limits.
 | `fe_codec_cbor` | Deterministic CBOR (RFC 8949 §4.2.1) |
 | `fe_codec_eip712` | EIP-712 struct hashes, signing digests and wallet requests |
 | `fe_codec_io` | Bounded buffers, re-exported by core |
-| `fe-codec-gen` | Writes `Serialize`, `Deserialize`, `Schema` and `Describe` impls for `#[serializable]` types, and with `--eip712` static EIP-712 hashing for `#[eip712]` structs |
+| `fe_codec_gen` | Writes `Serialize`, `Deserialize`, `Schema` and `Describe` impls for `#[serializable]` types, and with `--eip712` static EIP-712 hashing for `#[eip712]` structs |
 
 The runtime ingots are plain Fe and work with the official `fe` toolchain. FeMP is optional:
 it can run the generator for you and test across targets, but nothing you ship depends on it.
@@ -30,11 +30,15 @@ fe_codec_json = { source = "https://example.invalid/fe-codec.git", rev = "<commi
 fe_codec_cbor = { source = "https://example.invalid/fe-codec.git", rev = "<commit>", name = "fe_codec_cbor" }
 ```
 
-Install the generator from the same revision:
+Build the generator from the same revision. It is written in Fe, so you need only the Fe
+toolchain. Check out the repository at that revision, then build it into a directory on your
+`PATH`:
 
 ```bash
-cargo install --locked --git <repository> --rev <commit> fe-codec-gen
+fe build --backend native tools/generator --out-dir <a directory on your PATH>
 ```
+
+The command is `fe_codec_gen`.
 
 Mark your types `#[serializable]`:
 
@@ -61,7 +65,7 @@ pub enum OrderStatus {
 Generate the serializers into a module beside the models, and commit the result:
 
 ```bash
-fe-codec-gen --source src/models.fe --out src/serializers.fe
+fe_codec_gen --source src/models.fe --out src/serializers.fe
 ```
 
 Run the same command with `--check` in CI to catch a stale file. Pass `--source` once per
@@ -171,7 +175,7 @@ Mark the structs you sign `#[eip712]`, and run the generator a second time in it
 mode:
 
 ```bash
-fe-codec-gen --source src/models.fe --eip712 --out src/eip712.fe
+fe_codec_gen --source src/models.fe --eip712 --out src/eip712.fe
 ```
 
 The generator computes each struct's `encodeType` string and emits its type hash as a
@@ -275,12 +279,12 @@ source tree:
 
 ```toml
 [modules.shared.generate.serializers]
-command = ["fe-codec-gen", "--source", "src/models.fe", "--stdout"]
+command = ["fe_codec_gen", "--source", "src/models.fe", "--stdout"]
 output = "src/serializers.fe"
 
 # Only if you sign #[eip712] structs:
 [modules.shared.generate.eip712]
-command = ["fe-codec-gen", "--source", "src/models.fe", "--eip712", "--stdout"]
+command = ["fe_codec_gen", "--source", "src/models.fe", "--eip712", "--stdout"]
 output = "src/eip712.fe"
 ```
 
@@ -299,7 +303,8 @@ with its evidence, and what has not been established.
 
 ```text
 core/ io/ formats/       runtime ingots
-generator/               fe-codec-gen (Rust)
+tools/                   fe_codec_gen and its parser fe_syntax (Fe)
+generator/               fe-codec-gen (Rust), the parity reference
 examples/vanilla/        plain-Fe consumer, used by tests/vanilla.py
 examples/transfer/       FeMP project: conformance, properties, proofs, platform demos
 examples/compact_format/ third-party format example
@@ -316,7 +321,17 @@ cd examples/transfer && femp test -t evm -t native -t wasm && femp prop -t evm -
 ```
 
 ```bash
-python3 tests/vanilla.py --generator target/debug/fe-codec-gen
+fe build --backend native tools/generator --out-dir target/fe
+cd tools/syntax && fe test --backend native && fe test
+```
+
+```bash
+cargo build --locked
+python3 tests/generator_parity.py --rust target/debug/fe-codec-gen --fe target/fe/fe_codec_gen
+```
+
+```bash
+python3 tests/vanilla.py --generator target/fe/fe_codec_gen
 ```
 
 ```bash

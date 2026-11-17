@@ -1,0 +1,29 @@
+#!/bin/sh
+# Runs the Fe generator (tools/generator), building it first when it is missing or stale.
+# Safe to run concurrently: each build goes to its own directory and is renamed into place.
+set -eu
+
+root=$(cd "$(dirname "$0")/.." && pwd -P)
+bin="$root/target/fe/fe_codec_gen"
+
+stale() {
+    [ ! -x "$bin" ] && return 0
+    [ -n "$(find "$root/tools/syntax" "$root/tools/generator" -type f -newer "$bin" -print -quit)" ]
+}
+
+if stale; then
+    mkdir -p "$root/target/fe"
+    tmp=$(mktemp -d "$root/target/fe-build.XXXXXX")
+    if ! (cd "$root" && "${FE:-fe}" build --backend native tools/generator --out-dir "$tmp") >&2; then
+        rm -rf "$tmp"
+        echo "fe-codec-gen: building tools/generator failed" >&2
+        exit 1
+    fi
+    if ! mv -f "$tmp/fe_codec_gen" "$bin"; then
+        rm -rf "$tmp"
+        exit 1
+    fi
+    rm -rf "$tmp"
+fi
+
+exec "$bin" "$@"

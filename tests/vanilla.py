@@ -26,11 +26,14 @@ def run(command, cwd):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fe", default="fe", help="the Fe compiler to use")
-    parser.add_argument("--generator", default="fe-codec-gen", help="the fe-codec-gen to use")
+    parser.add_argument(
+        "--generator", default="fe_codec_gen",
+        help="the generator: fe_codec_gen, or the Rust reference fe-codec-gen",
+    )
     args = parser.parse_args()
     fe, generator = shutil.which(args.fe), shutil.which(args.generator)
     if not fe or not generator:
-        parser.error("provide the paths to the fe and fe-codec-gen executables")
+        parser.error("provide the paths to the fe and generator executables")
     fe, generator = str(Path(fe).resolve()), str(Path(generator).resolve())
 
     with tempfile.TemporaryDirectory() as temporary:
