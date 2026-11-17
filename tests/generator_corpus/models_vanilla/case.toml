@@ -1,0 +1,4 @@
+sources = ["src/models.fe"]
+modes = ["serializers"]
+flows = ["out", "check", "stale", "handwritten"]
+stale_edit = ["pub at: u64", "pub at: u32"]

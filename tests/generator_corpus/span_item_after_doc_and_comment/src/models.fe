@@ -1,0 +1,6 @@
+// leading note
+/// The empty enum.
+// plain note
+
+#[serializable]
+pub enum Empty {}

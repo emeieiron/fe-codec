@@ -1,0 +1,14 @@
+// Imports, with a line comment.
+use fe_codec_core::Text
+
+// A line comment before the item.
+#[serializable] // trailing on the attribute
+/// Doc comment on the struct.
+pub struct Item // after the name
+{
+    // Line comment before a field.
+    /// Doc comment on a field.
+    pub id: u8, // trailing line comment
+    // Another line comment.
+    pub label: Option<Text<8>>, // trailing
+} // after the item

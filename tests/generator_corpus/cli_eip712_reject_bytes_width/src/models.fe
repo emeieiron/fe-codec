@@ -1,0 +1,6 @@
+use core::bytes::PackedBytes
+#[serializable]
+#[eip712]
+pub struct Item {
+    pub data: PackedBytes<33>
+}

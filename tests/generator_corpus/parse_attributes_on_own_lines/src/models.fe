@@ -1,0 +1,10 @@
+#[serializable]
+#[allow(dead_code)]
+#[doc = "an item with several attributes"]
+pub struct Item {
+    #[codec_id = 1]
+    #[doc = "identifier"]
+    pub id: u8,
+    #[codec_id = 2]
+    pub count: u16,
+}

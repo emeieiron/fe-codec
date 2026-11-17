@@ -1,0 +1,7 @@
+#[serializable]
+pub struct Item {
+    #[codec_id = 9]
+    pub late: u8,
+    #[codec_id = 2]
+    pub early: u8,
+}

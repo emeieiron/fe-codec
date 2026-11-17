@@ -1,0 +1,14 @@
+
+        use fe_codec_core::Text
+
+        #[serializable]
+        pub struct Batch { pub children: [Item; 0x02] }
+        #[serializable]
+        pub struct Item {
+            pub kind: Kind,
+            pub label: Option<Text<8>>,
+        }
+        #[serializable]
+        pub enum Kind { First, Second }
+        pub struct Ignored { private: usize }
+        

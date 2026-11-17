@@ -1,0 +1,6 @@
+use fe_codec_core::Text
+
+#[serializable]
+pub struct Nested {
+    pub names: Option<[Text<8>; 2]>,
+}

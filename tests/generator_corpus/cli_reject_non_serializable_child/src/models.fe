@@ -1,0 +1,5 @@
+#[serializable]
+pub struct Item {
+    pub child: Plain
+}
+pub struct Plain { pub id: u8 }

@@ -1,0 +1,4 @@
+sources = ["src/models.fe"]
+modes = ["serializers"]
+flows = ["out", "check", "stale", "missing"]
+stale_edit = ["u8", "u16"]

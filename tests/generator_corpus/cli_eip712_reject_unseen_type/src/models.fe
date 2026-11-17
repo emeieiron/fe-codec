@@ -1,0 +1,6 @@
+use ingot::other::Celsius
+#[serializable]
+#[eip712]
+pub struct Item {
+    pub temperature: Celsius
+}

@@ -1,0 +1,4 @@
+sources = ["src/models.fe"]
+modes = ["serializers"]
+syntax_error = true
+flows = ["handwritten"]

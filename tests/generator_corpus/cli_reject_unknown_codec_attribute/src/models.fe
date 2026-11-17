@@ -1,0 +1,5 @@
+#[serializable]
+pub struct Item {
+    #[codec_ids = 1]
+    pub id: u8
+}

@@ -1,0 +1,8 @@
+use fe_codec_core::Text
+
+/// Doc.
+#[serializable]
+pub struct Item {
+    pub a: u8,
+    pub name: Text<8>,
+}

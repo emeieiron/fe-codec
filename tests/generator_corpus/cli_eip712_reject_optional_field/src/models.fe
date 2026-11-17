@@ -1,0 +1,5 @@
+#[serializable]
+#[eip712]
+pub struct Item {
+    pub note: Option<u8>
+}

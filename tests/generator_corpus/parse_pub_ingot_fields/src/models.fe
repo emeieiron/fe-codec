@@ -1,0 +1,5 @@
+#[serializable]
+pub struct Item {
+    pub(ingot) id: u8,
+    pub label: u8,
+}

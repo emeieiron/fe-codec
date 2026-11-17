@@ -1,0 +1,6 @@
+#[serializable]
+// plain between
+pub struct Item {
+    #[codec_id = 1]
+    pub size: usize,
+}

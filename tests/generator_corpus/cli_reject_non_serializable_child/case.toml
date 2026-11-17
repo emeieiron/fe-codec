@@ -1,0 +1,3 @@
+sources = ["src/models.fe"]
+modes = ["serializers"]
+expect_error = "'Plain' is used by 'Item' but is not #[serializable]"

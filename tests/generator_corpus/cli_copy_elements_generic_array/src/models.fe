@@ -1,0 +1,5 @@
+#[serializable]
+pub struct Item { pub id: u8 }
+impl Copy for Item {}
+#[serializable]
+pub struct Batch { pub items: [Item; 2], pub empty: [u8; 0], pub bytes: [u8; 100] }

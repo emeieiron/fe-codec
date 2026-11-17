@@ -1,0 +1,9 @@
+use fe_codec_core::{
+    Text,
+    Describe,
+}
+
+#[serializable]
+pub struct Item {
+    pub label: Text<8>,
+}

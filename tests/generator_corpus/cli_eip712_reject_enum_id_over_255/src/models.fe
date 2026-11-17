@@ -1,0 +1,12 @@
+#[serializable]
+#[eip712]
+pub struct Item {
+    pub rank: Rank
+}
+#[serializable]
+pub enum Rank {
+    #[codec_id = 0]
+    Low,
+    #[codec_id = 300]
+    High,
+}

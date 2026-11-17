@@ -1,0 +1,4 @@
+#[serializable]
+pub struct Page<T, const N: usize> { pub items: [T; N], pub next: Option<u64> }
+#[serializable]
+pub struct Pair<A: Copy, B> { pub left: A, pub right: B }

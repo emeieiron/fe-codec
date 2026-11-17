@@ -1,0 +1,6 @@
+#[eip712]
+pub struct Item {
+    pub id: u8
+}
+#[serializable]
+pub struct Other { pub id: u8 }

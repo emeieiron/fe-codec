@@ -1,0 +1,106 @@
+//! Models for the EIP-712 tests. They mirror the cases in tests/vectors/eip712.py.
+//!
+//! `#[eip712]` types also get static struct hashing from `fe-codec-gen --eip712`; the types
+//! EIP-712 cannot express are left unmarked, and the generic path rejects them at runtime.
+
+use core::bytes::PackedBytes
+use fe_codec_core::{BoundedBuffer, Text}
+use std::evm::Address
+
+/// The EIP's own example: `Person(string name,address wallet)`.
+#[serializable]
+pub struct Person { pub name: Text<16>, pub wallet: Address }
+
+/// `Mail(Person from,Person to,string contents)`.
+#[serializable]
+#[eip712]
+pub struct Mail { pub from: Person, pub to: Person, pub contents: Text<32> }
+
+/// A fixed-length array of structs: `Person[2]`.
+#[serializable]
+#[eip712]
+pub struct Group { pub name: Text<16>, pub members: [Person; 2] }
+
+/// Nested arrays: `uint8[2][3]`.
+#[serializable]
+#[eip712]
+pub struct Grid { pub cells: [[u8; 2]; 3] }
+
+/// An empty array of structs, whose types still appear in `encodeType`.
+#[serializable]
+#[eip712]
+pub struct Inbox { pub owner: Address, pub mails: [Mail; 0] }
+
+#[serializable]
+pub enum Level {
+    Low,
+    High,
+}
+
+/// Every atomic and dynamic type.
+#[serializable]
+#[eip712]
+pub struct Kinds {
+    pub flag: bool,
+    pub small: i8,
+    pub big: i256,
+    pub ubig: u256,
+    pub data: BoundedBuffer<8>,
+    pub hash: PackedBytes<32>,
+    pub short: PackedBytes<4>,
+    pub label: Text<16>,
+    pub who: Address,
+    pub level: Level,
+}
+
+#[serializable]
+pub struct Contact { pub email: Text<32> }
+
+#[serializable]
+pub struct Party { pub who: Address, pub contact: Contact }
+
+#[serializable]
+pub struct Asset { pub token: Address, pub amount: u256 }
+
+#[serializable]
+pub struct Terms { pub deadline: u64, pub partial: bool }
+
+/// Four referenced types, appended to `encodeType` in name order.
+#[serializable]
+#[eip712]
+pub struct Order { pub maker: Party, pub item: Asset, pub terms: Terms }
+
+/// Atomic members only, so its hash is easy to state independently.
+#[serializable]
+#[eip712]
+pub struct Flat { pub a: u256, pub b: Address, pub c: bool }
+
+// Types EIP-712 cannot express.
+
+#[serializable]
+pub struct Maybe { pub value: Option<u8> }
+
+#[serializable]
+pub struct TooLong { pub data: PackedBytes<33> }
+
+#[serializable]
+pub enum Many {
+    #[codec_id = 0]
+    Zero,
+    #[codec_id = 300]
+    Large,
+}
+
+#[serializable]
+pub struct Ranked { pub rank: Many }
+
+/// Two instantiations of one generic type name two different structs.
+#[serializable]
+pub struct Holder<T> { pub item: T }
+
+#[serializable]
+pub struct Conflict { pub small: Holder<u8>, pub large: Holder<u16> }
+
+/// A user type may not take the domain's reserved name.
+#[serializable]
+pub struct EIP712Domain { pub name: Text<8> }

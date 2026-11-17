@@ -1,0 +1,8 @@
+#[serializable]
+pub enum Kind {
+    /// a
+    A,
+    /// b
+    #[codec_id = 2]
+    B(u8),
+}

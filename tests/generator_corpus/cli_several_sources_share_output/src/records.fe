@@ -1,0 +1,4 @@
+use ingot::models::Item
+
+#[serializable]
+pub struct Holder { pub item: Item }

@@ -1,0 +1,35 @@
+use fe_codec_core::Text
+
+pub fn helper(x: u8) -> u8 {
+    if x > 0 {
+        return x
+    }
+    0
+}
+
+pub trait Shape {
+    fn area(self) -> u8
+}
+
+pub struct Plain { pub id: u8 }
+
+impl Plain {
+    pub fn get(self) -> u8 {
+        self.id
+    }
+}
+
+pub contract Vault {
+    balance: u256
+}
+
+msg Ping {
+    Pong -> u8
+}
+
+const LIMIT: u8 = 9
+
+type Alias = u8
+
+#[serializable]
+pub struct Item { pub id: u8 }

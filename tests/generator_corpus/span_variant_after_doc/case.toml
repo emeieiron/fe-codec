@@ -1,0 +1,3 @@
+sources = ["src/models.fe"]
+modes = ["serializers"]
+expect_error = "only unit enum variants are supported"

@@ -1,0 +1,6 @@
+const BANNER: [u8; 6] = "{x}\"y\""
+
+#[serializable]
+pub struct Item {
+    pub id: u8,
+}

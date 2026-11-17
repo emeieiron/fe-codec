@@ -1,0 +1,5 @@
+#[serializable]
+pub struct P<T: Copy, const N: usize> {
+    pub items: [T; N],
+    pub count: u8,
+}

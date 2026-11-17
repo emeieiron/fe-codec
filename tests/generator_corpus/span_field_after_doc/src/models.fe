@@ -1,0 +1,8 @@
+#[serializable]
+pub struct Item {
+    /// first
+    pub a: u8,
+    // plain
+    /// again
+    pub a: u16,
+}

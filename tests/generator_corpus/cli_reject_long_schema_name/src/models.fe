@@ -1,0 +1,4 @@
+#[serializable]
+pub struct Item {
+    pub a_field_name_of_thirty_two_bytes: u8
+}
