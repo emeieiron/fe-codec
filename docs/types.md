@@ -10,11 +10,12 @@
 | `core::bytes::PackedBytes<N>`, `std::evm::Address` | Bytes of exactly `N`, or 20 |
 | `Option<T>` | Anywhere, except `Option<Option<T>>`, which cannot round-trip |
 | `[T; N]` | As a field, any length of `Copy` elements, or up to 64 of other elements. Elsewhere, such as inside an `Option`, decoding needs `T: Copy` and `N > 0` |
+| `(T0, ..., T7)` | Tuples of 1 to 8 supported types, anywhere a type can appear. `()` has no wire form and is rejected |
 | `#[serializable]` structs | Named fields of up to 31-byte names; type and const generic parameters |
 | `#[serializable]` enums | Unit variants of up to 31-byte names |
 | Your own types | With handwritten impls; see [writing serializers](writing-serializers.md) |
 
-Not supported yet: enums with payloads, variable-length collections, maps, tuples, ignoring
+Not supported yet: enums with payloads, variable-length collections, maps, ignoring
 unknown fields, and choosing a serializer per field.
 
 ## Buffers and limits

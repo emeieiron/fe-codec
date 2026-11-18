@@ -342,6 +342,8 @@ def check_seed(seed, args):
             extra["test: missing required field"] += 1
         if "dropped_" in "".join(builder.fns):
             extra["test: dropped optional field"] += 1
+        if "eip712_rejects_tuples_" in "".join(builder.fns):
+            extra["test: tuples have no EIP-712 form"] += 1
         result.features = coverage.count(spec, renderer.stats, extra) + result.features
         return result
     except Exception as e:  # a bug in the harness is a failure too

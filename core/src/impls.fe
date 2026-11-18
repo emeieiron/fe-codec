@@ -285,3 +285,343 @@ impl<T: Deserialize + Copy, const N: usize> Deserialize for [T; N] {
         Result::Ok(array)
     }
 }
+
+/// Tuples of 1 to 8 elements are fixed-length sequences of their elements in order, so they
+/// need no encoder or decoder methods of their own. Decoding builds each element in turn, so
+/// elements need not be `Copy`. The unit type `()` has no impl: it has no wire form.
+impl<T0: Serialize> Serialize for (T0,) {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        let (ref e0,) = self
+        var sequence = encoder.begin_sequence(1)?
+        encoder.element(mut sequence)?
+        e0.serialize(mut encoder)?
+        encoder.end_sequence(sequence)
+    }
+}
+
+impl<T0: Deserialize> Deserialize for (T0,) {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        var sequence = decoder.begin_sequence(1)?
+        decoder.element(mut sequence)?
+        let e0 = T0::deserialize(mut decoder)?
+        decoder.end_sequence(sequence)?
+        Result::Ok((e0,))
+    }
+}
+
+impl<T0: Serialize, T1: Serialize> Serialize for (T0, T1) {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        let (ref e0, ref e1) = self
+        var sequence = encoder.begin_sequence(2)?
+        encoder.element(mut sequence)?
+        e0.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e1.serialize(mut encoder)?
+        encoder.end_sequence(sequence)
+    }
+}
+
+impl<T0: Deserialize, T1: Deserialize> Deserialize for (T0, T1) {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        var sequence = decoder.begin_sequence(2)?
+        decoder.element(mut sequence)?
+        let e0 = T0::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e1 = T1::deserialize(mut decoder)?
+        decoder.end_sequence(sequence)?
+        Result::Ok((e0, e1))
+    }
+}
+
+impl<T0: Serialize, T1: Serialize, T2: Serialize> Serialize for (T0, T1, T2) {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        let (ref e0, ref e1, ref e2) = self
+        var sequence = encoder.begin_sequence(3)?
+        encoder.element(mut sequence)?
+        e0.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e1.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e2.serialize(mut encoder)?
+        encoder.end_sequence(sequence)
+    }
+}
+
+impl<T0: Deserialize, T1: Deserialize, T2: Deserialize> Deserialize for (T0, T1, T2) {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        var sequence = decoder.begin_sequence(3)?
+        decoder.element(mut sequence)?
+        let e0 = T0::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e1 = T1::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e2 = T2::deserialize(mut decoder)?
+        decoder.end_sequence(sequence)?
+        Result::Ok((e0, e1, e2))
+    }
+}
+
+impl<T0: Serialize, T1: Serialize, T2: Serialize, T3: Serialize> Serialize for (T0, T1, T2, T3) {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        let (ref e0, ref e1, ref e2, ref e3) = self
+        var sequence = encoder.begin_sequence(4)?
+        encoder.element(mut sequence)?
+        e0.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e1.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e2.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e3.serialize(mut encoder)?
+        encoder.end_sequence(sequence)
+    }
+}
+
+impl<
+    T0: Deserialize,
+    T1: Deserialize,
+    T2: Deserialize,
+    T3: Deserialize,
+> Deserialize for (T0, T1, T2, T3) {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        var sequence = decoder.begin_sequence(4)?
+        decoder.element(mut sequence)?
+        let e0 = T0::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e1 = T1::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e2 = T2::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e3 = T3::deserialize(mut decoder)?
+        decoder.end_sequence(sequence)?
+        Result::Ok((e0, e1, e2, e3))
+    }
+}
+
+impl<
+    T0: Serialize,
+    T1: Serialize,
+    T2: Serialize,
+    T3: Serialize,
+    T4: Serialize,
+> Serialize for (T0, T1, T2, T3, T4) {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        let (ref e0, ref e1, ref e2, ref e3, ref e4) = self
+        var sequence = encoder.begin_sequence(5)?
+        encoder.element(mut sequence)?
+        e0.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e1.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e2.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e3.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e4.serialize(mut encoder)?
+        encoder.end_sequence(sequence)
+    }
+}
+
+impl<
+    T0: Deserialize,
+    T1: Deserialize,
+    T2: Deserialize,
+    T3: Deserialize,
+    T4: Deserialize,
+> Deserialize for (T0, T1, T2, T3, T4) {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        var sequence = decoder.begin_sequence(5)?
+        decoder.element(mut sequence)?
+        let e0 = T0::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e1 = T1::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e2 = T2::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e3 = T3::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e4 = T4::deserialize(mut decoder)?
+        decoder.end_sequence(sequence)?
+        Result::Ok((e0, e1, e2, e3, e4))
+    }
+}
+
+impl<
+    T0: Serialize,
+    T1: Serialize,
+    T2: Serialize,
+    T3: Serialize,
+    T4: Serialize,
+    T5: Serialize,
+> Serialize for (T0, T1, T2, T3, T4, T5) {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        let (ref e0, ref e1, ref e2, ref e3, ref e4, ref e5) = self
+        var sequence = encoder.begin_sequence(6)?
+        encoder.element(mut sequence)?
+        e0.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e1.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e2.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e3.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e4.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e5.serialize(mut encoder)?
+        encoder.end_sequence(sequence)
+    }
+}
+
+impl<
+    T0: Deserialize,
+    T1: Deserialize,
+    T2: Deserialize,
+    T3: Deserialize,
+    T4: Deserialize,
+    T5: Deserialize,
+> Deserialize for (T0, T1, T2, T3, T4, T5) {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        var sequence = decoder.begin_sequence(6)?
+        decoder.element(mut sequence)?
+        let e0 = T0::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e1 = T1::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e2 = T2::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e3 = T3::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e4 = T4::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e5 = T5::deserialize(mut decoder)?
+        decoder.end_sequence(sequence)?
+        Result::Ok((e0, e1, e2, e3, e4, e5))
+    }
+}
+
+impl<
+    T0: Serialize,
+    T1: Serialize,
+    T2: Serialize,
+    T3: Serialize,
+    T4: Serialize,
+    T5: Serialize,
+    T6: Serialize,
+> Serialize for (T0, T1, T2, T3, T4, T5, T6) {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        let (ref e0, ref e1, ref e2, ref e3, ref e4, ref e5, ref e6) = self
+        var sequence = encoder.begin_sequence(7)?
+        encoder.element(mut sequence)?
+        e0.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e1.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e2.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e3.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e4.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e5.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e6.serialize(mut encoder)?
+        encoder.end_sequence(sequence)
+    }
+}
+
+impl<
+    T0: Deserialize,
+    T1: Deserialize,
+    T2: Deserialize,
+    T3: Deserialize,
+    T4: Deserialize,
+    T5: Deserialize,
+    T6: Deserialize,
+> Deserialize for (T0, T1, T2, T3, T4, T5, T6) {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        var sequence = decoder.begin_sequence(7)?
+        decoder.element(mut sequence)?
+        let e0 = T0::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e1 = T1::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e2 = T2::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e3 = T3::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e4 = T4::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e5 = T5::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e6 = T6::deserialize(mut decoder)?
+        decoder.end_sequence(sequence)?
+        Result::Ok((e0, e1, e2, e3, e4, e5, e6))
+    }
+}
+
+impl<
+    T0: Serialize,
+    T1: Serialize,
+    T2: Serialize,
+    T3: Serialize,
+    T4: Serialize,
+    T5: Serialize,
+    T6: Serialize,
+    T7: Serialize,
+> Serialize for (T0, T1, T2, T3, T4, T5, T6, T7) {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        let (ref e0, ref e1, ref e2, ref e3, ref e4, ref e5, ref e6, ref e7) = self
+        var sequence = encoder.begin_sequence(8)?
+        encoder.element(mut sequence)?
+        e0.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e1.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e2.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e3.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e4.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e5.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e6.serialize(mut encoder)?
+        encoder.element(mut sequence)?
+        e7.serialize(mut encoder)?
+        encoder.end_sequence(sequence)
+    }
+}
+
+impl<
+    T0: Deserialize,
+    T1: Deserialize,
+    T2: Deserialize,
+    T3: Deserialize,
+    T4: Deserialize,
+    T5: Deserialize,
+    T6: Deserialize,
+    T7: Deserialize,
+> Deserialize for (T0, T1, T2, T3, T4, T5, T6, T7) {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        var sequence = decoder.begin_sequence(8)?
+        decoder.element(mut sequence)?
+        let e0 = T0::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e1 = T1::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e2 = T2::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e3 = T3::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e4 = T4::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e5 = T5::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e6 = T6::deserialize(mut decoder)?
+        decoder.element(mut sequence)?
+        let e7 = T7::deserialize(mut decoder)?
+        decoder.end_sequence(sequence)?
+        Result::Ok((e0, e1, e2, e3, e4, e5, e6, e7))
+    }
+}

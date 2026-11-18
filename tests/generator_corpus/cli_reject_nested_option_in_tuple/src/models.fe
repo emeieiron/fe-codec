@@ -1,0 +1,4 @@
+#[serializable]
+pub struct Item {
+    pub id: (u8, Option<Option<u8>>)
+}

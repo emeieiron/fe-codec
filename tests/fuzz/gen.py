@@ -1,7 +1,15 @@
 """Random model specs (see spec.py for the type language)."""
 
 from .spec import (ADDR, BOOL, Field, Int, Model, Spec, Variant, eligible_for_eip712,
-                   instances, is_copy, type_param_needs_copy)
+                   instances, is_copy, type_param_needs_copy, weight)
+
+# The most type nodes a non-generic record may expand to. Records without tuples stay under about
+# 170 (see `weight`). Tuples of up to 8 elements, each holding records that hold tuples, multiply
+# that quickly, and the generated JSON decoder of such a model overflows the EVM stack on sonatina
+# at a size where the same shape built from records and arrays overflows too (a record of 6
+# records of 6 records of 4 integers does). That limit is not specific to tuples, so the generator
+# stays inside what it already produces for records, and still exercises every tuple feature.
+MAX_RECORD_WEIGHT = 200
 
 RECORD_WORDS = ["Account", "Order", "Ledger", "Packet", "Header", "Entry", "Quote", "Trade", "Vault",
                 "Claim", "Ticket", "Config", "Window", "Record", "Slot", "Frame", "Token", "Event"]
@@ -68,6 +76,8 @@ class Gen:
             choices.append(("arr", 2.6))
             if not plain:
                 choices.append(("opt", 2.0))
+                # EIP-712 has no tuples, so the types a root may use have none.
+                choices.append(("tup", 2.4))
         if params:
             choices.append(("param", 2.5))
         total = sum(w for _, w in choices)
@@ -89,6 +99,8 @@ class Gen:
             return self.scalar()
         if kind == "param":
             return ("param", rng.choice(params))
+        if kind == "tup":
+            return self.tuple(depth, force_copy, plain, params, consts, avail_generics)
         if kind == "opt":
             inner = self.gen_type(depth + 1, False, force_copy, plain, params, consts, avail_generics)
             if inner[0] == "opt":
@@ -103,8 +115,19 @@ class Gen:
         else:
             length = literal
         noncopy_ok = top and not force_copy and isinstance(length, int)
-        elem = self.gen_type(depth + 1, False, not noncopy_ok, plain, params, consts, avail_generics)
+        if not plain and depth < 1 and rng.random() < 0.2:
+            elem = self.tuple(depth + 1, not noncopy_ok, plain, params, consts, avail_generics)
+        else:
+            elem = self.gen_type(depth + 1, False, not noncopy_ok, plain, params, consts, avail_generics)
         return ("arr", elem, length)
+
+    def tuple(self, depth, force_copy, plain, params, consts, avail_generics):
+        """A tuple of 1 to 8 elements. Core decodes the elements one by one, so none needs `Copy`
+        unless the tuple is itself an array element that does (`force_copy`). The elements are not
+        top-level, which keeps an empty array, rejected inside a tuple, out of them."""
+        count = self.rng.choice([1, 2, 2, 3, 3, 4, 5, 6, 7, 8])
+        return ("tup", tuple(self.gen_type(depth + 1, False, force_copy, plain, params, consts, avail_generics)
+                             for _ in range(count)))
 
     def instance(self, generics, force_copy):
         rng = self.rng
@@ -206,6 +229,10 @@ class Gen:
         for _ in range(count):
             types.append(self.gen_type(0, True, False, plain, params if generic else [], consts if generic else [],
                                        avail_generics))
+        if not generic:
+            while sum(weight(self.spec, t) for t in types) > MAX_RECORD_WEIGHT:
+                heaviest = max(range(len(types)), key=lambda i: weight(self.spec, types[i]))
+                types[heaviest] = self.scalar()
         rng.shuffle(types)
         names = rng.sample(FIELD_WORDS, len(types)) if len(types) <= len(FIELD_WORDS) else None
         explicit = bool(types) and rng.random() < 0.45

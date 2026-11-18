@@ -1,0 +1,25 @@
+use fe_codec_core::Text
+
+#[serializable]
+pub struct Leg { pub from: u8, pub to: u8 }
+impl Copy for Leg {}
+#[serializable]
+pub struct Plain { pub id: u8 }
+
+#[serializable]
+pub struct Route {
+    pub pair: (u8, Text<8>),
+    pub one: (u16,),
+    pub parenthesized: (u32),
+    pub nested: ((u8, bool), (i8, [u8; 2])),
+    pub maybe: Option<(u64, Leg)>,
+    pub inside: (Option<u8>, Plain, [Leg; 2]),
+    pub legs: [(u8, Leg); 3],
+    pub many: [(u8, u8); 100],
+    pub plains: [(Plain, u8); 2],
+    pub grid: [[(u8, u8); 2]; 2],
+    pub wide: (u8, u8, u8, u8, u8, u8, u8, u8),
+}
+
+#[serializable]
+pub struct Pair<A, B> { pub both: (A, B), pub list: [(A, u8); 2] }

@@ -35,6 +35,7 @@ Output is compact UTF-8 with no whitespace. [RFC 8259](https://www.rfc-editor.or
 | Unit enum variant | Its name as a string |
 | Record | An object keyed by field name |
 | Array `[T; N]` | An array of exactly `N` values |
+| Tuple `(T0, ..., Tn)` | An array of its elements in order, of exactly its length |
 
 Decoding also accepts whitespace between tokens, members in any order, `\u` escapes
 including surrogate pairs, and hex digits of either case. It rejects fractions and
@@ -60,6 +61,7 @@ Deterministic encoding as specified by
 | Unit enum variant | Its ID as an unsigned integer |
 | Record | A definite-length map keyed by field ID, keys ascending |
 | Array `[T; N]` | A definite-length array of exactly `N` items |
+| Tuple `(T0, ..., Tn)` | A definite-length array of its elements in order, of exactly its length |
 
 Fields of 64 bits or fewer accept only major types 0 and 1, so a bignum there is a
 `TypeMismatch`; a canonical bignum would not fit them anyway. Variant IDs are the zero-based

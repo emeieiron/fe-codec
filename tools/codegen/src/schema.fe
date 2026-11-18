@@ -142,6 +142,7 @@ pub fn line_col(_ text: ref MemBuffer, _ offset: usize) -> (usize, usize) {
 pub enum TyKind {
     Path,
     Array,
+    Tuple,
     Other,
 }
 
@@ -159,6 +160,7 @@ pub fn ty_kind(_ file: ref File, _ ty: usize) -> TyKind {
             Option::Some(_) => TyKind::Path,
             Option::None => TyKind::Other,
         },
+        TypeKind::Tuple => TyKind::Tuple,
         TypeKind::Other => TyKind::Other,
     }
 }
@@ -177,6 +179,16 @@ pub fn array_elem(_ file: ref File, _ ty: usize) -> usize {
         Option::Some(elem) => elem,
         Option::None => ty,
     }
+}
+
+/// The number of elements of a tuple type.
+pub fn tuple_len(_ file: ref File, _ ty: usize) -> usize {
+    file.types[ty].elems.len
+}
+
+/// The type node of element `index` of a tuple type.
+pub fn tuple_elem(_ file: ref File, _ ty: usize, _ index: usize) -> usize {
+    file.elems[file.types[ty].elems.start + index]
 }
 
 /// The literal length of an array type.
@@ -260,8 +272,9 @@ fn mark_copy(_ file: ref File, _ generics: mut MemVec<Generic>, _ name: ref MemB
     }
 }
 
-/// Records that decoding builds arrays of every type parameter inside `ty` through `Option`
-/// and nested arrays, as `Option<T>` and `[T; 2]` need `T: Copy` when they are array elements.
+/// Records that decoding builds arrays of every type parameter inside `ty` through `Option`,
+/// nested arrays and tuples, as `Option<T>`, `[T; 2]` and `(T, u8)` need `T: Copy` when they
+/// are array elements.
 fn mark_copy_params(_ file: ref File, _ generics: mut MemVec<Generic>, _ ty: usize) {
     match ty_kind(file, ty) {
         TyKind::Path => {
@@ -276,6 +289,13 @@ fn mark_copy_params(_ file: ref File, _ generics: mut MemVec<Generic>, _ ty: usi
             }
         },
         TyKind::Array => mark_copy_params(file, mut generics, array_elem(file, ty)),
+        TyKind::Tuple => {
+            var i: usize = 0
+            while i < tuple_len(file, ty) {
+                mark_copy_params(file, mut generics, tuple_elem(file, ty, i))
+                i += 1
+            }
+        },
         TyKind::Other => {},
     }
 }
@@ -949,6 +969,18 @@ impl Program {
                 }
                 self.check(source, array_elem(file, ty), model, site, generics, true)
             },
+            TyKind::Tuple => {
+                if tuple_len(file, ty) == 0 {
+                    return fail(source, site, format!("the unit type `()` has no wire form"))
+                }
+                // Core decodes a tuple's elements, so each is nested like an array's.
+                var i: usize = 0
+                while i < tuple_len(file, ty) {
+                    self.check(source, tuple_elem(file, ty, i), model, site, generics, true)?
+                    i += 1
+                }
+                Result::Ok(())
+            },
             TyKind::Other => Result::Ok(()),
         }
     }
@@ -995,6 +1027,22 @@ impl Program {
                 }
             },
             TyKind::Array => self.copyness(source, array_elem(file, ty), generics),
+            TyKind::Tuple => {
+                // A tuple is `Copy` when all its elements are, and not when one is not.
+                var result = COPY_YES
+                var i: usize = 0
+                while i < tuple_len(file, ty) {
+                    let element = self.copyness(source, tuple_elem(file, ty, i), generics)
+                    if element == COPY_NO {
+                        return COPY_NO
+                    }
+                    if element == COPY_UNKNOWN {
+                        result = COPY_UNKNOWN
+                    }
+                    i += 1
+                }
+                result
+            },
             TyKind::Other => COPY_UNKNOWN,
         }
     }
@@ -1058,6 +1106,14 @@ impl Program {
                 let element = array_elem(file, ty)
                 self.array_element(source, element, mut generics, site)?
                 self.nested_arrays(source, element, mut generics, site)
+            },
+            TyKind::Tuple => {
+                var i: usize = 0
+                while i < tuple_len(file, ty) {
+                    self.nested_arrays(source, tuple_elem(file, ty, i), mut generics, site)?
+                    i += 1
+                }
+                Result::Ok(())
             },
             TyKind::Other => Result::Ok(()),
         }

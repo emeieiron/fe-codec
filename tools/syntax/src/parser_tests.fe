@@ -125,6 +125,75 @@ fn classifies_generic_arguments() {
     }
 }
 
+/// The number of elements of tuple type `ty`, or 999 when it is not a tuple.
+fn tuple_len(_ file: File, _ ty: usize) -> usize {
+    let node = file.types[ty]
+    match node.kind {
+        TypeKind::Tuple => node.elems.len,
+        _ => 999,
+    }
+}
+
+/// The type node of element `index` of tuple type `ty`.
+fn tuple_elem(_ file: File, _ ty: usize, _ index: usize) -> usize {
+    file.elems[file.types[ty].elems.start + index]
+}
+
+#[test]
+fn records_tuple_element_types() {
+    let file = parsed("struct S { a: (), b: (u8), c: (u8,), d: (u8, [u16; 2]), e: ((u8, u16), Option<(u8,)>), f: Option<(u8, u8)>, g: [(u8, u8); 3] }")
+    let model = file.structs[file.items[0].detail]
+    assert!(model.fields.len == 7)
+    let a = file.fields[model.fields.start].ty
+    let b = file.fields[model.fields.start + 1].ty
+    let c = file.fields[model.fields.start + 2].ty
+    let d = file.fields[model.fields.start + 3].ty
+    let e = file.fields[model.fields.start + 4].ty
+    let f = file.fields[model.fields.start + 5].ty
+    let g = file.fields[model.fields.start + 6].ty
+    // `()` has no elements. fe check reads `(T)` as the one-tuple `(T,)`, and so does the parser.
+    assert!(tuple_len(file, a) == 0)
+    assert!(tuple_len(file, b) == 1 && tuple_len(file, c) == 1)
+    assert!(same(file.type_text(tuple_elem(file, b, 0)), "u8"))
+    assert!(same(file.type_text(tuple_elem(file, c, 0)), "u8"))
+    assert!(same(file.type_text(c), "(u8,)"))
+    assert!(tuple_len(file, d) == 2)
+    assert!(same(file.type_text(tuple_elem(file, d, 0)), "u8"))
+    assert!(same(file.type_text(tuple_elem(file, d, 1)), "[u16; 2]"))
+    match file.types[tuple_elem(file, d, 1)].kind {
+        TypeKind::Array => {},
+        _ => assert!(false),
+    }
+    // Nested tuples keep their own elements, in order.
+    assert!(tuple_len(file, e) == 2)
+    let inner = tuple_elem(file, e, 0)
+    assert!(tuple_len(file, inner) == 2)
+    assert!(same(file.type_text(tuple_elem(file, inner, 0)), "u8"))
+    assert!(same(file.type_text(tuple_elem(file, inner, 1)), "u16"))
+    let option = tuple_elem(file, e, 1)
+    assert!(same(file.type_text(option), "Option<(u8,)>"))
+    let argument = file.args[file.segments[file.types[option].segments.start].args.unwrap().start]
+    let one = argument.ty.unwrap()
+    assert!(tuple_len(file, one) == 1)
+    assert!(same(file.type_text(tuple_elem(file, one, 0)), "u8"))
+    // Tuples as generic arguments and array elements.
+    let argument = file.args[file.segments[file.types[f].segments.start].args.unwrap().start]
+    assert!(tuple_len(file, argument.ty.unwrap()) == 2)
+    let element = file.types[g].elem.unwrap()
+    assert!(tuple_len(file, element) == 2)
+    // Other types have no elements.
+    assert!(file.types[file.fields[model.fields.start].ty].elems.len == 0)
+    assert!(tuple_len(file, element) == 2 && file.types[g].elems.len == 0)
+}
+
+#[test]
+fn rejects_malformed_tuple_types() {
+    assert!(error_offset("struct S { a: (u8 u8) }") != 999999)
+    assert!(error_offset("struct S { a: (u8,, u8) }") != 999999)
+    assert!(error_offset("struct S { a: (u8, ) }") == 999999)
+    assert!(error_offset("struct S { a: (u8, u8 }") != 999999)
+}
+
 #[test]
 fn skips_other_items_and_reads_impl_headers() {
     let file = parsed("fn f<const N: usize>(x: [u8; N]) -> u8 where N > 0 {\n    if x { 1 } else { 2 }\n}\nconst X: u8 =\n    1 + 2\nimpl<T> Eq for Foo<T> where T: Eq {}\nimpl Foo {}\nstruct S { a: u8 }")

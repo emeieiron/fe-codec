@@ -211,7 +211,7 @@ fn eip712_type(
                 ))
             }
         },
-        TyKind::Other => Result::Err(format!("this type has no EIP-712 form")),
+        TyKind::Tuple | TyKind::Other => Result::Err(format!("this type has no EIP-712 form")),
     }
 }
 

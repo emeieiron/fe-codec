@@ -10,6 +10,7 @@ use ingot::typed::{
     Asset,
     Conflict,
     Contact,
+    Coordinates,
     EIP712Domain,
     Flat,
     Grid,
@@ -25,6 +26,7 @@ use ingot::typed::{
     Party,
     Person,
     Ranked,
+    Route,
     Terms,
     TooLong,
 }
@@ -268,6 +270,18 @@ fn rejects_types_eip712_cannot_express() {
     expect_field(eip712.type_hash<TooLong>(), ErrorKind::Unsupported, "data")
     expect_field(eip712.type_hash<Conflict>(), ErrorKind::Unsupported, "Holder")
     expect_error(eip712.type_hash<EIP712Domain>(), ErrorKind::Unsupported)
+    // EIP-712 has no tuples: describing one fails, so no hash is produced for a value holding one.
+    expect_field(eip712.type_hash<Coordinates>(), ErrorKind::Unsupported, "point")
+    expect_field(eip712.type_hash<Route>(), ErrorKind::Unsupported, "stops")
+    expect_field(eip712.encode_type<Coordinates, 64>(), ErrorKind::Unsupported, "point")
+    expect_field(eip712.hash_struct(Coordinates { point: (1, 2) }), ErrorKind::Unsupported, "point")
+    expect_field(eip712.hash_struct(Route { stops: [(1, 2), (3, 4)] }), ErrorKind::Unsupported, "stops")
+    expect_field(
+        eip712.typed_data_json<Coordinates, 256>(mail_domain(), Coordinates { point: (1, 2) }),
+        ErrorKind::Unsupported,
+        "point",
+    )
+    expect_error(eip712.type_hash<(u8, u8)>(), ErrorKind::Unsupported)
     expect_error(eip712.type_hash<u64>(), ErrorKind::Unsupported)
     // A variant ID must fit the uint8 an enum is encoded as.
     assert!(eip712.type_hash<Ranked>().is_ok())

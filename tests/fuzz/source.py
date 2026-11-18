@@ -146,6 +146,25 @@ class Renderer:
             self.emit_type(s, t[1], rng, style)
             s.g(self.tight_or_space(rng, style["tspace"]))
             s.t(">")
+        elif k == "tup":
+            # `(T)` is the same one-tuple as `(T,)`, and a trailing comma is optional.
+            s.t("(")
+            s.g(self.tight_or_space(rng, style["tspace"]))
+            for i, e in enumerate(t[1]):
+                if i:
+                    s.t(",")
+                    s.g(" " if rng.random() < 0.85 else "")
+                self.emit_type(s, e, rng, style)
+                s.g(self.tight_or_space(rng, style["tspace"]))
+            if len(t[1]) == 1:
+                if rng.random() < 0.5:
+                    s.t(",")
+                else:
+                    self.stats["tuple: parenthesized single type"] += 1
+            elif rng.random() < 0.15:
+                s.t(",")
+                s.g(self.tight_or_space(rng, style["tspace"]))
+            s.t(")")
         elif k == "arr":
             s.t("[")
             s.g(self.tight_or_space(rng, style["tspace"]), "x")

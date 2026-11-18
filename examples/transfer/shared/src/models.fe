@@ -66,6 +66,16 @@ pub struct Page<T, const N: usize> { pub items: [T; N], pub next: Option<u64> }
 #[serializable]
 pub struct Slots { pub values: [Option<u8>; 3] }
 
+/// Tuples are fixed-length sequences: as fields, nested, in an array and inside an `Option`.
+#[serializable]
+pub struct Waypoint {
+    pub at: (u8, Text<8>),
+    pub bounds: ((i16, i16), (i16, i16)),
+    pub legs: [(u8, bool); 2],
+    pub next: Option<(u16, u64)>,
+    pub tag: (u8,),
+}
+
 /// A field whose type has a handwritten serializer in another module.
 #[serializable]
 pub struct Reading { pub at: u64, pub temperature: Celsius }

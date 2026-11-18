@@ -168,6 +168,18 @@ fn put_shape(_ out: mut MemBuffer, _ file: ref File, _ ty: usize) {
                 },
             }
         },
+        TypeKind::Tuple => {
+            put(mut out, "tuple(")
+            var i: usize = 0
+            while i < node.elems.len {
+                if i > 0 {
+                    out.push(b';')
+                }
+                put_shape(mut out, file, file.elems[node.elems.start + i])
+                i += 1
+            }
+            out.push(b')')
+        },
         TypeKind::Other => put(mut out, "other"),
     }
 }

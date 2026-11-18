@@ -809,6 +809,11 @@ pub struct Types {
     pub f: Vec<Option<u8>>,
     pub g: [u8; 1_000],
     pub h: *u8,
+    pub i: (),
+    pub j: (u8,),
+    pub k: (u8),
+    pub l: Option<(u8, (bool, u16),)>,
+    pub m: [(u8, bool); 2],
 }
 """,
     "synth_mixed": """\

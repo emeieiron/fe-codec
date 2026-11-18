@@ -101,6 +101,13 @@ pub struct Holder<T> { pub item: T }
 #[serializable]
 pub struct Conflict { pub small: Holder<u8>, pub large: Holder<u16> }
 
+/// EIP-712 has no tuples, as a field or as an array element.
+#[serializable]
+pub struct Coordinates { pub point: (u8, u8) }
+
+#[serializable]
+pub struct Route { pub stops: [(u8, u8); 2] }
+
 /// A user type may not take the domain's reserved name.
 #[serializable]
 pub struct EIP712Domain { pub name: Text<8> }

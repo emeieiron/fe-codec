@@ -2,8 +2,11 @@ use ingot::{
     BoundedBuffer,
     CodecError,
     CodecResult,
+    Describe,
+    Describer,
     ErrorKind,
     Frame,
+    Schema,
     Text,
     TextWriter,
     checked_signed,
@@ -116,4 +119,191 @@ fn errors_keep_the_innermost_field() {
     assert!(outer.field().unwrap().as_bytes().equals(BoundedBuffer<5>::from_array(label)))
     assert!(outer.offset == 3 && outer.kind == ErrorKind::InvalidUtf8)
     assert!(CodecError::at(kind: ErrorKind::UnknownField, offset: 0).field().is_none())
+}
+
+/// Records the calls a description makes: 1 for `bool`, the width of an integer, 100 + the arity
+/// for `begin_tuple` and 200 + the arity for `end_tuple`. Other calls are not made.
+struct Trace { events: [usize; 16], len: usize }
+
+impl Trace {
+    fn new() -> Self {
+        Self { events: [0; 16], len: 0 }
+    }
+
+    fn push(mut self, _ event: usize) -> CodecResult<()> {
+        self.events[self.len] = event
+        self.len += 1
+        Result::Ok(())
+    }
+}
+
+impl Describer for Trace {
+    fn bool(mut self) -> CodecResult<()> {
+        self.push(1)
+    }
+
+    fn unsigned(mut self, _ bits: u16) -> CodecResult<()> {
+        self.push(bits as usize)
+    }
+
+    fn signed(mut self, _ bits: u16) -> CodecResult<()> {
+        self.push(bits as usize)
+    }
+
+    fn text(mut self, _ capacity: usize) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+
+    fn bytes(mut self, _ capacity: usize) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+
+    fn fixed_bytes(mut self, _ length: usize) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+
+    fn address(mut self) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+
+    fn begin_option(mut self) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+
+    fn end_option(mut self) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+
+    fn begin_sequence(mut self, _ length: usize) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+
+    fn end_sequence(mut self, _ length: usize) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+
+    fn begin_tuple(mut self, _ length: usize) -> CodecResult<()> {
+        self.push(100 + length)
+    }
+
+    fn end_tuple(mut self, _ length: usize) -> CodecResult<()> {
+        self.push(200 + length)
+    }
+
+    fn enumeration<V: Schema>(mut self) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+
+    fn begin_record<R: Schema>(mut self) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+
+    fn field<R: Schema>(mut self, _ position: usize) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+
+    fn end_record<R: Schema>(mut self) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+}
+
+/// A describer that leaves the tuple methods at their defaults.
+struct NoTuples {}
+
+impl Describer for NoTuples {
+    fn bool(mut self) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn unsigned(mut self, _ bits: u16) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn signed(mut self, _ bits: u16) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn text(mut self, _ capacity: usize) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn bytes(mut self, _ capacity: usize) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn fixed_bytes(mut self, _ length: usize) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn address(mut self) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn begin_option(mut self) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn end_option(mut self) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn begin_sequence(mut self, _ length: usize) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn end_sequence(mut self, _ length: usize) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn enumeration<V: Schema>(mut self) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn begin_record<R: Schema>(mut self) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn field<R: Schema>(mut self, _ position: usize) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn end_record<R: Schema>(mut self) -> CodecResult<()> {
+        Result::Ok(())
+    }
+}
+
+#[test]
+fn tuples_describe_their_elements_in_order() {
+    var one = Trace::new()
+    assert!(<(u8,) as Describe>::describe(mut one).is_ok())
+    assert!(one.len == 3 && one.events[0] == 101 && one.events[1] == 8 && one.events[2] == 201)
+
+    var nested = Trace::new()
+    assert!(<(u16, (bool, i32)) as Describe>::describe(mut nested).is_ok())
+    let expected: [usize; 7] = [102, 16, 102, 1, 32, 202, 202]
+    var index: usize = 0
+    while index < 7 {
+        assert!(nested.events[index] == expected[index])
+        index += 1
+    }
+    assert!(nested.len == 7)
+
+    var eight = Trace::new()
+    assert!(<(u8, u16, u32, u64, i8, i16, i32, i64) as Describe>::describe(mut eight).is_ok())
+    let order: [usize; 10] = [108, 8, 16, 32, 64, 8, 16, 32, 64, 208]
+    index = 0
+    while index < 10 {
+        assert!(eight.events[index] == order[index])
+        index += 1
+    }
+    assert!(eight.len == 10)
+}
+
+#[test]
+fn describers_reject_tuples_unless_they_opt_in() {
+    var plain = NoTuples {}
+    assert!(kind(plain.begin_tuple(2)) == 16)
+    assert!(kind(plain.end_tuple(2)) == 16)
+    assert!(kind(<(u8, bool) as Describe>::describe(mut plain)) == 16)
+    assert!(kind(<[(u8, u8); 2] as Describe>::describe(mut plain)) == 16)
 }

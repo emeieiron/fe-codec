@@ -268,6 +268,7 @@ pub fn parse(_ lexed: own Lexed) -> Result<SyntaxError, File> {
         types: MemVec<TypeNode>::new(),
         segments: MemVec<Segment>::new(),
         args: MemVec<GenericArg>::new(),
+        elems: MemVec<usize>::new(),
     }
     var parser = Parser { file, codes, i: 0, nl: true, ctx: 0, cur_pos: 0, end_prev: 0, last: 0 }
     match parser.parse_items() {
@@ -980,7 +981,7 @@ impl Parser {
         var fields = empty_run(self.file.fields.len())
         if self.code() == K_LPAREN {
             kind = VariantKind::Tuple
-            self.parse_type_tuple()?
+            let _elems = self.parse_type_tuple()?
         } else if self.code() == K_LBRACE {
             kind = VariantKind::Record
             fields = self.parse_record_fields()?
@@ -990,24 +991,34 @@ impl Parser {
         Result::Ok(())
     }
 
-    /// `(` type, ... `)` as a tuple type or tuple variant; returns nothing.
-    fn parse_type_tuple(mut self) -> Result<SyntaxError, ()> {
+    /// `(` type, ... `)` as a tuple type or tuple variant. Returns the run of `File::elems`
+    /// holding the element type nodes; a variant does not use it.
+    fn parse_type_tuple(mut self) -> Result<SyntaxError, Run> {
         let saved_ctx = self.ctx
         self.ctx = self.ctx | bit(K_RPAREN) | bit(K_COMMA)
         self.nl = true
         self.eat()
+        // Element types are collected aside so a tuple's elements end up contiguous, after
+        // the elements of the tuples inside it.
+        var found = MemVec<usize>::new()
         while true {
             self.nl = true
             if self.code() == K_RPAREN {
                 self.eat()
                 break
             }
-            self.parse_type()?
+            found.push(self.parse_type()?)
             self.nl = true
             self.list_sep(K_RPAREN)?
         }
         self.ctx = saved_ctx
-        Result::Ok(())
+        let start = self.file.elems.len()
+        var i: usize = 0
+        while i < found.len() {
+            self.file.elems.push(found[i])
+            i += 1
+        }
+        Result::Ok(Run { start, len: found.len() })
     }
 
     fn parse_record_fields(mut self) -> Result<SyntaxError, Run> {
@@ -1411,7 +1422,7 @@ impl Parser {
             && (self.file.lexed.is(t, "Fn") || self.file.lexed.is(t, "FnMut"))
             && self.code_at(next) == K_LPAREN {
             self.eat()
-            self.parse_type_tuple()?
+            let _elems = self.parse_type_tuple()?
             self.nl = false
             if self.code() == K_ARROW {
                 self.eat()
@@ -1574,9 +1585,9 @@ impl Parser {
     // ---- types ----
 
     fn push_type(mut self, _ kind: TypeKind, _ first: usize, _ segments: Run, _ parent_args: bool,
-        _ elem: Option<usize>, _ len: Option<Span>) -> usize {
+        _ elem: Option<usize>, _ len: Option<Span>, _ elems: Run) -> usize {
         let start = self.start_of(first)
-        self.file.types.push(TypeNode { kind, first, last: self.last, start, segments, parent_args, elem, len })
+        self.file.types.push(TypeNode { kind, first, last: self.last, start, segments, parent_args, elem, len, elems })
         self.file.types.len() - 1
     }
 
@@ -1587,21 +1598,22 @@ impl Parser {
         let c = self.code()
         self.nl = false
         let none_run = empty_run(self.file.segments.len())
+        let no_elems = empty_run(self.file.elems.len())
         var result: usize = 0
         if c == K_STAR || c == K_STAR2 {
             self.eat()
             self.parse_type()?
-            result = self.push_type(TypeKind::Other, first, none_run, false, Option::None, Option::None)
+            result = self.push_type(TypeKind::Other, first, none_run, false, Option::None, Option::None, no_elems)
         } else if c == K_MUT || c == K_REF || c == K_OWN {
             self.eat()
             if c == K_MUT && self.code() == K_QUEST && self.start_of(self.skip(self.i)) == self.end_prev {
                 self.eat()
             }
             self.parse_type()?
-            result = self.push_type(TypeKind::Other, first, none_run, false, Option::None, Option::None)
+            result = self.push_type(TypeKind::Other, first, none_run, false, Option::None, Option::None, no_elems)
         } else if c == K_LPAREN {
-            self.parse_type_tuple()?
-            result = self.push_type(TypeKind::Other, first, none_run, false, Option::None, Option::None)
+            let elems = self.parse_type_tuple()?
+            result = self.push_type(TypeKind::Tuple, first, none_run, false, Option::None, Option::None, elems)
         } else if c == K_LBRACK {
             let saved_ctx = self.ctx
             self.ctx = self.ctx | bit(K_SEMI) | bit(K_RBRACK)
@@ -1626,10 +1638,10 @@ impl Parser {
             }
             self.eat()
             self.ctx = saved_ctx
-            result = self.push_type(TypeKind::Array, first, none_run, false, Option::Some(elem), Option::Some(len))
+            result = self.push_type(TypeKind::Array, first, none_run, false, Option::Some(elem), Option::Some(len), no_elems)
         } else if c == K_BANG {
             self.eat()
-            result = self.push_type(TypeKind::Other, first, none_run, false, Option::None, Option::None)
+            result = self.push_type(TypeKind::Other, first, none_run, false, Option::None, Option::None, no_elems)
         } else {
             let (segments, parent_args) = self.parse_path()?
             if self.code() == K_LT {
@@ -1637,7 +1649,7 @@ impl Parser {
                 // reports why the segment did not take it.
                 let _extra = self.parse_generic_args()?
             }
-            result = self.push_type(TypeKind::Path, first, segments, parent_args, Option::None, Option::None)
+            result = self.push_type(TypeKind::Path, first, segments, parent_args, Option::None, Option::None, no_elems)
         }
         self.nl = saved_nl
         Result::Ok(result)

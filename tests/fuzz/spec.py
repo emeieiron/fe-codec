@@ -9,6 +9,7 @@ Types are tuples:
     ('int', signed, bits)  ('bool',)  ('addr',)
     ('text', n)  ('buf', n)  ('packed', n)       n is an int, or a const parameter's name
     ('opt', t)  ('arr', t, n)                    n likewise
+    ('tup', (t, ...))                            1 to 8 element types
     ('ref', name, args)                          a local record or enum; args are types or ints
     ('param', name)                              a type parameter of the enclosing generic record
 """
@@ -122,6 +123,8 @@ def fe_type(t):
         return "Option<%s>" % fe_type(t[1])
     if k == "arr":
         return "[%s; %s]" % (fe_type(t[1]), t[2])
+    if k == "tup":
+        return "(%s%s)" % (", ".join(fe_type(e) for e in t[1]), "," if len(t[1]) == 1 else "")
     if k == "ref":
         return t[1] + ("<%s>" % ", ".join(fe_arg(a) for a in t[2]) if t[2] else "")
     if k == "param":
@@ -146,6 +149,8 @@ def subst(t, env):
         return ("opt", subst(t[1], env))
     if k == "arr":
         return ("arr", subst(t[1], env), size(t[2]))
+    if k == "tup":
+        return ("tup", tuple(subst(e, env) for e in t[1]))
     if k == "ref":
         return ("ref", t[1], tuple(subst(a, env) if isinstance(a, tuple) else size(a) for a in t[2]))
     if k == "param":
@@ -157,6 +162,9 @@ def walk(t):
     yield t
     if t[0] == "opt" or t[0] == "arr":
         yield from walk(t[1])
+    elif t[0] == "tup":
+        for e in t[1]:
+            yield from walk(e)
     elif t[0] == "ref":
         for a in t[2]:
             if isinstance(a, tuple):
@@ -171,12 +179,30 @@ def instance_fields(spec, t):
     return [(f.name, subst(f.ty, env), f.id) for f in m.sorted_fields()]
 
 
+def weight(spec, t):
+    """How many type nodes `t` expands to: scalars and enums count 1, arrays count their length
+    times their element, and a record is 1 plus its fields, instance arguments substituted. A const
+    parameter used as a length counts as 3."""
+    k = t[0]
+    if k == "opt":
+        return 1 + weight(spec, t[1])
+    if k == "arr":
+        return 1 + (t[2] if isinstance(t[2], int) else 3) * weight(spec, t[1])
+    if k == "tup":
+        return 1 + sum(weight(spec, e) for e in t[1])
+    if k == "ref" and spec.model(t[1]).is_record:
+        return 1 + sum(weight(spec, ft) for _, ft, _ in instance_fields(spec, t))
+    return 1
+
+
 def is_copy(spec, t):
     k = t[0]
     if k == "opt":
         return is_copy(spec, t[1])
     if k == "arr":
         return is_copy(spec, t[1])
+    if k == "tup":
+        return all(is_copy(spec, e) for e in t[1])
     if k == "ref":
         m = spec.model(t[1])
         return m.copy_impl and not m.generics
@@ -190,6 +216,8 @@ def uses_array(t):
         return any(w[0] == "param" for w in walk(t[1]))
     if k == "opt":
         return uses_array(t[1])
+    if k == "tup":
+        return any(uses_array(e) for e in t[1])
     return False
 
 
@@ -297,6 +325,8 @@ def gen_value(spec, rng, t):
         return None if rng.random() < 0.4 else gen_value(spec, rng, t[1])
     if k == "arr":
         return [gen_value(spec, rng, t[1]) for _ in range(t[2])]
+    if k == "tup":
+        return [gen_value(spec, rng, e) for e in t[1]]
     if k == "ref":
         m = spec.model(t[1])
         if not m.is_record:
@@ -325,6 +355,8 @@ def to_js(spec, t, v):
         return None if v is None else to_js(spec, t[1], v)
     if k == "arr":
         return [to_js(spec, t[1], x) for x in v]
+    if k == "tup":
+        return [to_js(spec, e, x) for e, x in zip(t[1], v)]
     m = spec.model(t[1])
     if not m.is_record:
         return v
@@ -339,6 +371,8 @@ def to_cbor(spec, t, v):
         return None if v is None else to_cbor(spec, t[1], v)
     if k == "arr":
         return [to_cbor(spec, t[1], x) for x in v]
+    if k == "tup":
+        return [to_cbor(spec, e, x) for e, x in zip(t[1], v)]
     m = spec.model(t[1])
     if not m.is_record:
         return next(x.id for x in m.variants if x.name == v)
@@ -415,6 +449,9 @@ def noisy_json(spec, rng, t, v, drop=None, counter=None):
         if k == "arr":
             items = [ws() + go(t[1], x) + ws() for x in v]
             return "[" + ws() + ",".join(items) + ws() + "]"
+        if k == "tup":
+            items = [ws() + go(e, x) + ws() for e, x in zip(t[1], v)]
+            return "[" + ws() + ",".join(items) + ws() + "]"
         m = spec.model(t[1])
         if not m.is_record:
             return '"' + v + '"'
@@ -443,6 +480,9 @@ def record_occurrences(spec, t, v, out=None):
     elif k == "arr":
         for x in v:
             record_occurrences(spec, t[1], x, out)
+    elif k == "tup":
+        for e, x in zip(t[1], v):
+            record_occurrences(spec, e, x, out)
     elif k == "ref" and spec.model(t[1]).is_record:
         out.append((len(out), t, v))
         for name, ft, _ in instance_fields(spec, t):
@@ -460,6 +500,8 @@ def dropped_value(spec, t, v, occurrence, name):
             return None if v is None else go(t[1], v)
         if k == "arr":
             return [go(t[1], x) for x in v]
+        if k == "tup":
+            return [go(e, x) for e, x in zip(t[1], v)]
         if k == "ref" and spec.model(t[1]).is_record:
             mine = count[0]
             count[0] += 1
@@ -539,7 +581,7 @@ def eligible_for_eip712(spec, m):
             structs += 1
             for f in c.fields:
                 for w in walk(f.ty):
-                    if w[0] == "opt":
+                    if w[0] == "opt" or w[0] == "tup":
                         return False
                     if w[0] == "packed" and not 1 <= w[1] <= 32:
                         return False

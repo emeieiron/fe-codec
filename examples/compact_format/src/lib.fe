@@ -8,7 +8,8 @@
 //! - Integers are fixed-width, big-endian, two's complement for signed types.
 //! - Text and byte strings are a ULEB128 length and the bytes. Lengths and variant IDs use
 //!   the shortest ULEB128 form; a longer one is rejected as non-canonical.
-//! - Sequences have no header, because their length is part of the type.
+//! - Sequences, which carry arrays and tuples, have no header, because their length is part of
+//!   the type.
 
 use fe_codec_core::{BoundedBuffer, CodecResult, Deserialize, Format, Limits, Serialize}
 use ingot::encoder::CompactEncoder

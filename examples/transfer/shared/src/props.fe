@@ -58,6 +58,16 @@ pub fn every_narrow_integer_round_trips(value: u64) -> bool {
         && round_trips<i64, 32>(signed)
 }
 
+/// A tuple is an array of its elements, so it survives every format at any nesting.
+#[property(cases = 300)]
+pub fn tuples_round_trip(a: u8, b: i64, c: bool, d: u64) -> bool {
+    round_trips<(u8, i64, bool), 64>((a, b, c))
+        && round_trips<((u8, bool), (u64,)), 64>(((a, c), (d,)))
+        && round_trips<Option<(u64, i64)>, 64>(Option::Some((d, b)))
+        && round_trips<Option<(u64, i64)>, 64>(Option::None)
+        && round_trips<[(bool, u8); 2], 64>([(c, a), (!c, a)])
+}
+
 #[property(cases = 500)]
 pub fn every_wide_integer_round_trips(a: u64, b: u64, c: u64, d: u64) -> bool {
     let unsigned = wide(a, b, c, d)

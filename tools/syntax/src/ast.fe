@@ -180,6 +180,7 @@ impl Copy for Variant {}
 pub enum TypeKind {
     Path,
     Array,
+    Tuple,
     Other,
 }
 
@@ -187,7 +188,9 @@ impl Copy for TypeKind {}
 
 /// A type. A path type has `segments` (a run of `File::segments`) and `parent_args` set when a
 /// segment before the last has generic arguments; an array has its element type node and the
-/// tokens of its length expression; anything else is `Other`.
+/// tokens of its length expression; a tuple has `elems`, a run of `File::elems` holding the type
+/// node of each element, in order (`()` has none, and `(T)` and `(T,)` both have one); anything
+/// else is `Other`.
 pub struct TypeNode {
     pub kind: TypeKind,
     pub first: usize,
@@ -197,6 +200,7 @@ pub struct TypeNode {
     pub parent_args: bool,
     pub elem: Option<usize>,
     pub len: Option<Span>,
+    pub elems: Run,
 }
 
 impl Copy for TypeNode {}
@@ -246,6 +250,7 @@ pub struct File {
     pub types: MemVec<TypeNode>,
     pub segments: MemVec<Segment>,
     pub args: MemVec<GenericArg>,
+    pub elems: MemVec<usize>,
 }
 
 impl File {

@@ -16,6 +16,9 @@ REQUIRED = (
        "generic: type parameter", "generic: const parameter", "generic: Copy bound", "generic: instantiation",
        "generic: instantiated with a local record", "generic: instantiated with a generic",
        "generic: Option of a parameter", "generic: array of Option of a parameter",
+       "type: tuple", "tuple: one element", "tuple: eight elements", "tuple: nested", "tuple: array of tuples",
+       "tuple: Option of tuple", "tuple: of a generic parameter", "tuple: with a local record",
+       "tuple: parenthesized single type", "test: tuples have no EIP-712 form",
        "ids: explicit decimal", "ids: explicit hex", "ids: explicit with underscores", "ids: on enum variants",
        "ids: sparse", "ids: out of order", "ids: wider than 32 bits",
        "eip712: root", "eip712: struct reached from a root", "eip712: array of structs", "eip712: nested arrays",
@@ -116,6 +119,8 @@ def kinds(spec, model, t, c, top=False):
             c["array: Option of array"] += 1
         if t[1][0] == "param":
             c["generic: Option of a parameter"] += 1
+        if t[1][0] == "tup":
+            c["tuple: Option of tuple"] += 1
         kinds(spec, model, t[1], c)
     elif k == "arr":
         c["type: [T; N]"] += 1
@@ -130,6 +135,8 @@ def kinds(spec, model, t, c, top=False):
                 c["generic: array of Option of a parameter"] += 1
         if e[0] == "param":
             c["array: of a generic parameter"] += 1
+        if e[0] == "tup":
+            c["tuple: array of tuples"] += 1
         if e[0] == "ref":
             em = spec.model(e[1])
             if em.is_record:
@@ -139,6 +146,20 @@ def kinds(spec, model, t, c, top=False):
         if top and isinstance(t[2], int) and unrolled(spec, e):
             c["array: unrolled (not Copy)"] += 1
         kinds(spec, model, e, c)
+    elif k == "tup":
+        c["type: tuple"] += 1
+        if len(t[1]) == 1:
+            c["tuple: one element"] += 1
+        if len(t[1]) == 8:
+            c["tuple: eight elements"] += 1
+        for e in t[1]:
+            if e[0] == "tup":
+                c["tuple: nested"] += 1
+            if e[0] == "param":
+                c["tuple: of a generic parameter"] += 1
+            if e[0] == "ref" and spec.model(e[1]).is_record:
+                c["tuple: with a local record"] += 1
+            kinds(spec, model, e, c)
     elif k == "ref":
         for a in t[2]:
             if isinstance(a, tuple):
@@ -159,6 +180,8 @@ def known_copy(spec, t):
         return True
     if k in ("opt", "arr"):
         return known_copy(spec, t[1])
+    if k == "tup":
+        return all(known_copy(spec, e) for e in t[1])
     if k == "ref":
         m = spec.model(t[1])
         return m.copy_impl and not m.generics

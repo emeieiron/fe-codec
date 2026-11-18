@@ -64,6 +64,16 @@ cases = {
   'SLOTS': ({'values': [1, None, 255]}, {1: [1, None, 255]}),
   'READING': ({'at': 5, 'temperature': '-12.5'}, {1: 5, 2: '-12.5'}),
   'PAIRS': ({'first': 2, 'second': 4}, {1: 2, 3: 4}),
+  # A tuple is an array of its elements, at the root and as a field.
+  'TUPLE': ([7, 'hi'], [7, 'hi']),
+  'WAYPOINT': ({'at': [7, 'hi'], 'bounds': [[-1, 2], [3, -4]], 'legs': [[1, True], [2, False]],
+                'next': [300, 18446744073709551615], 'tag': [5]},
+               {1: [7, 'hi'], 2: [[-1, 2], [3, -4]], 3: [[1, True], [2, False]],
+                4: [300, 18446744073709551615], 5: [5]}),
+  'WAYPOINT_NO_NEXT': ({'at': [7, 'hi'], 'bounds': [[-1, 2], [3, -4]], 'legs': [[1, True], [2, False]],
+                     'next': None, 'tag': [5]},
+                    {1: [7, 'hi'], 2: [[-1, 2], [3, -4]], 3: [[1, True], [2, False]],
+                     4: None, 5: [5]}),
 }
 for name, (j, c) in cases.items():
     jt = js(j); cb = cbor(c)

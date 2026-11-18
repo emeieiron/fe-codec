@@ -40,7 +40,8 @@ The generator rejects only what the compiler cannot catch:
 - `Option<Option<T>>`, which cannot round-trip;
 - a local type used by a model but not marked `#[serializable]`;
 - an array whose elements would need `Copy` to be decoded;
-- an empty array inside another type, which core cannot decode;
+- an empty array inside another type, including inside a tuple, which core cannot decode;
+- the unit type `()`, which has no wire form;
 - duplicate or missing `#[codec_id]`s, a zero field ID, and IDs that aren't 64-bit integer
   literals;
 - names longer than 31 bytes, private fields, generic enums, enums with payloads, `where`

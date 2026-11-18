@@ -41,6 +41,7 @@ use ingot::models::{
     StableTransfer,
     Status,
     Transfer,
+    Waypoint,
     Wallet,
     Wide,
 }
@@ -105,6 +106,28 @@ const READING_JSON: [u8; 30] = "{\"at\":5,\"temperature\":\"-12.5\"}"
 const READING_CBOR: [u8; 10] = [0xa2, 0x01, 0x05, 0x02, 0x65, 0x2d, 0x31, 0x32, 0x2e, 0x35]
 const PAIRS_JSON: [u8; 22] = "{\"first\":2,\"second\":4}"
 const PAIRS_CBOR: [u8; 5] = [0xa2, 0x01, 0x02, 0x03, 0x04]
+const TUPLE_JSON: [u8; 8] = "[7,\"hi\"]"
+const TUPLE_CBOR: [u8; 5] = [0x82, 0x07, 0x62, 0x68, 0x69]
+const WAYPOINT_JSON: [u8; 112] = "{\"at\":[7,\"hi\"],\"bounds\":[[-1,2],[3,-4]],\"legs\":[[1,true],[2,false]],\"next\":[300,18446744073709551615],\"tag\":[5]}"
+const WAYPOINT_CBOR: [u8; 40] = [0xa5, 0x01, 0x82, 0x07, 0x62, 0x68, 0x69, 0x02, 0x82, 0x82, 0x20, 0x02, 0x82, 0x03, 0x23, 0x03, 0x82, 0x82, 0x01, 0xf5, 0x82, 0x02, 0xf4, 0x04, 0x82, 0x19, 0x01, 0x2c, 0x1b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x05, 0x81, 0x05]
+const WAYPOINT_NO_NEXT_JSON: [u8; 78] = "{\"at\":[7,\"hi\"],\"bounds\":[[-1,2],[3,-4]],\"legs\":[[1,true],[2,false]],\"tag\":[5]}"
+const WAYPOINT_NO_NEXT_CBOR: [u8; 26] = [0xa4, 0x01, 0x82, 0x07, 0x62, 0x68, 0x69, 0x02, 0x82, 0x82, 0x20, 0x02, 0x82, 0x03, 0x23, 0x03, 0x82, 0x82, 0x01, 0xf5, 0x82, 0x02, 0xf4, 0x05, 0x81, 0x05]
+
+fn hi() -> Text<8> {
+    must(Text<8>::from_array("hi"))
+}
+
+fn waypoint(_ next: Option<(u16, u64)>) -> Waypoint {
+    Waypoint { at: (7, hi()), bounds: ((-1, 2), (3, -4)), legs: [(1, true), (2, false)], next, tag: (5,) }
+}
+
+fn check_waypoint(_ value: Waypoint, _ next: Option<(u16, u64)>) {
+    assert!(value.at.0 == 7 && value.at.1.equals(hi()))
+    assert!(value.bounds == ((-1, 2), (3, -4)))
+    assert!(value.legs == [(1, true), (2, false)])
+    assert!(value.next == next)
+    assert!(value.tag == (5,))
+}
 
 fn golden_batch() -> CodecResult<Batch> {
     let transfer = Transfer {
@@ -372,7 +395,123 @@ fn json_reports_schema_and_text_errors_with_field_names() {
     expect_field(decodes<Batch, Json, 76>(Json::new(), nested), ErrorKind::MissingField, 42, "label")
 }
 
+#[test]
+fn json_writes_tuples_as_arrays() {
+    let json = Json::new()
+    let pair: (u8, Text<8>) = (7, hi())
+    assert!(encodes(json, pair, TUPLE_JSON))
+    let decoded = must(decodes<(u8, Text<8>), Json, 8>(json, TUPLE_JSON))
+    assert!(decoded.0 == 7 && decoded.1.equals(hi()))
+    let full = Option::Some((300, 18446744073709551615))
+    assert!(encodes(json, waypoint(full), WAYPOINT_JSON))
+    check_waypoint(must(decodes<Waypoint, Json, 112>(json, WAYPOINT_JSON)), full)
+    // A `None` tuple is left out like any other optional field, and `null` is also accepted.
+    assert!(encodes(json, waypoint(Option::None), WAYPOINT_NO_NEXT_JSON))
+    check_waypoint(must(decodes<Waypoint, Json, 78>(json, WAYPOINT_NO_NEXT_JSON)), Option::None)
+    let null_next: [u8; 90] = "{\"at\":[7,\"hi\"],\"bounds\":[[-1,2],[3,-4]],\"legs\":[[1,true],[2,false]],\"next\":null,\"tag\":[5]}"
+    check_waypoint(must(decodes<Waypoint, Json, 90>(json, null_next)), Option::None)
+}
+
+#[test]
+fn json_writes_tuples_of_every_arity_nested_and_at_the_root() {
+    let json = Json::new()
+    assert!(vector<(u8,), Json, 3>(json, (1,), "[1]"))
+    assert!(vector<(u8, u8), Json, 5>(json, (1, 2), "[1,2]"))
+    assert!(vector<(u8, u8, u8), Json, 7>(json, (1, 2, 3), "[1,2,3]"))
+    assert!(vector<(u8, u8, u8, u8), Json, 9>(json, (1, 2, 3, 4), "[1,2,3,4]"))
+    assert!(vector<(u8, u8, u8, u8, u8), Json, 11>(json, (1, 2, 3, 4, 5), "[1,2,3,4,5]"))
+    assert!(vector<(u8, u8, u8, u8, u8, u8), Json, 13>(json, (1, 2, 3, 4, 5, 6), "[1,2,3,4,5,6]"))
+    // Core implements `Eq` for tuples of up to six elements, so the larger ones are compared by element.
+    let seven: (u8, u8, u8, u8, u8, u8, u8) = (1, 2, 3, 4, 5, 6, 7)
+    assert!(encodes(json, seven, "[1,2,3,4,5,6,7]"))
+    let back7 = must(decodes<(u8, u8, u8, u8, u8, u8, u8), Json, 15>(json, "[1,2,3,4,5,6,7]"))
+    assert!(back7.0 == 1 && back7.3 == 4 && back7.6 == 7)
+    let eight: (u8, u8, u8, u8, u8, u8, u8, u8) = (1, 2, 3, 4, 5, 6, 7, 8)
+    assert!(encodes(json, eight, "[1,2,3,4,5,6,7,8]"))
+    let back8 = must(decodes<(u8, u8, u8, u8, u8, u8, u8, u8), Json, 17>(json, "[1,2,3,4,5,6,7,8]"))
+    assert!(back8.0 == 1 && back8.4 == 5 && back8.7 == 8)
+    assert!(vector<(bool, i8, u16), Json, 15>(json, (true, -1, 65535), "[true,-1,65535]"))
+    assert!(vector<((u8, u8), (u8,)), Json, 11>(json, ((1, 2), (3,)), "[[1,2],[3]]"))
+    assert!(vector<Option<(u8, u8)>, Json, 5>(json, Option::Some((1, 2)), "[1,2]"))
+    assert!(vector<Option<(u8, u8)>, Json, 4>(json, Option::None, "null"))
+    assert!(vector<[(u8, bool); 2], Json, 20>(json, [(1, true), (2, false)], "[[1,true],[2,false]]"))
+}
+
+#[test]
+fn json_rejects_tuples_of_the_wrong_length_or_shape() {
+    let json = Json::new()
+    expect_error(decodes<(u8, u8), Json, 3>(json, "[1]"), ErrorKind::InvalidLength, 2)
+    expect_error(decodes<(u8, u8), Json, 7>(json, "[1,2,3]"), ErrorKind::InvalidLength, 4)
+    expect_error(decodes<(u8, u8), Json, 2>(json, "[]"), ErrorKind::InvalidLength, 1)
+    expect_error(decodes<(u8, u8), Json, 2>(json, "{}"), ErrorKind::TypeMismatch, 0)
+    expect_error(decodes<(u8, u8), Json, 1>(json, "1"), ErrorKind::TypeMismatch, 0)
+    // An element of the wrong type is reported at the element.
+    expect_error(decodes<(u8, bool), Json, 7>(json, "[1,\"a\"]"), ErrorKind::TypeMismatch, 3)
+    expect_error(decodes<(u8, u8), Json, 7>(json, "[1,256]"), ErrorKind::IntegerOutOfRange, 3)
+    let short: [u8; 85] = "{\"at\":[7],\"bounds\":[[-1,2],[3,-4]],\"legs\":[[1,true],[2,false]],\"next\":null,\"tag\":[5]}"
+    expect_field(decodes<Waypoint, Json, 85>(json, short), ErrorKind::InvalidLength, 8, "at")
+}
+
 // CBOR.
+
+#[test]
+fn cbor_writes_tuples_as_arrays() {
+    let cbor = Cbor::new()
+    let pair: (u8, Text<8>) = (7, hi())
+    assert!(encodes(cbor, pair, TUPLE_CBOR))
+    let decoded = must(decodes<(u8, Text<8>), Cbor, 5>(cbor, TUPLE_CBOR))
+    assert!(decoded.0 == 7 && decoded.1.equals(hi()))
+    let full = Option::Some((300, 18446744073709551615))
+    assert!(encodes(cbor, waypoint(full), WAYPOINT_CBOR))
+    check_waypoint(must(decodes<Waypoint, Cbor, 40>(cbor, WAYPOINT_CBOR)), full)
+    assert!(encodes(cbor, waypoint(Option::None), WAYPOINT_NO_NEXT_CBOR))
+    check_waypoint(must(decodes<Waypoint, Cbor, 26>(cbor, WAYPOINT_NO_NEXT_CBOR)), Option::None)
+    let null_next = [
+        0xa5, 0x01, 0x82, 0x07, 0x62, 0x68, 0x69, 0x02, 0x82, 0x82, 0x20, 0x02, 0x82, 0x03, 0x23, 0x03, 0x82, 0x82,
+        0x01, 0xf5, 0x82, 0x02, 0xf4, 0x04, 0xf6, 0x05, 0x81, 0x05,
+    ]
+    check_waypoint(must(decodes<Waypoint, Cbor, 28>(cbor, null_next)), Option::None)
+}
+
+#[test]
+fn cbor_writes_tuples_of_every_arity_nested_and_at_the_root() {
+    let cbor = Cbor::new()
+    assert!(vector<(u8,), Cbor, 2>(cbor, (1,), [0x81, 0x01]))
+    assert!(vector<(u8, u8), Cbor, 3>(cbor, (1, 2), [0x82, 0x01, 0x02]))
+    assert!(vector<(u8, u8, u8), Cbor, 4>(cbor, (1, 2, 3), [0x83, 0x01, 0x02, 0x03]))
+    assert!(vector<(u8, u8, u8, u8), Cbor, 5>(cbor, (1, 2, 3, 4), [0x84, 0x01, 0x02, 0x03, 0x04]))
+    assert!(vector<(u8, u8, u8, u8, u8), Cbor, 6>(cbor, (1, 2, 3, 4, 5), [0x85, 0x01, 0x02, 0x03, 0x04, 0x05]))
+    assert!(vector<(u8, u8, u8, u8, u8, u8), Cbor, 7>(cbor, (1, 2, 3, 4, 5, 6), [0x86, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06]))
+    let seven: (u8, u8, u8, u8, u8, u8, u8) = (1, 2, 3, 4, 5, 6, 7)
+    assert!(encodes(cbor, seven, [0x87, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]))
+    let back7 = must(decodes<(u8, u8, u8, u8, u8, u8, u8), Cbor, 8>(cbor, [0x87, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]))
+    assert!(back7.0 == 1 && back7.3 == 4 && back7.6 == 7)
+    let eight: (u8, u8, u8, u8, u8, u8, u8, u8) = (1, 2, 3, 4, 5, 6, 7, 8)
+    assert!(encodes(cbor, eight, [0x88, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]))
+    let back8 = must(decodes<(u8, u8, u8, u8, u8, u8, u8, u8), Cbor, 9>(cbor, [0x88, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]))
+    assert!(back8.0 == 1 && back8.4 == 5 && back8.7 == 8)
+    assert!(vector<(bool, i8, u16), Cbor, 6>(cbor, (true, -1, 65535), [0x83, 0xf5, 0x20, 0x19, 0xff, 0xff]))
+    assert!(vector<((u8, u8), (u8,)), Cbor, 6>(cbor, ((1, 2), (3,)), [0x82, 0x82, 0x01, 0x02, 0x81, 0x03]))
+    assert!(vector<Option<(u8, u8)>, Cbor, 3>(cbor, Option::Some((1, 2)), [0x82, 0x01, 0x02]))
+    assert!(vector<Option<(u8, u8)>, Cbor, 1>(cbor, Option::None, [0xf6]))
+    assert!(vector<[(u8, bool); 2], Cbor, 7>(cbor, [(1, true), (2, false)], [0x82, 0x82, 0x01, 0xf5, 0x82, 0x02, 0xf4]))
+}
+
+#[test]
+fn cbor_rejects_tuples_of_the_wrong_length_or_shape() {
+    let cbor = Cbor::new()
+    expect_error(decodes<(u8, u8), Cbor, 2>(cbor, [0x81, 0x01]), ErrorKind::InvalidLength, 0)
+    expect_error(decodes<(u8, u8), Cbor, 4>(cbor, [0x83, 0x01, 0x02, 0x03]), ErrorKind::InvalidLength, 0)
+    expect_error(decodes<(u8, u8), Cbor, 1>(cbor, [0x80]), ErrorKind::InvalidLength, 0)
+    expect_error(decodes<(u8, u8), Cbor, 1>(cbor, [0xa0]), ErrorKind::TypeMismatch, 0)
+    // Tuples are definite-length, in their shortest head.
+    expect_error(decodes<(u8, u8), Cbor, 4>(cbor, [0x9f, 0x01, 0x02, 0xff]), ErrorKind::NonCanonical, 0)
+    expect_error(decodes<(u8, u8), Cbor, 4>(cbor, [0x98, 0x02, 0x01, 0x02]), ErrorKind::NonCanonical, 0)
+    expect_error(decodes<(u8, bool), Cbor, 3>(cbor, [0x82, 0x01, 0x02]), ErrorKind::TypeMismatch, 2)
+    expect_error(decodes<(u8, u8), Cbor, 4>(cbor, [0x82, 0x01, 0x02, 0x00]), ErrorKind::TrailingData, 3)
+    let short = [0xa5, 0x01, 0x81, 0x07]
+    expect_field(decodes<Waypoint, Cbor, 4>(cbor, short), ErrorKind::InvalidLength, 2, "at")
+}
 
 #[test]
 fn cbor_matches_golden_and_decodes_every_field() {
@@ -638,6 +777,21 @@ fn compact_writes_positional_records() {
     assert!(encodes(compact, StableStatus::Ready, [62]))
     // Addresses and fixed-length bytes carry no length: the type fixes it.
     assert!(encodes(compact, Wallet { owner: Address::zero(), hash: PackedBytes<4>::from_array([1, 2, 3, 4]), memo: BoundedBuffer<8>::empty(), tag: Option::None }, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 0, 0]))
+}
+
+#[test]
+fn compact_writes_tuples_as_headerless_sequences() {
+    let compact = Compact::new()
+    assert!(vector<(u8, u16, bool), Compact, 4>(compact, (7, 300, true), [0x07, 0x01, 0x2c, 0x01]))
+    assert!(vector<((u8, u8), (u8,)), Compact, 3>(compact, ((1, 2), (3,)), [0x01, 0x02, 0x03]))
+    assert!(vector<Option<(u8, u8)>, Compact, 3>(compact, Option::Some((1, 2)), [0x01, 0x01, 0x02]))
+    assert!(vector<[(u8, bool); 2], Compact, 4>(compact, [(1, true), (2, false)], [0x01, 0x01, 0x02, 0x00]))
+    let decoded = must(decodes<(u8, Text<8>), Compact, 4>(compact, [0x07, 0x02, 0x68, 0x69]))
+    assert!(decoded.0 == 7 && decoded.1.equals(hi()))
+    let written: (u8, Text<8>) = (7, hi())
+    assert!(encodes(compact, written, [0x07, 0x02, 0x68, 0x69]))
+    expect_error(decodes<(u8, u8), Compact, 1>(compact, [0x07]), ErrorKind::UnexpectedEnd, 1)
+    expect_error(decodes<(u8, u8), Compact, 3>(compact, [0x07, 0x08, 0x09]), ErrorKind::TrailingData, 2)
 }
 
 #[test]

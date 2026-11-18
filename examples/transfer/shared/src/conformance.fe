@@ -25,6 +25,7 @@ use ingot::models::{
     StableStatus,
     Status,
     Transfer,
+    Waypoint,
     Wallet,
     Wide,
     Reading,
@@ -178,6 +179,36 @@ fn run<F: Format>(_ format: F, _ step: mut u32) -> CodecResult<u32> {
     if account.owner != 1 || account.balance != 2 || !account.label.unwrap().equals(text) {
         return Result::Ok(30)
     }
+
+    // Tuples at the root and as fields: nested, in an array and in an option.
+    step = 31
+    let pair = stable<(u8, Text<8>), F, 48>(format, (255, text))?
+    if pair.0 != 255 || !pair.1.equals(text) { return Result::Ok(31) }
+    step = 32
+    let waypoint = stable<Waypoint, F, 192>(
+        format,
+        Waypoint {
+            at: (7, text),
+            bounds: ((-1, 2), (3, -4)),
+            legs: [(1, true), (2, false)],
+            next: Option::Some((300, 0xffffffffffffffff)),
+            tag: (5,),
+        },
+    )?
+    if waypoint.at.0 != 7 || !waypoint.at.1.equals(text) || waypoint.bounds != ((-1, 2), (3, -4)) {
+        return Result::Ok(32)
+    }
+    if waypoint.legs != [(1, true), (2, false)] || waypoint.tag != (5,) { return Result::Ok(33) }
+    if waypoint.next != Option::Some((300, 0xffffffffffffffff)) { return Result::Ok(34) }
+    step = 35
+    let bare = Waypoint {
+        at: (0, text),
+        bounds: ((0, 0), (0, 0)),
+        legs: [(0, false), (0, false)],
+        next: Option::None,
+        tag: (0,),
+    }
+    if stable<Waypoint, F, 192>(format, bare)?.next.is_some() { return Result::Ok(35) }
     Result::Ok(0)
 }
 

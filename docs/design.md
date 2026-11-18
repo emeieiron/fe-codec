@@ -19,8 +19,8 @@ model types ──impl──▶ Serialize / Deserialize / Schema      generated 
   (name, ID, whether optional) and an enum's variants.
 - **The data model.** `Encoder` and `Decoder` are the vocabulary every format speaks:
   booleans, integers up to 256 bits, text, bytes, options, unit variants, records and
-  fixed-length sequences. Records visit fields in ascending ID order; `OMIT_NONE` tells a
-  serializer whether the format leaves out `None` fields.
+  fixed-length sequences, which also carry tuples. Records visit fields in ascending ID
+  order; `OMIT_NONE` tells a serializer whether the format leaves out `None` fields.
 - **The format side.** A `Format` value (`Json`, `Cbor`, or a third party's) owns its
   limits and drives an encoder or decoder over a bounded buffer. Formats do not depend on
   each other, and the application chooses one where it encodes.
@@ -36,7 +36,7 @@ native backends.
 
 | Fe capability | Used for |
 | --- | --- |
-| Traits implemented on primitives, `Option<T>` and `[T; N]` from any ingot that owns the trait | The built-in impls in `core/src/impls.fe` |
+| Traits implemented on primitives, `Option<T>`, `[T; N]` and tuples from any ingot that owns the trait | The built-in impls in `core/src/impls.fe` |
 | Associated consts, generic and const-generic trait methods | `Encoder::OMIT_NONE`, `Format::encode<T, N>` |
 | Inference from an annotated binding through `?` | `let bytes: BoundedBuffer<128> = fe_codec_json::encode(order)?` |
 | `Copy` arrays built with `[value; N]` | Decoding `[T; N]` without `unsafe` |

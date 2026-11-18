@@ -41,7 +41,7 @@ Your encoder and decoder implement the data model:
 | `write_none`, `write_some` | `read_some` | `Option<T>`: `write_some` marks a value that follows |
 | `write_variant` | `read_variant` | Unit enum variants, described by `Schema::variant` |
 | `begin_record`, `field`, `end_record` | `begin_record`, `next_field`, `end_record` | Records, described by `Schema::field` |
-| `begin_sequence`, `element`, `end_sequence` | `begin_sequence`, `element`, `end_sequence` | Fixed-length arrays |
+| `begin_sequence`, `element`, `end_sequence` | `begin_sequence`, `element`, `end_sequence` | Fixed-length arrays, and tuples, which are sequences of their arity |
 
 Choose `OMIT_NONE`: `true` if your format identifies fields by a key and can leave out
 `None` fields, `false` if fields are positional.
@@ -60,6 +60,10 @@ Choose `OMIT_NONE`: `true` if your format identifies fields by a key and can lea
 - `TextWriter<N>` validates UTF-8 as bytes arrive and reports the offending byte.
 - `FieldKey::of<R>(position, offset)` builds what `next_field` returns.
 
+A format that reads types rather than values, as EIP-712 does, implements `Describer`. Its
+`begin_tuple` and `end_tuple` default to `Unsupported`, so a format with no tuple type needs
+no code to reject them.
+
 ## Rules a format must follow
 
 - Report errors with `CodecError::at(kind, offset)`, where `offset` is the byte where the
@@ -73,7 +77,7 @@ Choose `OMIT_NONE`: `true` if your format identifies fields by a key and can lea
 
 Run your format through the same checks as JSON and CBOR. The conformance function in
 `examples/transfer/shared/src/conformance.fe` is generic over `Format`. It covers every
-integer width, text, bytes, addresses, options, enums, nested records, arrays, a generic
+integer width, text, bytes, addresses, options, enums, nested records, arrays, tuples, a generic
 record, a handwritten serializer and an evolved schema. It returns the number of the first
 check that fails, so a failing format points at the problem:
 

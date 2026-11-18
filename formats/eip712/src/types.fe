@@ -372,6 +372,15 @@ impl Describer for TypeTable {
         Result::Err(self.reject())
     }
 
+    /// EIP-712 has no tuple types, so a tuple is rejected, naming the field that holds it.
+    fn begin_tuple(mut self, _ length: usize) -> CodecResult<()> {
+        Result::Err(self.reject())
+    }
+
+    fn end_tuple(mut self, _ length: usize) -> CodecResult<()> {
+        Result::Err(self.reject())
+    }
+
     fn begin_sequence(mut self, _ length: usize) -> CodecResult<()> {
         if self.depth == 0 {
             return Result::Err(unsupported())
