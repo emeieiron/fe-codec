@@ -15,8 +15,29 @@
 | `#[serializable]` enums | Unit variants of up to 31-byte names |
 | Your own types | With handwritten impls; see [writing serializers](writing-serializers.md) |
 
-Not supported yet: enums with payloads, variable-length collections, maps, ignoring
-unknown fields, and choosing a serializer per field.
+Not supported yet: enums with payloads, variable-length collections, maps, and ignoring
+unknown fields.
+
+## Choosing a serializer per field
+
+`#[codec_with = Path]` on a field names a `FieldCodec` that writes and reads that field
+instead of its type's own impls. The field's type can be any type the codec accepts, so the
+generator checks none of it: `usize`, a type that isn't `#[serializable]` and a non-`Copy`
+array are all fine if the codec handles them.
+
+```fe
+#[serializable]
+pub struct Payment {
+    #[codec_with = HexAmount]
+    pub amount: u64,
+    #[codec_with = HexAmount]
+    pub tip: Option<u64>,
+}
+```
+
+For an `Option<T>` field the codec handles `T`: `None` is still left out by formats that
+identify fields by key, and a present value follows the format's marker for one. See
+[writing serializers](writing-serializers.md#choosing-a-serializer-for-one-field).
 
 ## Buffers and limits
 

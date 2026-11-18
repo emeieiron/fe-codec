@@ -249,6 +249,17 @@ fn define(
     var f: usize = 0
     while f < model.members.len {
         let field = output.fields[model.members.start + f]
+        if field.codec.is_some() {
+            return error(
+                model,
+                field.offset,
+                format!(
+                    "field '",
+                    file.token_text(field.name),
+                    "': codec_with is not allowed in EIP-712 structs, which take their type string from the field type",
+                ),
+            )
+        }
         match eip712_type(program, output, model, field.ty, mut dependencies, mut enums) {
             Result::Ok(ty) => {
                 if f > 0 {

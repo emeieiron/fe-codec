@@ -18,7 +18,9 @@ use ingot::custom::{Celsius, Point}
 use ingot::models::{
     AccountV2,
     Batch,
+    Booking,
     Page,
+    Payment,
     Recipient,
     Sample,
     Slots,
@@ -209,6 +211,38 @@ fn run<F: Format>(_ format: F, _ step: mut u32) -> CodecResult<u32> {
         tag: (0,),
     }
     if stable<Waypoint, F, 192>(format, bare)?.next.is_some() { return Result::Ok(35) }
+
+    // Fields written by a codec, present and absent, and a codec that changes a record's shape.
+    step = 36
+    let payment = stable<Payment, F, 128>(
+        format,
+        Payment { id: 7, amount: 0xffffffffffffffff, tip: Option::Some(0), hash: [0xde, 0xad, 0xbe, 0xef] },
+    )?
+    if payment.id != 7 || payment.amount != 0xffffffffffffffff || payment.hash != [0xde, 0xad, 0xbe, 0xef] {
+        return Result::Ok(36)
+    }
+    if payment.tip != Option::Some(0) { return Result::Ok(37) }
+    step = 38
+    let unpaid = Payment { id: 0, amount: 0, tip: Option::None, hash: [0, 0, 0, 0] }
+    if stable<Payment, F, 128>(format, unpaid)?.tip.is_some() { return Result::Ok(38) }
+    step = 39
+    let booking = stable<Booking, F, 128>(
+        format,
+        Booking {
+            guest: Recipient { active: true, label: text },
+            companion: Option::Some(Recipient { active: false, label: label()? }),
+        },
+    )?
+    if !booking.guest.active || !booking.guest.label.equals(text) { return Result::Ok(39) }
+    match booking.companion {
+        Option::Some(ref companion) => {
+            if companion.active || !companion.label.equals(label()?) { return Result::Ok(40) }
+        },
+        Option::None => { return Result::Ok(40) },
+    }
+    step = 41
+    let alone = Booking { guest: Recipient { active: false, label: text }, companion: Option::None }
+    if stable<Booking, F, 128>(format, alone)?.companion.is_some() { return Result::Ok(41) }
     Result::Ok(0)
 }
 

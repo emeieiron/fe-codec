@@ -2,9 +2,12 @@ use ingot::{
     BoundedBuffer,
     CodecError,
     CodecResult,
+    Decoder,
     Describe,
     Describer,
+    Encoder,
     ErrorKind,
+    FieldCodec,
     Frame,
     Schema,
     Text,
@@ -13,6 +16,7 @@ use ingot::{
     checked_unsigned,
     checked_wide_signed,
     checked_wide_unsigned,
+    describe_optional_with,
     schema_name,
 }
 
@@ -122,7 +126,8 @@ fn errors_keep_the_innermost_field() {
 }
 
 /// Records the calls a description makes: 1 for `bool`, the width of an integer, 100 + the arity
-/// for `begin_tuple` and 200 + the arity for `end_tuple`. Other calls are not made.
+/// for `begin_tuple`, 200 + the arity for `end_tuple`, 300 for `begin_option`, 400 for
+/// `end_option` and 500 + the capacity for `text`. Other calls are not made.
 struct Trace { events: [usize; 16], len: usize }
 
 impl Trace {
@@ -151,7 +156,7 @@ impl Describer for Trace {
     }
 
     fn text(mut self, _ capacity: usize) -> CodecResult<()> {
-        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+        self.push(500 + capacity)
     }
 
     fn bytes(mut self, _ capacity: usize) -> CodecResult<()> {
@@ -167,11 +172,11 @@ impl Describer for Trace {
     }
 
     fn begin_option(mut self) -> CodecResult<()> {
-        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+        self.push(300)
     }
 
     fn end_option(mut self) -> CodecResult<()> {
-        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+        self.push(400)
     }
 
     fn begin_sequence(mut self, _ length: usize) -> CodecResult<()> {
@@ -306,4 +311,57 @@ fn describers_reject_tuples_unless_they_opt_in() {
     assert!(kind(plain.end_tuple(2)) == 16)
     assert!(kind(<(u8, bool) as Describe>::describe(mut plain)) == 16)
     assert!(kind(<[(u8, u8); 2] as Describe>::describe(mut plain)) == 16)
+}
+
+/// A codec that writes a `u64` as eight bytes of text, and describes itself as that text.
+struct Described {}
+
+impl FieldCodec<u64> for Described {
+    fn serialize<E: Encoder>(_ value: u64, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_unsigned(value, 64)
+    }
+
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<u64> {
+        decoder.read_unsigned(64)
+    }
+
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.text(8)
+    }
+}
+
+/// A codec that leaves `describe` at its default.
+struct Silent {}
+
+impl FieldCodec<u64> for Silent {
+    fn serialize<E: Encoder>(_ value: u64, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_unsigned(value, 64)
+    }
+
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<u64> {
+        decoder.read_unsigned(64)
+    }
+}
+
+#[test]
+fn field_codecs_describe_themselves_inside_an_option() {
+    var plain = Trace::new()
+    assert!(<Described as FieldCodec<u64>>::describe(mut plain).is_ok())
+    assert!(plain.len == 1 && plain.events[0] == 508)
+
+    var optional = Trace::new()
+    assert!(describe_optional_with<Described, u64, Trace>(mut optional).is_ok())
+    assert!(optional.len == 3 && optional.events[0] == 300 && optional.events[1] == 508 && optional.events[2] == 400)
+}
+
+#[test]
+fn field_codecs_do_not_describe_themselves_unless_they_opt_in() {
+    var plain = Trace::new()
+    assert!(kind(<Silent as FieldCodec<u64>>::describe(mut plain)) == 16)
+    assert!(plain.len == 0)
+
+    // The option is opened before the codec fails, and is not closed.
+    var optional = Trace::new()
+    assert!(kind(describe_optional_with<Silent, u64, Trace>(mut optional)) == 16)
+    assert!(optional.len == 1 && optional.events[0] == 300)
 }

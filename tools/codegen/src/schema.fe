@@ -56,6 +56,12 @@ pub struct Field {
     pub unrolled: bool,
     pub unrolled_element: usize,
     pub unrolled_length: u64,
+    /// The path of the field's `#[codec_with]` codec: the tokens after `=`, which `codec_path`
+    /// reads. The codec owns the field's representation, so the checks on the field's type
+    /// are skipped and `unrolled` is false.
+    pub codec: Option<Span>,
+    /// The type node the codec is given: the payload of an `Option` field, else `ty`.
+    pub codec_ty: usize,
     /// Byte offset of the field in its source, for diagnostics.
     pub offset: usize,
 }
@@ -342,6 +348,8 @@ fn serializable(_ file: ref File, _ source: usize, _ attrs: Run) -> Result<Diagn
             found = true
         } else if path == "codec_id" {
             return fail(source, attribute.start, format!("codec_id belongs on fields and enum variants"))
+        } else if path == "codec_with" {
+            return fail(source, attribute.start, format!("codec_with belongs on struct fields"))
         }
         i += 1
     }
@@ -435,37 +443,110 @@ fn resolve_ids(
     Result::Ok(result)
 }
 
-/// The `codec_id` of a field or variant, if it has one.
-fn explicit_id(_ file: ref File, _ source: usize, _ attrs: Run) -> Result<Diagnostic, Option<u64>> {
-    var id: Option<u64> = Option::None
+/// What the attributes of a field or variant say: its `codec_id`, and for a field the path of
+/// its `codec_with` codec.
+struct MemberAttrs {
+    id: Option<u64>,
+    with: Option<Span>,
+}
+
+impl Copy for MemberAttrs {}
+
+/// The text of a codec path, `Hex` or `ingot::codecs::Hex`, with no spaces around `::`. None
+/// when the tokens are anything else: a path with generic arguments, a qualified path, a
+/// literal or an expression.
+pub fn codec_path(_ file: ref File, _ span: Span) -> Option<MemBuffer> {
+    let text = file.compact(span)
+    var out = MemBuffer::new(0)
+    // Bytes of the segment being read.
+    var segment: usize = 0
+    var i: usize = 0
+    while i < text.len() {
+        let b = text[i]
+        let name = (b >= b'a' && b <= b'z') || (b >= b'A' && b <= b'Z') || b == b'_'
+        if name || (b >= b'0' && b <= b'9' && segment > 0) {
+            out.push(b)
+            segment += 1
+            i += 1
+        } else if b == b':' && segment > 0 && i + 1 < text.len() && text[i + 1] == b':' {
+            out.push(b':')
+            out.push(b':')
+            segment = 0
+            i += 2
+        } else if b == b' ' && ((segment > 0 && i + 1 < text.len() && text[i + 1] == b':') || (segment == 0 && out.len() > 0)) {
+            // Space around `::`, which the path does not keep.
+            i += 1
+        } else {
+            return Option::None
+        }
+    }
+    if segment == 0 {
+        return Option::None
+    }
+    Option::Some(out)
+}
+
+/// The `codec_id` of a field or variant, if it has one, and the `codec_with` of a field.
+fn member_attrs(_ file: ref File, _ source: usize, _ attrs: Run, _ field: bool) -> Result<Diagnostic, MemberAttrs> {
+    var result = MemberAttrs { id: Option::None, with: Option::None }
     var i: usize = 0
     while i < attrs.len {
         let attribute = file.attrs[attrs.start + i]
         let path = attr_path(file, attrs, i)
+        i += 1
+        if path == "codec_with" {
+            if !field {
+                return fail(source, attribute.start, format!("codec_with belongs on struct fields"))
+            }
+            if result.with.is_some() {
+                return fail(source, attribute.start, format!("duplicate codec_with attribute"))
+            }
+            match attribute.value {
+                Option::Some(span) => {
+                    if codec_path(file, span).is_none() {
+                        return fail(
+                            source,
+                            attribute.start,
+                            format!("codec_with must be a type path without generic arguments, such as Hex or ingot::codecs::Hex"),
+                        )
+                    }
+                    result.with = Option::Some(span)
+                },
+                Option::None => {
+                    return fail(source, attribute.start, format!("codec_with needs a codec type, as in #[codec_with = Hex]"))
+                },
+            }
+            continue
+        }
         if (starts_with(path, "codec") && path != "codec_id") || path == "serializable" {
+            if field {
+                return fail(
+                    source,
+                    attribute.start,
+                    format!("unknown codec attribute '", path, "'; fields take codec_id and codec_with"),
+                )
+            }
             return fail(
                 source,
                 attribute.start,
-                format!("unknown codec attribute '", path, "'; fields and variants take codec_id"),
+                format!("unknown codec attribute '", path, "'; variants take codec_id"),
             )
         }
         if path != "codec_id" {
-            i += 1
             continue
         }
-        if id.is_some() {
+        if result.id.is_some() {
             return fail(source, attribute.start, format!("duplicate codec_id attribute"))
         }
-        id = match attribute.value {
+        result.id = match attribute.value {
             Option::Some(span) => file.literal_u64(span),
             Option::None => Option::None,
         }
-        if id.is_none() {
+        if result.id.is_none() {
             return fail(source, attribute.start, format!("codec_id must be an unsigned 64-bit integer literal"))
         }
-        i += 1
     }
-    Result::Ok(id)
+    Result::Ok(result)
 }
 
 const COPY_YES: u8 = 0
@@ -641,7 +722,8 @@ impl Program {
         while f < model.fields.len {
             let field = file.fields[model.fields.start + f]
             f += 1
-            ids.push(explicit_id(file, source, field.attrs)?)
+            let attrs = member_attrs(file, source, field.attrs, true)?
+            ids.push(attrs.id)
             if !visible(file, field.mods) || field.mods.is_unsafe {
                 return fail(source, field.start, format!("serializable fields must be `pub` or `pub(ingot)`, and safe"))
             }
@@ -657,49 +739,54 @@ impl Program {
                 d += 1
             }
             let site = file.types[field.ty].start
-            self.check(source, field.ty, name, site, generics, false)?
-            let optional = option_payload(file, field.ty).is_some()
+            let payload = option_payload(file, field.ty)
+            let optional = payload.is_some()
             var unrolled = false
             var unrolled_element: usize = 0
             var unrolled_length: u64 = 0
-            if optional {
-                self.nested_arrays(source, field.ty, mut generics, site)?
-            } else {
-                let kind = ty_kind(file, field.ty)
-                match kind {
-                    TyKind::Array => {
-                        let element = array_elem(file, field.ty)
-                        let length = array_len(file, field.ty)
-                        self.nested_arrays(source, element, mut generics, site)?
-                        let element_is_parameter = match ty_kind(file, element) {
-                            TyKind::Path => is_parameter(file, generics, ty_name(file, element)),
-                            _ => false,
-                        }
-                        let copyness = self.copyness(source, element, generics)
-                        var unroll = false
-                        match length {
-                            Option::Some(length) => {
-                                if length == 0 {
-                                    unroll = true
-                                } else {
-                                    unroll = !element_is_parameter && copyness != COPY_YES
-                                        && length <= MAX_UNROLLED_ELEMENTS
-                                }
-                            },
-                            Option::None => {},
-                        }
-                        if !unroll {
-                            self.array_element(source, element, mut generics, site)?
-                        } else {
-                            unrolled = true
-                            unrolled_element = element
-                            unrolled_length = match length {
-                                Option::Some(length) => length,
-                                Option::None => 0,
+            // The codec owns the representation of a `codec_with` field, so none of the checks on
+            // its type apply.
+            if attrs.with.is_none() {
+                self.check(source, field.ty, name, site, generics, false)?
+                if optional {
+                    self.nested_arrays(source, field.ty, mut generics, site)?
+                } else {
+                    let kind = ty_kind(file, field.ty)
+                    match kind {
+                        TyKind::Array => {
+                            let element = array_elem(file, field.ty)
+                            let length = array_len(file, field.ty)
+                            self.nested_arrays(source, element, mut generics, site)?
+                            let element_is_parameter = match ty_kind(file, element) {
+                                TyKind::Path => is_parameter(file, generics, ty_name(file, element)),
+                                _ => false,
                             }
-                        }
-                    },
-                    _ => self.nested_arrays(source, field.ty, mut generics, site)?,
+                            let copyness = self.copyness(source, element, generics)
+                            var unroll = false
+                            match length {
+                                Option::Some(length) => {
+                                    if length == 0 {
+                                        unroll = true
+                                    } else {
+                                        unroll = !element_is_parameter && copyness != COPY_YES
+                                            && length <= MAX_UNROLLED_ELEMENTS
+                                    }
+                                },
+                                Option::None => {},
+                            }
+                            if !unroll {
+                                self.array_element(source, element, mut generics, site)?
+                            } else {
+                                unrolled = true
+                                unrolled_element = element
+                                unrolled_length = match length {
+                                    Option::Some(length) => length,
+                                    Option::None => 0,
+                                }
+                            }
+                        },
+                        _ => self.nested_arrays(source, field.ty, mut generics, site)?,
+                    }
                 }
             }
             fields.push(Field {
@@ -710,6 +797,11 @@ impl Program {
                 unrolled,
                 unrolled_element,
                 unrolled_length,
+                codec: attrs.with,
+                codec_ty: match payload {
+                    Option::Some(inner) => inner,
+                    Option::None => field.ty,
+                },
                 offset: field.start,
             })
         }
@@ -773,7 +865,7 @@ impl Program {
         while v < model.variants.len {
             let variant = file.variants[model.variants.start + v]
             v += 1
-            ids.push(explicit_id(file, source, variant.attrs)?)
+            ids.push(member_attrs(file, source, variant.attrs, false)?.id)
             match variant.kind {
                 VariantKind::Unit => {},
                 _ => return fail(source, variant.start, format!("only unit enum variants are supported")),

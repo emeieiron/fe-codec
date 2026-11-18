@@ -1,0 +1,21 @@
+use fe_codec_core::{CodecError, CodecResult, Decoder, Encoder, ErrorKind, FieldCodec}
+
+/// A codec for every type, which writes and reads nothing.
+pub struct Never {}
+
+impl<T> FieldCodec<T> for Never {
+    fn serialize<E: Encoder>(_ value: T, _ encoder: mut E) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<T> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+}
+
+#[serializable]
+pub struct Mixed {
+    #[codec_with = Never]
+    pub size: usize,
+    pub length: usize,
+}

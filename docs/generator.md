@@ -44,12 +44,46 @@ The generator rejects only what the compiler cannot catch:
 - the unit type `()`, which has no wire form;
 - duplicate or missing `#[codec_id]`s, a zero field ID, and IDs that aren't 64-bit integer
   literals;
+- a misplaced or malformed `#[codec_with]`: on a struct, an enum or a variant, twice on one
+  field, without a value, or with anything but a path such as `Hex` or `ingot::codecs::Hex`
+  (generic arguments are rejected);
 - names longer than 31 bytes, private fields, generic enums, enums with payloads, `where`
   clauses and generic parameters with defaults.
 
 ```text
 src/models.fe:5:12: error: 'usize' has a different width on each target; use a fixed-width integer
 ```
+
+## Per-field codecs
+
+`#[codec_with = Path]` on a field makes the generated `Serialize`, `Deserialize` and
+`Describe` impls use the `FieldCodec` at `Path` for that field. `Path` is a type path, written
+as it resolves in the module that declares the struct; the generated module copies it as
+written. To use a generic codec such as `Hex<8>`, name it with a type alias, `type Hex8 = Hex<8>`.
+
+```fe
+#[serializable]
+pub struct Payment {
+    #[codec_with = HexAmount]
+    pub amount: u64,
+    #[codec_with = HexAmount]
+    pub tip: Option<u64>,
+}
+```
+
+- The codec owns the field's representation, so the checks on its type are skipped: it can be
+  `usize`, a type that isn't `#[serializable]`, `Option<Option<T>>`, `()`, or an array of
+  elements that aren't `Copy`. Arrays are handed to the codec whole and are not decoded element
+  by element. What is still checked is everything about the field itself: it is `pub`, its name
+  is unique and at most 31 bytes, and its `#[codec_id]` is valid. A type parameter that only
+  codec fields use still gets the `Serialize`, `Deserialize` and `Describe` bounds.
+- For an `Option<T>` field the codec applies to `T`. The field stays optional in the
+  schema, keyed formats leave `None` out, and a present value is written as the format's
+  marker for one, then the codec's value. Any other type is passed to the codec whole.
+- IDs, field order and `Schema` are unchanged.
+- `--eip712` rejects a `codec_with` field in an `#[eip712]` struct or in a struct one reaches,
+  since the type string comes from the field type. Other structs with `codec_with` fields
+  are fine in that mode. The generic EIP-712 path uses the codec's `describe`.
 
 ## Running it from FeMP
 

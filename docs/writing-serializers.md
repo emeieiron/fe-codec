@@ -51,6 +51,72 @@ impl Deserialize for Celsius {
 one value call, or opens one record or sequence and closes it. Every format rejects a
 serializer that writes nothing or writes twice (`InvalidState`).
 
+## Choosing a serializer for one field
+
+To change how a single field is written, without a wrapper type, implement `FieldCodec<T>` on
+an empty type and name it with `#[codec_with]`. The codec is a set of functions, not a value:
+
+```fe
+pub trait FieldCodec<T> {
+    fn serialize<E: Encoder>(_ value: T, _ encoder: mut E) -> CodecResult<()>
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<T>
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()>   // optional
+}
+```
+
+This one writes a `u64` as lowercase hexadecimal text, such as `"ff"`, in every format. The
+codec is as strict as the rest of the library: reading rejects uppercase digits and leading
+zeros, so each value has one encoding. `hex` and `parse_hex` stand for the digit conversions.
+
+```fe
+use fe_codec_core::{CodecError, CodecResult, Decoder, Describer, Encoder, ErrorKind, FieldCodec}
+
+pub struct HexAmount {}
+
+impl FieldCodec<u64> for HexAmount {
+    fn serialize<E: Encoder>(_ value: u64, _ encoder: mut E) -> CodecResult<()> {
+        encoder.write_text(hex(value)?)
+    }
+
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<u64> {
+        let start = decoder.offset()
+        match parse_hex(decoder.read_text<16>()?) {
+            Option::Some(value) => Result::Ok(value),
+            Option::None => Result::Err(CodecError::at(kind: ErrorKind::InvalidSyntax, offset: start)),
+        }
+    }
+
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.text(16)
+    }
+}
+
+#[serializable]
+pub struct Payment {
+    #[codec_with = HexAmount]
+    pub amount: u64,
+    #[codec_with = HexAmount]
+    pub tip: Option<u64>,
+}
+```
+
+`examples/transfer/shared/src/codecs.fe` has the complete version, with a second codec that
+writes a record as a sequence.
+
+- `serialize` follows the contract of `Serialize`: one value call, or one record or sequence
+  opened and closed. `value` is passed by reference, so the type need not be `Copy`.
+- `describe` is only for formats that read types, such as EIP-712. It states the shape
+  `serialize` writes. The default fails with `Unsupported`.
+- Errors from `deserialize` are named after the field by the generated code, as for any other
+  field. A codec can fail with whatever kind and offset suits it; `decoder.offset()` before
+  reading gives the start of the value.
+- For `Option<T>` fields the codec sees only `T`; the generated code writes the format's
+  marker for `Some` first and reads it back first. `None` never reaches the codec.
+
+Generated code calls `FieldCodec` through `FieldKey::read_with` and `read_optional_with`, and
+the functions `serialize_optional_with` and `describe_optional_with`. A handwritten record can
+use them the same way.
+
 ## A record
 
 A record also implements `Schema`, which lists its fields by *position*: position 0 is the

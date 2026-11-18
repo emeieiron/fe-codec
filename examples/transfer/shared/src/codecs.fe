@@ -1,0 +1,140 @@
+//! Codecs for `#[codec_with]`: each is an empty type that writes and reads one field type in a
+//! form of its own, whatever the field type's own serializer is.
+
+use core::num::IntDowncast
+use fe_codec_core::{
+    CodecError,
+    CodecResult,
+    Decoder,
+    Describer,
+    Encoder,
+    ErrorKind,
+    FieldCodec,
+    Text,
+    TextWriter,
+}
+use ingot::models::Recipient
+
+/// A `u64` written as lowercase hexadecimal text without leading zeros, such as `"ff"` or
+/// `"0"`. Reading rejects uppercase digits, leading zeros and anything else.
+pub struct HexAmount {}
+
+impl FieldCodec<u64> for HexAmount {
+    fn serialize<E: Encoder>(_ value: u64, _ encoder: mut E) -> CodecResult<()> {
+        var text = TextWriter<16>::new()
+        var index: u64 = 16
+        var started = false
+        while index > 0 {
+            index -= 1
+            let nibble: u8 = ((value >> (index * 4)) & 15).downcast_unchecked()
+            if started || nibble != 0 || index == 0 {
+                started = true
+                text.write(digit(nibble), 0)?
+            }
+        }
+        encoder.write_text(text.finish(0)?)
+    }
+
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<u64> {
+        let start = decoder.offset()
+        let text = decoder.read_text<16>()?
+        if text.len() == 0 || (text.len() > 1 && text.byte_at(0) == Option::Some(b'0')) {
+            return Result::Err(CodecError::at(kind: ErrorKind::InvalidSyntax, offset: start))
+        }
+        var value: u64 = 0
+        var index: usize = 0
+        while index < text.len() {
+            match nibble(text.byte_at(index).unwrap()) {
+                Option::Some(digit) => value = value * 16 + (digit as u64),
+                Option::None => return Result::Err(CodecError::at(kind: ErrorKind::InvalidSyntax, offset: start)),
+            }
+            index += 1
+        }
+        Result::Ok(value)
+    }
+
+    /// Described as the text it is written as.
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.text(16)
+    }
+}
+
+/// Four bytes written as eight lowercase hexadecimal digits.
+pub struct HexWord {}
+
+impl FieldCodec<[u8; 4]> for HexWord {
+    fn serialize<E: Encoder>(_ value: [u8; 4], _ encoder: mut E) -> CodecResult<()> {
+        var text = TextWriter<8>::new()
+        var index: usize = 0
+        while index < 4 {
+            text.write(digit(value[index] / 16), 0)?
+            text.write(digit(value[index] % 16), 0)?
+            index += 1
+        }
+        encoder.write_text(text.finish(0)?)
+    }
+
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<[u8; 4]> {
+        let start = decoder.offset()
+        let text = decoder.read_text<8>()?
+        var bytes: [u8; 4] = [0; 4]
+        if text.len() != 8 {
+            return Result::Err(CodecError::at(kind: ErrorKind::InvalidLength, offset: start))
+        }
+        var index: usize = 0
+        while index < 4 {
+            let high = nibble(text.byte_at(index * 2).unwrap())
+            let low = nibble(text.byte_at(index * 2 + 1).unwrap())
+            if high.is_none() || low.is_none() {
+                return Result::Err(CodecError::at(kind: ErrorKind::InvalidSyntax, offset: start))
+            }
+            bytes[index] = high.unwrap() * 16 + low.unwrap()
+            index += 1
+        }
+        Result::Ok(bytes)
+    }
+
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.text(8)
+    }
+}
+
+/// A `Recipient` written as a two-element sequence, its flag then its label, instead of a
+/// record. `Recipient` is not `Copy`, so this also shows a codec given a value it cannot copy.
+/// It keeps the default `describe`, so formats that describe types reject the field.
+pub struct RecipientPair {}
+
+impl FieldCodec<Recipient> for RecipientPair {
+    fn serialize<E: Encoder>(_ value: Recipient, _ encoder: mut E) -> CodecResult<()> {
+        var sequence = encoder.begin_sequence(2)?
+        encoder.element(mut sequence)?
+        encoder.write_bool(value.active)?
+        encoder.element(mut sequence)?
+        encoder.write_text(value.label)?
+        encoder.end_sequence(sequence)
+    }
+
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Recipient> {
+        var sequence = decoder.begin_sequence(2)?
+        decoder.element(mut sequence)?
+        let active = decoder.read_bool()?
+        decoder.element(mut sequence)?
+        let label = decoder.read_text<8>()?
+        decoder.end_sequence(sequence)?
+        Result::Ok(Recipient { active, label })
+    }
+}
+
+fn digit(_ value: u8) -> u8 {
+    if value < 10 { b'0' + value } else { b'a' + (value - 10) }
+}
+
+fn nibble(_ byte: u8) -> Option<u8> {
+    if byte >= b'0' && byte <= b'9' {
+        return Option::Some(byte - b'0')
+    }
+    if byte >= b'a' && byte <= b'f' {
+        return Option::Some(byte - b'a' + 10)
+    }
+    Option::None
+}

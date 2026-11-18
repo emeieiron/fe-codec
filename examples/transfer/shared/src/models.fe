@@ -1,6 +1,7 @@
 use core::bytes::PackedBytes
 use fe_codec_core::{BoundedBuffer, Text}
 use std::evm::Address
+use ingot::codecs::{HexAmount, HexWord, RecipientPair}
 use ingot::custom::Celsius
 
 #[serializable]
@@ -116,4 +117,35 @@ pub struct AccountRenamed {
     pub holder: u64,
     #[codec_id = 2]
     pub funds: u64,
+}
+
+/// Fields written by a codec rather than their types' own serializers: a scalar as hex text,
+/// the same codec on an optional field, and an array handed to the codec whole.
+#[serializable]
+pub struct Payment {
+    pub id: u8,
+    #[codec_with = HexAmount]
+    pub amount: u64,
+    #[codec_with = HexAmount]
+    pub tip: Option<u64>,
+    #[codec_with = HexWord]
+    pub hash: [u8; 4],
+}
+
+/// A codec that changes a record's shape, on a plain and an optional field.
+#[serializable]
+pub struct Booking {
+    #[codec_with = RecipientPair]
+    pub guest: Recipient,
+    #[codec_with = RecipientPair]
+    pub companion: Option<Recipient>,
+}
+
+/// Described through its codecs: a format that describes types sees the text each one writes.
+#[serializable]
+pub struct Receipt {
+    #[codec_with = HexAmount]
+    pub amount: u64,
+    #[codec_with = HexWord]
+    pub hash: [u8; 4],
 }

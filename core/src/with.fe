@@ -1,0 +1,42 @@
+use ingot::describe::Describer
+use ingot::error::{CodecError, CodecResult, ErrorKind}
+use ingot::serializer::{Decoder, Encoder}
+
+/// A serializer for values of type `T`, chosen for one field instead of `T`'s own
+/// `Serialize`, `Deserialize` and `Describe` impls.
+///
+/// Name the implementing type with `#[codec_with = Path]` on a `#[serializable]` field, or
+/// call it by hand. It is usually an empty struct. `serialize` follows the contract of
+/// `Serialize`: exactly one value call on the encoder, or one record or sequence opened and
+/// closed. `deserialize` reads what `serialize` wrote and rejects every other encoding.
+/// `describe` states the shape `serialize` writes; formats that hash or print types call it.
+/// Its default fails with `Unsupported`, so a codec only needs it for such formats.
+pub trait FieldCodec<T> {
+    fn serialize<E: Encoder>(_ value: T, _ encoder: mut E) -> CodecResult<()>
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<T>
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+}
+
+/// Writes an optional field through `C`: `None` as the format's absent value, and a present
+/// value as `write_some` followed by `C`'s serializer. Generated code calls it for
+/// `#[codec_with]` fields of type `Option<T>`.
+pub fn serialize_optional_with<C: FieldCodec<T>, T, E: Encoder>(_ value: Option<T>, _ encoder: mut E) -> CodecResult<
+    (),
+> {
+    match value {
+        Option::Some(ref inner) => {
+            encoder.write_some()?
+            <C as FieldCodec<T>>::serialize(inner, mut encoder)
+        },
+        Option::None => encoder.write_none(),
+    }
+}
+
+/// Describes an optional field through `C`: an option around `C`'s description of `T`.
+pub fn describe_optional_with<C: FieldCodec<T>, T, V: Describer>(_ describer: mut V) -> CodecResult<()> {
+    describer.begin_option()?
+    <C as FieldCodec<T>>::describe(mut describer)?
+    describer.end_option()
+}

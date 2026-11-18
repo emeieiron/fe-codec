@@ -2,6 +2,7 @@ use core::marker::Copy
 use ingot::error::{CodecError, CodecResult, ErrorKind}
 use ingot::schema::{Schema, SchemaName}
 use ingot::serializer::{Decoder, Deserialize}
+use ingot::with::FieldCodec
 
 /// A record field a decoder found on the wire: its schema position, the byte offset of its
 /// key, and its name for error reports.
@@ -23,11 +24,7 @@ impl FieldKey {
         (),
     > {
         if slot.is_some() {
-            return Result::Err(
-                CodecError::at(kind: ErrorKind::DuplicateField, offset: self.offset).in_field(
-                    self.name,
-                ),
-            )
+            return Result::Err(self.duplicate())
         }
         match T::deserialize(mut decoder) {
             Result::Ok(value) => {
@@ -36,6 +33,56 @@ impl FieldKey {
             },
             Result::Err(error) => Result::Err(error.in_field(self.name)),
         }
+    }
+
+    /// Like `read`, decoding the value with the codec `C` instead of `T`'s own `Deserialize`.
+    pub fn read_with<C: FieldCodec<T>, T, D: Decoder>(
+        self,
+        _ decoder: mut D,
+        _ slot: mut Option<T>,
+    ) -> CodecResult<()> {
+        if slot.is_some() {
+            return Result::Err(self.duplicate())
+        }
+        match <C as FieldCodec<T>>::deserialize(mut decoder) {
+            Result::Ok(value) => {
+                slot = Option::Some(value)
+                Result::Ok(())
+            },
+            Result::Err(error) => Result::Err(error.in_field(self.name)),
+        }
+    }
+
+    /// Like `read_with` for a field of type `Option<T>`: reads whether a value follows, then
+    /// decodes it with the codec `C`. An absent value and an explicit `None` both fill the slot
+    /// with `None`, as `read` does.
+    pub fn read_optional_with<C: FieldCodec<T>, T, D: Decoder>(
+        self,
+        _ decoder: mut D,
+        _ slot: mut Option<Option<T>>,
+    ) -> CodecResult<()> {
+        if slot.is_some() {
+            return Result::Err(self.duplicate())
+        }
+        let present = match decoder.read_some() {
+            Result::Ok(present) => present,
+            Result::Err(error) => return Result::Err(error.in_field(self.name)),
+        }
+        if !present {
+            slot = Option::Some(Option::None)
+            return Result::Ok(())
+        }
+        match <C as FieldCodec<T>>::deserialize(mut decoder) {
+            Result::Ok(value) => {
+                slot = Option::Some(Option::Some(value))
+                Result::Ok(())
+            },
+            Result::Err(error) => Result::Err(error.in_field(self.name)),
+        }
+    }
+
+    fn duplicate(self) -> CodecError {
+        CodecError::at(kind: ErrorKind::DuplicateField, offset: self.offset).in_field(self.name)
     }
 
     /// The error for a field the deserializer does not handle.

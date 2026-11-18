@@ -1,0 +1,7 @@
+#[serializable]
+#[eip712]
+pub struct Item {
+    pub id: u8,
+    #[codec_with = Hex]
+    pub amount: u64,
+}

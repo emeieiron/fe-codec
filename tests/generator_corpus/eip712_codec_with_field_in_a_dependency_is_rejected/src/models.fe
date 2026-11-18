@@ -1,0 +1,8 @@
+#[serializable]
+pub struct Inner {
+    #[codec_with = Hex]
+    pub amount: u64,
+}
+#[serializable]
+#[eip712]
+pub struct Item { pub inner: Inner }

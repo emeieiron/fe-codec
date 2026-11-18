@@ -17,3 +17,4 @@ pub use integer::{checked_signed, checked_unsigned, checked_wide_signed, checked
 pub use structure::{Structure, Frame}
 pub use describe::{Describe, Describer}
 pub use bytes::{address_bytes, address_from_bytes, bounded_bytes, exact_bytes}
+pub use with::{FieldCodec, serialize_optional_with, describe_optional_with}

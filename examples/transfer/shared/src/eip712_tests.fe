@@ -6,6 +6,7 @@ use core::num::IntDowncast
 use fe_codec_core::{BoundedBuffer, CodecResult, Describe, ErrorKind, Limits, Serialize, Text}
 use fe_codec_eip712::{Domain, Eip712, Eip712Struct}
 use std::evm::Address
+use ingot::models::{Booking, Recipient, Receipt}
 use ingot::typed::{
     Asset,
     Conflict,
@@ -289,6 +290,22 @@ fn rejects_types_eip712_cannot_express() {
     assert!(eip712.hash_struct(Ranked { rank: Many::Zero }).is_ok())
     // One instantiation of a generic type is one struct.
     assert!(eip712.type_hash<Holder<u8>>().is_ok())
+}
+
+fn booking_value() -> Booking {
+    Booking { guest: Recipient { active: true, label: text("hi") }, companion: Option::None }
+}
+
+#[test]
+fn describes_codec_fields_as_the_codec_does() {
+    let eip712 = Eip712::new()
+    // A codec's description stands for the field's type: both codecs here are described as text.
+    let expected: [u8; 34] = "Receipt(string amount,string hash)"
+    assert!(must(eip712.encode_type<Receipt, 34>()).equals(text<34, 34>(expected)))
+    assert!(eip712.hash_struct(Receipt { amount: 255, hash: [1, 2, 3, 4] }).is_ok())
+    // `RecipientPair` keeps the default `describe`, which fails with `Unsupported`.
+    expect_error(eip712.type_hash<Booking>(), ErrorKind::Unsupported)
+    expect_error(eip712.hash_struct(booking_value()), ErrorKind::Unsupported)
 }
 
 #[test]

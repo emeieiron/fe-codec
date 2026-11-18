@@ -21,7 +21,7 @@ use fe_codec_json::Json
 use codec_compact::Compact
 use std::evm::Address
 use std::evm::crypto::keccak_words
-use ingot::models::{Sample, Wallet, Wide}
+use ingot::models::{Payment, Sample, Wallet, Wide}
 use fe_codec_eip712::Eip712Struct
 use ingot::typed::{Asset, Contact, Flat, Order, Party, Terms}
 
@@ -66,6 +66,39 @@ pub fn tuples_round_trip(a: u8, b: i64, c: bool, d: u64) -> bool {
         && round_trips<Option<(u64, i64)>, 64>(Option::Some((d, b)))
         && round_trips<Option<(u64, i64)>, 64>(Option::None)
         && round_trips<[(bool, u8); 2], 64>([(c, a), (!c, a)])
+}
+
+/// Fields written by a codec survive every format for any amount, with and without the
+/// optional tip: the hex text of any `u64` reads back as the same value.
+#[property(cases = 300)]
+pub fn codec_fields_round_trip(amount: u64, tip: u64, present: bool, hash: u64) -> bool {
+    let bytes: [u8; 4] = [
+        (hash >> 24).downcast_truncate(),
+        (hash >> 16).downcast_truncate(),
+        (hash >> 8).downcast_truncate(),
+        hash.downcast_truncate(),
+    ]
+    let payment = Payment {
+        id: hash.downcast_truncate(),
+        amount,
+        tip: if present { Option::Some(tip) } else { Option::None },
+        hash: bytes,
+    }
+    payment_survives(Json::new(), payment) && payment_survives(Cbor::new(), payment)
+        && payment_survives(Compact::new(), payment)
+}
+
+fn payment_survives<F: Format>(_ format: F, _ payment: Payment) -> bool {
+    match format.encode<Payment, 160>(payment) {
+        Result::Ok(bytes) => match format.decode<Payment, 160>(bytes) {
+            Result::Ok(decoded) => {
+                decoded.id == payment.id && decoded.amount == payment.amount && decoded.tip == payment.tip
+                    && decoded.hash == payment.hash
+            },
+            Result::Err(_) => false,
+        },
+        Result::Err(_) => false,
+    }
 }
 
 #[property(cases = 500)]

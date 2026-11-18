@@ -1,0 +1,57 @@
+use fe_codec_core::{CodecError, CodecResult, Decoder, Encoder, ErrorKind, FieldCodec}
+
+/// A codec for every type, which writes and reads nothing.
+pub struct Never {}
+
+impl<T> FieldCodec<T> for Never {
+    fn serialize<E: Encoder>(_ value: T, _ encoder: mut E) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<T> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+}
+
+/// A codec with a parameter, named by an alias because a `codec_with` path takes no arguments.
+pub struct Sized<const N: usize> {}
+pub type Sized8 = Sized<8>
+
+impl<const N: usize, T> FieldCodec<T> for Sized<N> {
+    fn serialize<E: Encoder>(_ value: T, _ encoder: mut E) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<T> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+}
+
+#[serializable]
+pub struct Leg { pub from: u8 }
+
+#[serializable]
+pub struct Route {
+    pub id: u8,
+    #[codec_with = Never]
+    pub whole: u64,
+    #[codec_with = Never]
+    pub maybe: Option<u64>,
+    #[codec_with = ingot::models::Never]
+    pub qualified: [u8; 4],
+    #[codec_with = ingot :: models :: Never]
+    pub spaced: Option<Leg>,
+    #[codec_with = Never]
+    pub leg: Leg,
+    #[codec_with = Sized8]
+    pub aliased: u32,
+}
+
+#[serializable]
+pub struct Pair<A, const N: usize> {
+    #[codec_with = Never]
+    pub items: [A; N],
+    pub other: A,
+    #[codec_with = Never]
+    pub rest: Option<A>,
+}

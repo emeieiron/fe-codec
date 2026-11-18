@@ -1,0 +1,6 @@
+#[serializable]
+pub enum E {
+    A,
+    #[codec_with = Hex]
+    B,
+}

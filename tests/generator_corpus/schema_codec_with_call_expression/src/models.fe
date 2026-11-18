@@ -1,0 +1,5 @@
+#[serializable]
+pub struct A {
+    #[codec_with = Hex::new()]
+    pub a: u8,
+}
