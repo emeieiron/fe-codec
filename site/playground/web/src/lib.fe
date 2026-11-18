@@ -139,15 +139,20 @@ fn hash_mail_value(_ json: HostText) -> CodecResult<()> uses (log: mut Log) {
         .chain_id(1)
         .verifying_contract(Address::new(VERIFIER))
     let request: BoundedBuffer<1024> = fe_codec_eip712::typed_data_json(domain, mail)?
+    let encoded: Text<128> = fe_codec_eip712::encode_type<Mail, 128>()?
     send(word_bytes(generated))
     send(word_bytes(generic))
     send(word_bytes(domain.digest(generated)))
     send(buffer_bytes(request))
+    send(buffer_bytes(encoded.bytes()))
+    send(word_bytes(Mail::TYPE_HASH))
+    send(word_bytes(fe_codec_eip712::type_hash<Mail>()?))
     Result::Ok(())
 }
 
 /// Decodes `json` as a `Mail` and sends its `hashStruct` from the generated code and from the
-/// generic path, its signing digest in the EIP's example domain, and the wallet request.
+/// generic path, its signing digest in the EIP's example domain, the wallet request, its
+/// `encodeType`, and its type hash from the generated code and from the generic path.
 pub fn hash_mail(_ json: HostText) -> Reply uses (log: mut Log) {
     match hash_mail_value(json) {
         Result::Ok(()) => Reply::ok(0),

@@ -29,7 +29,7 @@ fn long_help() -> MemBuffer {
 
 With --out, writes (or with --check, verifies) a module beside the sources. With --stdout, prints the module for a build system to place: this is the FSGP v1 generator mode, which writes no files.
 
-Usage: fe-codec-gen [OPTIONS] --source <SOURCE>
+Usage: fe_codec_gen [OPTIONS] --source <SOURCE>
 
 Options:
       --source <SOURCE>
@@ -58,7 +58,7 @@ Options:
 fn short_help() -> MemBuffer {
     format!("Generate Fe Codec impls for #[serializable] structs and enums
 
-Usage: fe-codec-gen [OPTIONS] --source <SOURCE>
+Usage: fe_codec_gen [OPTIONS] --source <SOURCE>
 
 Options:
       --source <SOURCE>  A top-level module of the ingot that declares models. Repeat for several modules
@@ -200,7 +200,7 @@ pub fn parse_args() -> Result<Exit, Options> uses (args: Args) {
             return Result::Err(Exit { status: 0, to_stdout: true, text })
         }
         if option == OPT_VERSION {
-            return Result::Err(Exit { status: 0, to_stdout: true, text: format!("fe-codec-gen 0.1.0\n") })
+            return Result::Err(Exit { status: 0, to_stdout: true, text: format!("fe_codec_gen 0.1.0\n") })
         }
         if (option == OPT_STDOUT && seen_stdout) || (option == OPT_CHECK && seen_check)
             || (option == OPT_EIP712 && seen_eip712) {

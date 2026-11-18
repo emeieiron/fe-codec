@@ -1,3 +1,0 @@
-sources = ["src/models.fe"]
-modes = ["eip712"]
-expect_stderr = "src/models.fe:1:1: error: no #[eip712] struct found\n"

@@ -329,16 +329,11 @@ fn serializable(_ file: ref File, _ source: usize, _ attrs: Run) -> Result<Diagn
 }
 
 /// Fails if a schema name token is longer than `MAX_NAME_BYTES`.
-fn check_name(_ file: ref File, _ source: usize, _ name: Option<usize>, _ site: usize) -> Result<Diagnostic, ()> {
-    match name {
-        Option::None => fail(source, site, format!("missing name")),
-        Option::Some(token) => {
-            if file.token_text(token).len() > MAX_NAME_BYTES {
-                return fail(source, site, format!("schema name exceeds ", MAX_NAME_BYTES, " bytes"))
-            }
-            Result::Ok(())
-        },
+fn check_name(_ file: ref File, _ source: usize, _ name: usize, _ site: usize) -> Result<Diagnostic, ()> {
+    if file.token_text(name).len() > MAX_NAME_BYTES {
+        return fail(source, site, format!("schema name exceeds ", MAX_NAME_BYTES, " bytes"))
     }
+    Result::Ok(())
 }
 
 /// Parses every source, reporting the first syntax error.
@@ -586,6 +581,9 @@ impl Program {
                     },
                     ItemKind::Enum => {
                         let model = file.enums[item.detail]
+                        if marked(file, model.attrs, "eip712") {
+                            return fail(index, item.start, format!("#[eip712] applies to structs"))
+                        }
                         if serializable(file, index, model.attrs)? {
                             self.enumeration(index, item.start, model, mut output)?
                         }
@@ -609,7 +607,7 @@ impl Program {
         _ output: mut Output,
     ) -> Result<Diagnostic, ()> {
         let file = ref self.files[source]
-        self.header(source, start, model.mods, Option::Some(model.name))?
+        self.header(source, start, model.mods, model.name)?
         let name = file.token_text(model.name)
         let generics = self.generics(source, start, model)?
         match model.fields_kind {
@@ -627,11 +625,9 @@ impl Program {
             if !visible(file, field.mods) || field.mods.is_unsafe {
                 return fail(source, field.start, format!("serializable fields must be `pub` or `pub(ingot)`, and safe"))
             }
-            check_name(file, source, field.name, field.start)?
-            let field_name = match field.name {
-                Option::Some(token) => token,
-                Option::None => 0,
-            }
+            // A field without a name is a syntax error, so a parsed field has one.
+            let field_name = field.name.unwrap()
+            check_name(file, source, field_name, field.start)?
             let field_text = file.token_text(field_name)
             var d: usize = 0
             while d < fields.len() {
@@ -747,7 +743,7 @@ impl Program {
         _ output: mut Output,
     ) -> Result<Diagnostic, ()> {
         let file = ref self.files[source]
-        self.header(source, start, model.mods, Option::Some(model.name))?
+        self.header(source, start, model.mods, model.name)?
         if model.has_generics || model.where_token.is_some() {
             return fail(source, start, format!("generic enums are unsupported"))
         }
@@ -762,7 +758,7 @@ impl Program {
                 VariantKind::Unit => {},
                 _ => return fail(source, variant.start, format!("only unit enum variants are supported")),
             }
-            check_name(file, source, Option::Some(variant.name), variant.start)?
+            check_name(file, source, variant.name, variant.start)?
             let variant_name = file.token_text(variant.name)
             var d: usize = 0
             while d < variants.len() {
@@ -802,7 +798,7 @@ impl Program {
         _ source: usize,
         _ start: usize,
         _ mods: Modifiers,
-        _ name: Option<usize>,
+        _ name: usize,
     ) -> Result<Diagnostic, ()> {
         let file = ref self.files[source]
         if !visible(file, mods) || mods.is_unsafe {
@@ -831,12 +827,9 @@ impl Program {
             match parameter.kind {
                 GenericKind::Type => {
                     if !parameter.has_default {
-                        let token = match parameter.name {
-                            Option::Some(token) => token,
-                            Option::None => {
-                                return fail(source, parameter.start, format!("missing generic parameter name"))
-                            },
-                        }
+                        // A type or const parameter without a name, or a const parameter
+                        // without a type, is a syntax error, so a parsed one has them.
+                        let token = parameter.name.unwrap()
                         let text = file.token_text(token)
                         if text == "CodecEncoder" || text == "CodecDecoder" || text == "CodecDescriber" {
                             return fail(
@@ -857,15 +850,7 @@ impl Program {
                 },
                 GenericKind::Const => {
                     if !parameter.has_default {
-                        let token = match parameter.name {
-                            Option::Some(token) => token,
-                            Option::None => {
-                                return fail(source, parameter.start, format!("missing generic parameter name"))
-                            },
-                        }
-                        if parameter.ty.is_none() {
-                            return fail(source, parameter.start, format!("missing const parameter type"))
-                        }
+                        let token = parameter.name.unwrap()
                         generics.push(Generic {
                             is_const: true,
                             name: token,

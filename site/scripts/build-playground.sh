@@ -5,13 +5,14 @@
 set -eu
 
 root=$(cd "$(dirname "$0")/../.." && pwd -P)
-generator="$root/tools/fe-codec-gen"
+generator="$root/tools/fe_codec_gen"
 project="$root/site/playground"
 public="$root/site/src/wasm"
 
 cd "$project"
-"$generator" --source web/src/presets.fe --out web/src/serializers.fe
-"$generator" --source web/src/presets.fe --eip712 --out web/src/eip712.fe
+# The generated modules are build output (ignored by Git), so they are overwritten.
+"$generator" --source web/src/presets.fe --stdout > web/src/serializers.fe
+"$generator" --source web/src/presets.fe --eip712 --stdout > web/src/eip712.fe
 femp build -t wasm -O s
 
 mkdir -p "$public"

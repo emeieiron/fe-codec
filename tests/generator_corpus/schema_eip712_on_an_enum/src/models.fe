@@ -1,0 +1,10 @@
+#[serializable]
+pub struct Mail { pub id: u8 }
+
+/// Enums are uint8 members in EIP-712, never types of their own.
+#[serializable]
+#[eip712]
+pub enum Kind {
+    A,
+    B,
+}

@@ -1,6 +1,6 @@
 //! Models for the EIP-712 tests. They mirror the cases in tests/vectors/eip712.py.
 //!
-//! `#[eip712]` types also get static struct hashing from `fe-codec-gen --eip712`; the types
+//! `#[eip712]` types also get static struct hashing from `fe_codec_gen --eip712`; the types
 //! EIP-712 cannot express are left unmarked, and the generic path rejects them at runtime.
 
 use core::bytes::PackedBytes

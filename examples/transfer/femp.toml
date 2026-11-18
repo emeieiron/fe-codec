@@ -28,7 +28,7 @@ path = "shared"
 
 [modules.shared.generate.serializers]
 command = [
-    "../../../tools/fe-codec-gen",
+    "../../../tools/fe_codec_gen",
     "--source", "src/models.fe", "--source", "src/typed.fe", "--stdout",
 ]
 output = "src/serializers.fe"
@@ -36,7 +36,7 @@ output = "src/serializers.fe"
 # A second generator in the same module: static EIP-712 hashing for #[eip712] structs.
 [modules.shared.generate.eip712]
 command = [
-    "../../../tools/fe-codec-gen",
+    "../../../tools/fe_codec_gen",
     "--source", "src/models.fe", "--source", "src/typed.fe", "--eip712", "--stdout",
 ]
 output = "src/eip712.fe"

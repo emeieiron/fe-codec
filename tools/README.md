@@ -9,7 +9,7 @@ The generator is written in Fe, so generating serializers needs only the `fe` to
 - `generator/`: ingot `fe_codec_gen`, the native executable: the command line and files, around
   `fe_codec_codegen`.
 - `syntax-dump/`: ingot `fe_syntax_dump`, which prints what `fe_syntax` parses.
-- `fe-codec-gen`: a wrapper that builds the generator when its sources change, then runs it.
+- `fe_codec_gen`: a wrapper that builds the generator when its sources change, then runs it.
 
 ## Building and testing
 

@@ -6,8 +6,8 @@ export const manifest = {
   "manifest_version": 1,
   "module": {
     "file": "fe_codec_playground.wasm",
-    "sha256": "c3023434cb4c7af5523a551fc7f7d95a8710273e6485438abe0f882f84659669",
-    "size": 813146,
+    "sha256": "23d938d9157fd3111f51937fbcbf2186c10fc67fac1402f45e489e2c378252c9",
+    "size": 817705,
     "initial_memory_pages": 18
   },
   "contract_version": 1,

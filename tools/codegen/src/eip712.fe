@@ -228,9 +228,8 @@ fn define(
     let model = output.models[index]
     let file = ref program.files[model.source]
     let name = file.token_text(model.name)
-    if !model.is_record {
-        return error(model, model.offset, format!("#[eip712] applies to structs"))
-    }
+    // Roots and their dependencies are records: schema rejects #[eip712] on an enum, and an
+    // enum member is a uint8, not a dependency.
     if model.generics.len != 0 {
         return error(
             model,

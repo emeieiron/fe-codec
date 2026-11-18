@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Specification tests for the command line and diagnostics of fe_codec_gen.
 
-Runs every case in tests/generator_corpus/ against the Fe generator (tools/fe-codec-gen) and
+Runs every case in tests/generator_corpus/ against the Fe generator (tools/fe_codec_gen) and
 checks its expectations, with no reference generator and no stored output. Run from anywhere:
 
     python3 tests/generator_cases.py [--case NAME] [--keep]
@@ -59,7 +59,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 CORPUS = HERE / "generator_corpus"
-GENERATOR = ROOT / "tools" / "fe-codec-gen"
+GENERATOR = ROOT / "tools" / "fe_codec_gen"
 MESSAGE_SOURCES = [ROOT / "tools/codegen/src/schema.fe", ROOT / "tools/codegen/src/eip712.fe"]
 
 OUTPUT = "src/serializers.fe"
@@ -117,12 +117,7 @@ DIAGNOSTIC = re.compile(r"^(?P<path>[^:\n]+):(?P<line>\d+):(?P<col>\d+): error: 
 
 # Messages in the Fe sources that no input can produce, each with the reason. The parser
 # rejects these inputs first, or the code is unreachable by construction.
-UNREACHABLE = {
-    "missing name": "a struct, enum, field or variant without a name is a syntax error, which the parser reports first",
-    "missing generic parameter name": "a generic parameter without a name is a syntax error (`expected a generic parameter`)",
-    "missing const parameter type": "a const parameter without a type is a syntax error (`expected `:` and the const parameter type`)",
-    "#[eip712] applies to structs": "only structs are ever marked #[eip712]; on an enum the attribute is ignored and no root is found",
-}
+UNREACHABLE = {}
 
 
 def find_fe() -> dict:
@@ -975,7 +970,7 @@ def build_cli_cases() -> list:
             )
         )
 
-    version = "fe-codec-gen 0.1.0\n"
+    version = "fe_codec_gen 0.1.0\n"
     for flag in ("--version", "-V"):
         cases.append(cli(f"version_{flag.lstrip('-')}", [flag], status=0, stdout=version, stderr=""))
     cases.append(cli("version_with_other_arguments", ["--source", "src/models.fe", "--stdout", "--version"], status=0, stdout=version, stderr=""))
@@ -988,7 +983,7 @@ def build_cli_cases() -> list:
                 stderr="",
                 stdout=None,
                 stdout_prefix="Generate Fe Codec impls for #[serializable] structs and enums",
-                stdout_contains=("Usage: fe-codec-gen", "--source <SOURCE>", "--out <OUT>", "--stdout", "--check", "--eip712", "--help", "--version"),
+                stdout_contains=("Usage: fe_codec_gen", "--source <SOURCE>", "--out <OUT>", "--stdout", "--check", "--eip712", "--help", "--version"),
             )
         )
 
@@ -1305,7 +1300,7 @@ def main(argv: list | None = None) -> int:
     warm = subprocess.run([str(GENERATOR), "--version"], capture_output=True, env=ENV, check=False)
     if warm.returncode != 0:
         sys.stderr.write(warm.stderr.decode("utf-8", errors="replace"))
-        raise SystemExit("tools/fe-codec-gen does not build")
+        raise SystemExit("tools/fe_codec_gen does not build")
 
     cases = load_cases(None)
     cli_cases = build_cli_cases()

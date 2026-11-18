@@ -3,7 +3,7 @@
 golden outputs.
 
 For each seed it builds a random model spec, writes it as Fe source with formatting noise, runs
-`tools/fe-codec-gen` on it, and tests the generated serializers and EIP-712 hashing with `fe test`.
+`tools/fe_codec_gen` on it, and tests the generated serializers and EIP-712 hashing with `fe test`.
 Every expected value comes from outside the generator:
 
   * the wire formats of docs/formats.md, implemented in tests/vectors/reference.py;
@@ -39,7 +39,7 @@ from fuzz.gen import make_spec  # noqa: E402
 from fuzz.source import Renderer, finalize, mix_fill, permutation  # noqa: E402
 from fuzz.spec import closure_models  # noqa: E402
 
-GENERATOR = os.path.join(ROOT, "tools", "fe-codec-gen")
+GENERATOR = os.path.join(ROOT, "tools", "fe_codec_gen")
 DEFAULT_SEEDS = 20
 TIMEOUT = 900
 

@@ -44,7 +44,7 @@ def consumer_project(app, generator, source, rev):
     text = manifest.read_text()
     start, stop = text.index("[modules.io]"), text.index("[modules.compact]")
     text = text[:start] + text[stop:]
-    # The demo runs each generator through the tools/fe-codec-gen wrapper; keep its arguments,
+    # The demo runs each generator through the tools/fe_codec_gen wrapper; keep its arguments,
     # everything after the wrapper.
     demo = tomllib.loads((DEMO / "femp.toml").read_text())
     for name, section in demo["modules"]["shared"]["generate"].items():

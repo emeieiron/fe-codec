@@ -6,7 +6,7 @@
 //
 //     node tests/playground_parity.mjs
 //
-// It needs fe on PATH for tools/fe-codec-gen, and Node 22 or later.
+// It needs fe on PATH for tools/fe_codec_gen, and Node 22 or later.
 
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const corpus = join(root, "tests/generator_corpus");
-const generator = join(root, "tools/fe-codec-gen");
+const generator = join(root, "tools/fe_codec_gen");
 const { FeCodecPlayground } = await import(join(root, "site/src/wasm/fe_codec_playground.js"));
 
 let words = [];

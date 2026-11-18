@@ -16,7 +16,7 @@ if stale; then
     tmp=$(mktemp -d "$root/target/fe-build.XXXXXX")
     if ! (cd "$root" && "${FE:-fe}" build --backend native tools/generator --out-dir "$tmp") >&2; then
         rm -rf "$tmp"
-        echo "fe-codec-gen: building tools/generator failed" >&2
+        echo "fe_codec_gen: building tools/generator failed" >&2
         exit 1
     fi
     if ! mv -f "$tmp/fe_codec_gen" "$bin"; then
