@@ -1,0 +1,65 @@
+# Runs every check that needs only fe, Python and Node. The FeMP checks (femp test, prop and
+# prove, and tests/consumer.py) run locally; see README.md.
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      FE_VERSION: v26.6.0
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Install Fe
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/argotorg/fe/master/feup/feup.sh \
+            | bash -s -- --version "$FE_VERSION" --no-modify-path
+          echo "$HOME/.fe/bin" >> "$GITHUB_PATH"
+
+      - name: Runtime ingots
+        run: |
+          for ingot in io core; do
+            (cd "$ingot" && fe test && fe test --backend native)
+          done
+
+      - name: Parser
+        working-directory: tools/syntax
+        run: fe test && fe test --backend native
+
+      - name: Generator diagnostics and command line
+        run: python3 tests/generator_cases.py
+
+      - name: Parser against fe check
+        run: |
+          fe build --backend native tools/syntax-dump --out-dir target/fe
+          python3 tests/parser_vs_fe.py
+
+      - name: Generated code for random models
+        run: python3 tests/generator_fuzz.py --seeds 8 --jobs 4
+
+      - name: Playground module matches the generator
+        run: node tests/playground_parity.mjs
+
+      - name: Plain Fe consumer
+        run: |
+          tools/fe_codec_gen --version
+          python3 tests/vanilla.py --generator target/fe/fe_codec_gen
+
+      - name: EIP-712 reference vectors
+        run: python3 -I tests/vectors/eip712.py > /dev/null
+
+      - name: Documentation site
+        working-directory: site
+        run: npm ci && npm run build
