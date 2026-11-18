@@ -4,4 +4,5 @@ version = "0.1.0"
 target = "native"
 
 [dependencies]
+fe_codec_codegen = "../codegen"
 fe_syntax = "../syntax"

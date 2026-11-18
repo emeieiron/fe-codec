@@ -1,0 +1,34 @@
+//! The core of `fe_codec_gen`: from the text of Fe modules to the module it generates, or the
+//! first error. It does no I/O, so the native command line and the WebAssembly playground run
+//! the same code. `schema` reads the declarations, and `render` and `eip712` write the module.
+use core::{MemBuffer, MemVec, Result}
+use ingot::eip712::render as render_eip712
+use ingot::render::render
+use ingot::schema::Program
+
+pub use ingot::schema::{Diagnostic, line_col}
+pub use ingot::render::header
+pub use ingot::text::{copy, is_text, is_utf8, part, same, starts_with}
+
+/// The module generated for `texts`, the sources of the modules named `modules` in the same
+/// order: serializers, or with `eip712` static EIP-712 hashing. On failure, the first error,
+/// at a byte offset of one source.
+pub fn generate(
+    _ modules: ref MemVec<MemBuffer>,
+    _ texts: ref MemVec<MemBuffer>,
+    _ eip712: bool,
+) -> Result<Diagnostic, MemBuffer> {
+    var program = Program::parse(texts)?
+    let schema = program.extract(modules)?
+    if eip712 {
+        render_eip712(program, schema)
+    } else {
+        Result::Ok(render(program, schema))
+    }
+}
+
+/// `path:line:col: error: message`, from the byte offset of the error in `text`.
+pub fn diagnostic(_ path: ref MemBuffer, _ text: ref MemBuffer, _ error: Diagnostic) -> MemBuffer {
+    let (line, column) = line_col(text, error.offset)
+    format!(path, ":", line, ":", column, ": error: ", error.message)
+}

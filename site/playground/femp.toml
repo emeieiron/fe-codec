@@ -1,0 +1,11 @@
+# The playground's WebAssembly module. site/scripts/build-playground.sh builds it.
+[project]
+name = "fe_codec_playground"
+version = "0.1.0"
+
+[toolchain]
+fe = "26.6.0"
+
+[modules.web]
+path = "web"
+platform = "wasm"

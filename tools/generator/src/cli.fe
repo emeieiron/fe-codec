@@ -1,8 +1,7 @@
 //! The command line, paths and the output file. `main` itself is in `lib.fe`.
 use core::{MemBuffer, MemVec, Option, Result}
 use fe_syntax::is_keyword
-use ingot::render::header
-use ingot::text::{copy, is_text, part, same, starts_with}
+use fe_codec_codegen::{copy, header, is_text, part, same, starts_with}
 use std::env::Args
 use std::fs::{FileType, Fs}
 use std::io::{Error, ErrorKind}

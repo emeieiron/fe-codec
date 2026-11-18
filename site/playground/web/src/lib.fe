@@ -1,0 +1,156 @@
+//! The playground's WebAssembly module: the generator, and serializers compiled for the preset
+//! models in `presets`.
+//!
+//! An export takes text from the page and returns a `Reply`. Text goes back through the log
+//! channel, the one way out of a module that needs no `unsafe`: for each piece, a word with its
+//! length in bytes, then its bytes, eight to a word, least significant first.
+
+use core::{MemBuffer, MemVec}
+use core::num::IntDowncast
+use fe_codec_codegen::{diagnostic, generate}
+use fe_codec_core::{BoundedBuffer, CodecError, CodecResult, ErrorKind, Text}
+use fe_codec_eip712::{Domain, Eip712Struct}
+use std::evm::Address
+use std::wasm::{HostText, Log, Reply}
+use ingot::presets::{Mail, Order}
+
+/// The EIP's example domain.
+const VERIFIER: u256 = 0xcccccccccccccccccccccccccccccccccccccccc
+
+/// Copies text the page lent for this call into a buffer the module owns.
+fn owned(_ input: HostText) -> MemBuffer {
+    let text = input.copy()
+    let bytes = text.span()
+    var out = MemBuffer::new(0)
+    var i: usize = 0
+    while i < bytes.len() {
+        out.push(bytes[i])
+        i += 1
+    }
+    out
+}
+
+/// Sends one piece of text: its length, then its bytes.
+fn send(_ bytes: ref MemBuffer) uses (log: mut Log) {
+    let length: u64 = bytes.len().downcast_truncate()
+    log.log_u64(value: length)
+    var i: usize = 0
+    while i < bytes.len() {
+        var word: u64 = 0
+        var k: usize = 0
+        while k < 8 && i + k < bytes.len() {
+            let byte: u64 = bytes[i + k] as u64
+            word = word | (byte << (8 * k).downcast_truncate())
+            k += 1
+        }
+        log.log_u64(value: word)
+        i += 8
+    }
+}
+
+fn buffer_bytes<const N: usize>(_ buffer: BoundedBuffer<N>) -> MemBuffer {
+    var out = MemBuffer::new(0)
+    var i: usize = 0
+    while i < buffer.len() {
+        match buffer.byte_at(i) {
+            Option::Some(byte) => out.push(byte),
+            Option::None => {},
+        }
+        i += 1
+    }
+    out
+}
+
+/// A 256-bit word as 32 big-endian bytes.
+fn word_bytes(_ value: u256) -> MemBuffer {
+    var out = MemBuffer::new(0)
+    var k: u256 = 0
+    while k < 32 {
+        let byte: u8 = ((value >> (8 * (31 - k))) & 0xff).downcast_truncate()
+        out.push(byte)
+        k += 1
+    }
+    out
+}
+
+/// A decoding error for the page: the reply carries the kind's code, and the offset and the
+/// field name follow as two pieces of text.
+fn report(_ error: CodecError) -> Reply uses (log: mut Log) {
+    send(format!(error.offset))
+    match error.field() {
+        Option::Some(name) => send(buffer_bytes(name.as_bytes())),
+        Option::None => send(MemBuffer::new(0)),
+    }
+    Reply::error(error.kind.code())
+}
+
+fn input<const N: usize>(_ text: HostText) -> CodecResult<BoundedBuffer<N>> {
+    let bytes = owned(text)
+    match BoundedBuffer<N>::from_span(bytes.span()) {
+        Result::Ok(buffer) => Result::Ok(buffer),
+        Result::Err(_) => Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: N)),
+    }
+}
+
+/// The module fe_codec_gen writes for `models`, the text of `src/models.fe`: serializers, or
+/// with `eip712` the EIP-712 module. Sends the module and replies 0, or sends the first error
+/// as `src/models.fe:line:column: error: message` and replies 1.
+pub fn generate_module(_ models: HostText, _ eip712: bool) -> Reply uses (log: mut Log) {
+    var modules = MemVec<MemBuffer>::new()
+    modules.push(format!("models"))
+    var texts = MemVec<MemBuffer>::new()
+    texts.push(owned(models))
+    match generate(modules, texts, eip712) {
+        Result::Ok(output) => {
+            send(output)
+            Reply::ok(0)
+        },
+        Result::Err(error) => {
+            send(diagnostic(format!("src/models.fe"), texts[error.source], error))
+            Reply::ok(1)
+        },
+    }
+}
+
+fn encode_order_value(_ json: HostText) -> CodecResult<()> uses (log: mut Log) {
+    let order: Order = fe_codec_json::decode(input<512>(json)?)?
+    let canonical: BoundedBuffer<512> = fe_codec_json::encode(order)?
+    let cbor: BoundedBuffer<256> = fe_codec_cbor::encode(order)?
+    send(buffer_bytes(canonical))
+    send(buffer_bytes(cbor))
+    Result::Ok(())
+}
+
+/// Decodes `json` as an `Order` and sends it encoded again: compact JSON, then CBOR.
+pub fn encode_order(_ json: HostText) -> Reply uses (log: mut Log) {
+    match encode_order_value(json) {
+        Result::Ok(()) => Reply::ok(0),
+        Result::Err(error) => report(error),
+    }
+}
+
+fn hash_mail_value(_ json: HostText) -> CodecResult<()> uses (log: mut Log) {
+    let mail: Mail = fe_codec_json::decode(input<512>(json)?)?
+    let generated = mail.hash_struct()
+    let generic = fe_codec_eip712::hash_struct(mail)?
+    let domain = Domain::new()
+        .name(Text<64>::from_array("Ether Mail")?)
+        .version(Text<64>::from_array("1")?)
+        .chain_id(1)
+        .verifying_contract(Address::new(VERIFIER))
+    let request: BoundedBuffer<1024> = fe_codec_eip712::typed_data_json(domain, mail)?
+    send(word_bytes(generated))
+    send(word_bytes(generic))
+    send(word_bytes(domain.digest(generated)))
+    send(buffer_bytes(request))
+    Result::Ok(())
+}
+
+/// Decodes `json` as a `Mail` and sends its `hashStruct` from the generated code and from the
+/// generic path, its signing digest in the EIP's example domain, and the wallet request.
+pub fn hash_mail(_ json: HostText) -> Reply uses (log: mut Log) {
+    match hash_mail_value(json) {
+        Result::Ok(()) => Reply::ok(0),
+        Result::Err(error) => report(error),
+    }
+}

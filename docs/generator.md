@@ -74,12 +74,15 @@ ignore that path in Git.
 ## How it is built and tested
 
 The generator lives in [`tools/`](../tools/README.md): `tools/syntax` is `fe_syntax`, a lexer and
-parser for Fe declarations, and `tools/generator` is the executable. Three suites check it
-without storing any of its output:
+parser for Fe declarations, `tools/codegen` is the generator itself, with no I/O, and
+`tools/generator` is the executable around it. The same code, compiled to WebAssembly, runs in the
+site's playground. Four suites check it without storing any of its output:
 
 - `tests/generator_cases.py` covers every diagnostic with its exact position, the command
   line, and output that compiles;
 - `tests/generator_fuzz.py` generates random models, compiles and runs their serializers on
   two backends, compares the bytes with independent reference encoders and the EIP-712
   specification, and requires that reformatting a model never changes the output;
-- `tests/parser_vs_fe.py` checks the parser against `fe check` on mutated sources.
+- `tests/parser_vs_fe.py` checks the parser against `fe check` on mutated sources;
+- `tests/playground_parity.mjs` checks that the playground's WebAssembly build gives the same
+  output and diagnostics as the native one on every single-module case.

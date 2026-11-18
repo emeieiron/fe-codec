@@ -13,3 +13,6 @@
 # The documentation site
 /site/node_modules/
 /site/.astro/
+/site/playground/build/
+/site/playground/web/src/serializers.fe
+/site/playground/web/src/eip712.fe

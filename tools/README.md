@@ -4,7 +4,10 @@ The generator is written in Fe, so generating serializers needs only the `fe` to
 
 - `syntax/`: ingot `fe_syntax`, a lexer and parser for Fe declarations (`use` items, structs,
   enums, impl headers). A library with no I/O and no knowledge of Fe Codec.
-- `generator/`: ingot `fe_codec_gen`, the native executable. It depends on `fe_syntax`.
+- `codegen/`: ingot `fe_codec_codegen`, the generator itself: from the text of Fe modules to
+  the module it writes, or the first error. It does no I/O, so it builds for every target.
+- `generator/`: ingot `fe_codec_gen`, the native executable: the command line and files, around
+  `fe_codec_codegen`.
 - `syntax-dump/`: ingot `fe_syntax_dump`, which prints what `fe_syntax` parses.
 - `fe-codec-gen`: a wrapper that builds the generator when its sources change, then runs it.
 
@@ -20,7 +23,12 @@ cd tools/syntax && fe test --backend native && fe test             # parser test
 python3 tests/generator_cases.py   # diagnostics, command line, compiled output
 python3 tests/generator_fuzz.py    # random models: wire bytes, Schema, EIP-712, reformatting
 python3 tests/parser_vs_fe.py      # the parser against fe check on mutated sources
+node tests/playground_parity.mjs   # the playground's WebAssembly generator against this one
 ```
+
+The site's playground runs `fe_codec_codegen` compiled to WebAssembly. Its module is committed in
+`site/src/wasm/`, so the site builds with Node alone; after changing `tools/` or the codec ingots,
+rebuild it with `site/scripts/build-playground.sh`, which needs `femp`, and run the parity test.
 
 None of these store generator output. `generator_cases.py` checks the cases in
 `tests/generator_corpus/`:

@@ -4,7 +4,7 @@ import ThemeToggle from './ThemeToggle.astro';
 import { repo, url } from '../lib/site';
 
 interface Props {
-  current?: 'home' | 'docs';
+  current?: 'home' | 'docs' | 'playground';
 }
 
 const { current } = Astro.props;
@@ -17,6 +17,7 @@ const { current } = Astro.props;
     </a>
     <nav aria-label="Main">
       <a href={url('docs/getting-started/')} aria-current={current === 'docs' ? 'page' : undefined}>Docs</a>
+      <a href={url('playground/')} aria-current={current === 'playground' ? 'page' : undefined}>Playground</a>
       <a class="wide-only" href={url('docs/eip712/')}>EIP-712</a>
       <a class="wide-only" href={url('docs/formats/')}>Wire profiles</a>
       <a class="github" href={repo} aria-label="Fe Codec on GitHub">

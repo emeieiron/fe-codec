@@ -41,7 +41,7 @@ first token; attribute errors at their `#`; "no #[serializable] struct or enum f
 
 Every run starts from a fresh temporary directory with relative source paths, so messages do
 not contain temporary paths. Besides the corpus there is a table of command line cases
-(build_cli_cases below), and a coverage check: every message in tools/generator/src/schema.fe and eip712.fe must
+(build_cli_cases below), and a coverage check: every message in tools/codegen/src/schema.fe and eip712.fe must
 be expected by a passing case, or be listed in UNREACHABLE with a reason.
 """
 
@@ -60,7 +60,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 CORPUS = HERE / "generator_corpus"
 GENERATOR = ROOT / "tools" / "fe-codec-gen"
-MESSAGE_SOURCES = [ROOT / "tools/generator/src/schema.fe", ROOT / "tools/generator/src/eip712.fe"]
+MESSAGE_SOURCES = [ROOT / "tools/codegen/src/schema.fe", ROOT / "tools/codegen/src/eip712.fe"]
 
 OUTPUT = "src/serializers.fe"
 HANDWRITTEN = b"// Handwritten\n"
@@ -1269,7 +1269,7 @@ def coverage(cases: list, report: Report) -> None:
             if entry["pattern"].fullmatch(message) and name not in entry["cases"]:
                 entry["cases"].append(name)
 
-    print("\nMessage coverage (tools/generator/src/schema.fe, eip712.fe)")
+    print("\nMessage coverage (tools/codegen/src/schema.fe, eip712.fe)")
     missing = []
     for display, entry in table.items():
         names = entry["cases"]

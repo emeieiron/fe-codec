@@ -1,21 +1,12 @@
 //! `fe_codec_gen`: generates Fe Codec impls for `#[serializable]` structs and enums, and with
-//! `--eip712` static EIP-712 hashing. `cli` has the command line and files, `schema` reads the
-//! declarations, and `render` and `eip712` write the module.
+//! `--eip712` static EIP-712 hashing. `cli` has the command line and files; the generator itself
+//! is `fe_codec_codegen`.
 use core::{MemBuffer, MemVec, Option, Result}
+use fe_codec_codegen::{copy, diagnostic, generate, is_utf8, same}
 use ingot::cli::{Options, at_path, module_name, parse_args, source_dir, write_output}
-use ingot::eip712::render as render_eip712
-use ingot::render::render
-use ingot::schema::{Diagnostic, Program, line_col}
-use ingot::text::{copy, is_utf8, same}
 use std::env::Args
 use std::fs::Fs
 use std::io::{Stderr, Stdout}
-
-/// `path:line:col: error: message`, from the byte offset of the error in its source.
-fn diagnostic(_ path: ref MemBuffer, _ text: ref MemBuffer, _ error: Diagnostic) -> MemBuffer {
-    let (line, column) = line_col(text, error.offset)
-    format!(path, ":", line, ":", column, ": error: ", error.message)
-}
 
 fn run(_ options: ref Options) -> Result<MemBuffer, ()> uses (out: mut Stdout, fs: mut Fs) {
     var modules = MemVec<MemBuffer>::new()
@@ -72,27 +63,11 @@ fn run(_ options: ref Options) -> Result<MemBuffer, ()> uses (out: mut Stdout, f
         texts.push(bytes)
         i += 1
     }
-    var program = match Program::parse(texts) {
-        Result::Ok(program) => program,
+    let output = match generate(modules, texts, options.eip712) {
+        Result::Ok(output) => output,
         Result::Err(error) => {
             return Result::Err(diagnostic(options.sources[error.source], texts[error.source], error))
         },
-    }
-    let schema = match program.extract(modules) {
-        Result::Ok(schema) => schema,
-        Result::Err(error) => {
-            return Result::Err(diagnostic(options.sources[error.source], texts[error.source], error))
-        },
-    }
-    let output = if options.eip712 {
-        match render_eip712(program, schema) {
-            Result::Ok(output) => output,
-            Result::Err(error) => {
-                return Result::Err(diagnostic(options.sources[error.source], texts[error.source], error))
-            },
-        }
-    } else {
-        render(program, schema)
     }
     if options.stdout {
         if !out.write_stdout(output.span()) {

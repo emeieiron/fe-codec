@@ -347,6 +347,10 @@ python3 tests/consumer.py
 cd site && npm ci && npm run dev
 ```
 
+```bash
+site/scripts/build-playground.sh && node tests/playground_parity.mjs
+```
+
 The FeMP project pins Fe 26.6.0. `tests/generator_cases.py` checks the generator's diagnostics,
 command line and compiled output, `tests/generator_fuzz.py` checks generated code for random
 models against reference encoders and the EIP-712 specification, and `tests/parser_vs_fe.py`

@@ -8,7 +8,7 @@ bin="$root/target/fe/fe_codec_gen"
 
 stale() {
     [ ! -x "$bin" ] && return 0
-    [ -n "$(find "$root/tools/syntax" "$root/tools/generator" -type f -newer "$bin" -print -quit)" ]
+    [ -n "$(find "$root/tools/syntax" "$root/tools/codegen" "$root/tools/generator" -type f -newer "$bin" -print -quit)" ]
 }
 
 if stale; then
