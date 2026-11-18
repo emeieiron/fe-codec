@@ -22,6 +22,7 @@ pub enum OrderStatus {
 #[serializable]
 pub struct Person { pub name: Text<16>, pub wallet: Address }
 
+/// Signed as EIP-712 typed data.
 #[serializable]
 #[eip712]
 pub struct Mail { pub from: Person, pub to: Person, pub contents: Text<32> }

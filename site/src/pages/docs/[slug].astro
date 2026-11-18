@@ -2,9 +2,11 @@
 import { getCollection, render } from 'astro:content';
 import Docs from '../../layouts/Docs.astro';
 import { pages } from '../../lib/site';
+import { checkQuotedValues } from '../../lib/values';
 
 export async function getStaticPaths() {
   const entries = await getCollection('docs');
+  await checkQuotedValues(entries);
   const listed = new Set(pages.map((page) => page.slug));
   for (const entry of entries) {
     if (!listed.has(entry.id)) {

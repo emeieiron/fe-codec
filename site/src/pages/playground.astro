@@ -105,34 +105,12 @@ import { url } from '../lib/site';
 <script>
   import { highlight, escape } from '../lib/fe-highlight';
   import { Playground, hex } from '../lib/playground';
+  import { MAIL, ORDER } from '../lib/samples';
+  import presets from '../../playground/web/src/presets.fe?raw';
 
   const EXAMPLES: Record<string, string> = {
-    order: `use fe_codec_core::Text
-use std::evm::Address
-
-#[serializable]
-pub struct Order {
-    pub id: u64,
-    pub buyer: Address,
-    pub total: u256,
-    pub status: OrderStatus,
-    pub note: Option<Text<32>>,
-}
-
-#[serializable]
-pub enum OrderStatus {
-    Open,
-    Paid,
-}
-
-#[serializable]
-pub struct Person { pub name: Text<16>, pub wallet: Address }
-
-/// Signed as EIP-712 typed data.
-#[serializable]
-#[eip712]
-pub struct Mail { pub from: Person, pub to: Person, pub contents: Text<32> }
-`,
+    // The models compiled into the module, without the file's own comment.
+    order: presets.replace(/^(\/\/!.*\n)+\n*/, ''),
     ids: `use fe_codec_core::Text
 
 /// IDs keep the wire format stable when fields move or are added.
@@ -162,20 +140,7 @@ pub struct Reading {
 `,
   };
 
-  const VALUES: Record<string, string> = {
-    order: `{
-  "id": 7,
-  "buyer": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
-  "total": 1000000000000000000,
-  "status": "Paid",
-  "note": "gift"
-}`,
-    mail: `{
-  "from": { "name": "Cow", "wallet": "0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826" },
-  "to": { "name": "Bob", "wallet": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
-  "contents": "Hello, Bob!"
-}`,
-  };
+  const VALUES: Record<string, string> = { order: ORDER, mail: MAIL };
 
   const $ = <T extends Element>(selector: string) => document.querySelector<T>(selector)!;
   const status = $<HTMLElement>('[data-status]');

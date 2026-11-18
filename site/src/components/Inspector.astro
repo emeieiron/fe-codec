@@ -1,42 +1,126 @@
 ---
-// The Order from examples/vanilla and its golden encodings, which `fe test` checks there:
-// 119 bytes of JSON and 43 bytes of deterministic CBOR.
+// One Order, field by field. Only the model's declaration is written here: its JSON and CBOR
+// come from Fe Codec at build time (lib/values.ts), and the build fails if they stop matching
+// the declared fields.
+import { siteValues } from '../lib/values';
 
-interface Field {
+
+interface Declared {
   name: string;
   type: string;
-  id: number;
-  json: string;
-  /** CBOR key byte, then the value's head and payload. */
-  cbor: string[];
-  meaning: string;
+  /** A unit enum, written as its variant's ID. */
+  variant?: boolean;
 }
 
-const fields: Field[] = [
-  { name: 'id', type: 'u64', id: 1, json: '"id":7', cbor: ['01', '07'], meaning: 'key 1 · uint 7' },
-  {
-    name: 'buyer',
-    type: 'Address',
-    id: 2,
-    json: '"buyer":"0xd8da6bf26964af9d7eed9e03e53415d37aa96045"',
-    cbor: ['02', '54', 'd8', 'da', '6b', 'f2', '69', '64', 'af', '9d', '7e', 'ed', '9e', '03', 'e5', '34', '15', 'd3', '7a', 'a9', '60', '45'],
-    meaning: 'key 2 · bytes(20)',
-  },
-  {
-    name: 'total',
-    type: 'u256',
-    id: 3,
-    json: '"total":1000000000000000000',
-    cbor: ['03', '1b', '0d', 'e0', 'b6', 'b3', 'a7', '64', '00', '00'],
-    meaning: 'key 3 · uint64 10¹⁸',
-  },
-  { name: 'status', type: 'OrderStatus', id: 4, json: '"status":"Paid"', cbor: ['04', '01'], meaning: 'key 4 · variant 1' },
-  { name: 'note', type: 'Option<Text<32>>', id: 5, json: '"note":"gift"', cbor: ['05', '64', '67', '69', '66', '74'], meaning: 'key 5 · text(4)' },
+const declared: Declared[] = [
+  { name: 'id', type: 'u64' },
+  { name: 'buyer', type: 'Address' },
+  { name: 'total', type: 'u256' },
+  { name: 'status', type: 'OrderStatus', variant: true },
+  { name: 'note', type: 'Option<Text<32>>' },
 ];
 
-const jsonBytes = 2 + fields.reduce((n, f) => n + f.json.length, 0) + fields.length - 1;
-const cborBytes = 1 + fields.reduce((n, f) => n + f.cbor.length, 0);
+const { order } = await siteValues();
+
+/** The members of a compact JSON object, split at its top-level commas. */
+function members(json: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let inString = false;
+  let start = 1;
+  for (let i = 1; i < json.length - 1; i++) {
+    const c = json[i];
+    if (inString) {
+      if (c === '\\') i++;
+      else if (c === '"') inString = false;
+    } else if (c === '"') inString = true;
+    else if (c === '{' || c === '[') depth++;
+    else if (c === '}' || c === ']') depth--;
+    else if (c === ',' && depth === 0) {
+      out.push(json.slice(start, i));
+      start = i + 1;
+    }
+  }
+  out.push(json.slice(start, json.length - 1));
+  return out;
+}
+
+/** A CBOR head: its major type, additional information, argument and length in bytes. */
+function head(bytes: Uint8Array, at: number) {
+  const major = bytes[at] >> 5;
+  const info = bytes[at] & 31;
+  let length = 1;
+  let argument = BigInt(info);
+  if (info >= 24 && info <= 27) {
+    length += 1 << (info - 24);
+    argument = 0n;
+    for (let k = 1; k < length; k++) argument = (argument << 8n) | BigInt(bytes[at + k]);
+  }
+  return { major, info, argument, length };
+}
+
+/** The length in bytes of the CBOR item at `at`. */
+function itemLength(bytes: Uint8Array, at: number): number {
+  const h = head(bytes, at);
+  if (h.major === 2 || h.major === 3) return h.length + Number(h.argument);
+  if (h.major === 4 || h.major === 5) {
+    let total = h.length;
+    for (let k = 0; k < Number(h.argument) * (h.major === 5 ? 2 : 1); k++) total += itemLength(bytes, at + total);
+    return total;
+  }
+  if (h.major === 6) return h.length + itemLength(bytes, at + h.length);
+  return h.length;
+}
+
+function describe(bytes: Uint8Array, at: number, variant: boolean): string {
+  const h = head(bytes, at);
+  if (h.major === 0) {
+    if (variant) return `variant ${h.argument}`;
+    return h.info < 24 ? `uint ${h.argument}` : `uint${8 << (h.info - 24)}`;
+  }
+  if (h.major === 2) return `bytes(${h.argument})`;
+  if (h.major === 3) return `text(${h.argument})`;
+  if (h.major === 6) return 'bignum';
+  return 'value';
+}
+
+const cbor = order.cbor;
+const map = head(cbor, 0);
+const pairs = members(order.json);
+if (map.major !== 5 || Number(map.argument) !== declared.length || pairs.length !== declared.length) {
+  throw new Error('Inspector: the Order encodings no longer have one entry per declared field');
+}
+let at = map.length;
+const fields = declared.map((field, i) => {
+  const key = head(cbor, at);
+  const keyLength = itemLength(cbor, at);
+  const valueLength = itemLength(cbor, at + keyLength);
+  const bytes = [...cbor.slice(at, at + keyLength + valueLength)].map((b) => b.toString(16).padStart(2, '0'));
+  const meaning = `key ${key.argument} · ${describe(cbor, at + keyLength, field.variant ?? false)}`;
+  at += keyLength + valueLength;
+  if (!pairs[i].startsWith(`"${field.name}":`)) {
+    throw new Error(`Inspector: JSON member ${i} is ${pairs[i]}, not the field ${field.name}`);
+  }
+  return { ...field, id: Number(key.argument), json: pairs[i], cbor: bytes, meaning };
+});
+
+const jsonBytes = new TextEncoder().encode(order.json).length;
+const cborBytes = cbor.length;
 const hue = (i: number) => `--c: var(--f${i + 1})`;
+
+/** The sample value in short form: addresses shortened, powers of ten as exponents. */
+const superscript = (n: number) => [...String(n)].map((d) => '⁰¹²³⁴⁵⁶⁷⁸⁹'[Number(d)]).join('');
+const caption = members(order.json)
+  .map((member) => {
+    const colon = member.indexOf(':');
+    const name = member.slice(1, colon - 1);
+    let value = member.slice(colon + 1);
+    if (/^"0x[0-9a-f]{40}"$/i.test(value)) value = `${value.slice(1, 7)}…${value.slice(-5, -1)}`;
+    else if (/^10+$/.test(value) && value.length > 6) value = `10${superscript(value.length - 1)}`;
+    else if (declared.find((f) => f.name === name)?.variant) value = value.slice(1, -1);
+    return `${name}: ${value}`;
+  })
+  .join(', ');
 
 /** `"name":value` split into the key and the value, for coloring. */
 function split(json: string) {
@@ -70,7 +154,7 @@ function typeTokens(type: string) {
       <pre class="code"><code><span class="row"><span class="attr">#[serializable]</span></span><span class="row"><span class="kw">pub struct</span> <span class="ty">Order</span> <span class="p">{'{'}</span></span>{fields.map((field, i) => (<span class="row line" data-field={field.name} style={hue(i)} tabindex="0"><span class="gutter">{field.id}</span><span>    </span><span class="kw">pub</span> {field.name}<span class="p">:</span> {typeTokens(field.type).map((t) => (/[<>]/.test(t) ? <span class="p">{t}</span> : <span class="ty">{t}</span>))}<span class="p">,</span></span>))}<span class="row"><span class="p">{'}'}</span></span></code></pre>
       <p class="value">
         <span class="label">value</span>
-        <code>id: 7, buyer: 0xd8dA…6045, total: 10¹⁸, status: Paid, note: "gift"</code>
+        <code>{caption}</code>
       </p>
     </section>
 
@@ -119,7 +203,7 @@ function typeTokens(type: string) {
   </div>
 
   <figcaption>
-    <span>Golden bytes from <code>examples/vanilla</code>, checked by <code>fe test</code> on the EVM and natively.</span>
+    <span>Encoded by <code>fe_codec_json</code> and <code>fe_codec_cbor</code> when this page was built.</span>
     <span class="hint">Hover or focus a field</span>
   </figcaption>
 </figure>
