@@ -23,8 +23,8 @@ The command is `fe_codec_gen`.
 
 ## Add the ingots
 
-Add the runtime ingots to your `fe.toml`, pinned to the same revision. One Git source supplies
-several ingots by name:
+Add the runtime ingots to your `fe.toml`, pinned to the same commit; Fe pins a Git dependency
+by its full commit hash. One Git source supplies several ingots by name:
 
 ```toml
 [dependencies]
