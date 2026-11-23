@@ -6,8 +6,8 @@ use core::num::IntDowncast
 use fe_codec_core::{BoundedBuffer, CodecResult, Describe, ErrorKind, Limits, Serialize, Text}
 use fe_codec_eip712::{Domain, Eip712, Eip712Struct}
 use std::evm::Address
-use ingot::models::{Booking, Recipient, Receipt}
-use ingot::typed::{
+use codec_transfer::models::{Booking, Recipient, Receipt}
+use codec_transfer::typed::{
     Asset,
     Conflict,
     Contact,
@@ -179,8 +179,17 @@ fn hashes_arrays_of_structs() {
 
 #[test]
 fn hashes_nested_arrays() {
+    // Built element by element: Fe 26.7.0's Sonatina backend panics ("unsupported const
+    // subreference source") on the literal `[[1, 2], [3, 4], [5, 255]]` passed to `check`.
+    var cells: [[u8; 2]; 3] = [[0; 2]; 3]
+    cells[0][0] = 1
+    cells[0][1] = 2
+    cells[1][0] = 3
+    cells[1][1] = 4
+    cells[2][0] = 5
+    cells[2][1] = 255
     check(
-        Grid { cells: [[1, 2], [3, 4], [5, 255]] },
+        Grid { cells },
         partial_domain(),
         GRID_ENCODE_TYPE,
         GRID_TYPE_HASH,

@@ -17,7 +17,7 @@ contracts, native programs and WebAssembly, with fixed-capacity buffers and expl
 | `fe_codec_io` | Bounded buffers, re-exported by core |
 | `fe_codec_gen` | Writes `Serialize`, `Deserialize`, `Schema` and `Describe` impls for `#[serializable]` types, and with `--eip712` static EIP-712 hashing for `#[eip712]` structs |
 
-The runtime ingots are plain Fe and work with the official `fe` toolchain, version 26.6.0.
+The runtime ingots are plain Fe and work with the official `fe` toolchain, version 26.7.0.
 FeMP is optional: it can run the generator for you and test across targets, but nothing you
 ship depends on it.
 

@@ -1,7 +1,7 @@
 """EIP-712 test vectors from a direct transcription of the specification.
 
 This shares no code with the Fe implementation. It prints the constants used by
-examples/transfer/shared/src/eip712_tests.fe and writes tests/vectors/eip712_cases.json,
+examples/transfer/eip712_tests/src/lib.fe and writes tests/vectors/eip712_cases.json,
 which tests/eip712_viem.mjs checks again with viem.
 
 Run with: python3 -I tests/vectors/eip712.py

@@ -58,6 +58,7 @@ of non-ASCII bytes are merged so a mutation never splits a UTF-8 character).
 import argparse
 import collections
 import concurrent.futures
+import glob
 import os
 import random
 import re
@@ -69,10 +70,34 @@ import threading
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TOOLCHAIN = os.path.expanduser("~/.femp/toolchains/fe-26.6.0/src/ingots")
 DUMP = os.path.join(ROOT, "target/fe/fe_syntax_dump")
 FE_ENV = dict(os.environ, NO_COLOR="1")
 FE_ENV["PATH"] = os.path.expanduser("~/.fe/bin") + os.pathsep + FE_ENV.get("PATH", "")
+
+
+def _find_toolchain():
+    """The `ingots` directory (core and std sources) of the Fe the `fe` on PATH was built from:
+    FE_TOOLCHAIN_INGOTS if set, else FeMP's managed toolchain for that version
+    (~/.femp/toolchains/fe-<version>/src/ingots), else a Cargo checkout of the commit the
+    binary reports (~/.cargo/git/checkouts/fe-*/<commit>/ingots)."""
+    override = os.environ.get("FE_TOOLCHAIN_INGOTS")
+    if override:
+        return override
+    out = subprocess.run(["fe", "--version"], capture_output=True, text=True, env=FE_ENV).stdout
+    match = re.search(r"(\d+\.\d+\.\d+) \((\w+)\)", out)
+    if not match:
+        sys.exit("cannot read the version from `fe --version`: %r" % out)
+    version, commit = match.groups()
+    candidates = [os.path.expanduser("~/.femp/toolchains/fe-%s/src/ingots" % version)]
+    candidates += sorted(glob.glob(os.path.expanduser("~/.cargo/git/checkouts/fe-*/%s*/ingots" % commit)))
+    for path in candidates:
+        if os.path.isdir(os.path.join(path, "core", "src")):
+            return path
+    sys.exit("no sources of Fe %s (%s) found; set FE_TOOLCHAIN_INGOTS to its `ingots` directory"
+             % (version, commit))
+
+
+TOOLCHAIN = _find_toolchain()
 
 # ---------------------------------------------------------------------------------------------
 # Lexer

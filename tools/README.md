@@ -16,7 +16,7 @@ The generator is written in Fe, so generating serializers needs only the `fe` to
 ```bash
 fe build --backend native tools/generator --out-dir target/fe     # → target/fe/fe_codec_gen
 fe build --backend native tools/syntax-dump --out-dir target/fe   # → target/fe/fe_syntax_dump
-cd tools/syntax && fe test --backend native && fe test             # parser tests, both backends
+cd tools/syntax && fe test --backend native && fe test --backend wasm && fe test   # parser tests, all three backends
 ```
 
 ```bash
@@ -55,7 +55,7 @@ native examples in `src/crates/fe/tests/fixtures/native/*.fe`.
 - No semicolons. Statements end at the newline.
 - Parameters declared `name: T` must be labeled at the call (`write_word(offset: 0, value: x)`);
   declare `_ name: T` to pass positionally.
-- Generic arguments are all or nothing: `f<A, B>(x)`, never `f<A>(x)` for `f<A, const N>`.
+- Generic arguments may be partial: `f<A>(x)` for `f<A, const N>` infers `N`.
 - `as` converts only when lossless. Otherwise `use core::num::IntDowncast` and call
   `.downcast_truncate()` or `.downcast()` (an `Option`).
 - `Result<E, T>`: the error type comes first. `?` propagates it.
@@ -70,5 +70,12 @@ native examples in `src/crates/fe/tests/fixtures/native/*.fe`.
 - Memory: `MemBuffer` (bytes: `new`, `push`, `len`, `read_be<u8>`, `slice(offset:, len:)`) and
   `MemVec<T>` (growable). Store trees as arenas of nodes addressed by index, not as recursive
   boxes.
-- `fe test` runs `#[test]` functions on `sonatina` (EVM) by default and on `--backend native`.
-  There is no wasm backend for `fe test`.
+- `fe test` runs `#[test]` functions on `sonatina` (EVM) by default, and on `--backend native`
+  and `--backend wasm`.
+- On the EVM backend `fe test` compiles every test it runs into one contract and deploys it in
+  one transaction, and Fe 26.7.0 rejects a contract that is too large
+  (`CreateContractSizeLimit`; 990 KB of runtime code deploys, 1.2 MB does not). A suite of
+  generic format tests reaches that: keep an ingot's tests well under it, and split them into
+  more ingots (see `examples/transfer/eip712_tests`) or run them in groups with
+  `fe test --filter` (see `tests/generator_fuzz.py`). `fe test --report` writes the size as
+  `runtime.bin`.

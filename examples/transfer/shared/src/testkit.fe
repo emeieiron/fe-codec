@@ -1,0 +1,47 @@
+// Helpers shared by the test modules of this example: this ingot's own tests and the test-only
+// ingots next to it (eip712_tests, codec_field_tests).
+
+use fe_codec_core::{BoundedBuffer, CodecResult, Deserialize, ErrorKind, Format, Serialize, Text}
+
+/// The text `hi`.
+pub fn hi() -> Text<8> {
+    must(Text<8>::from_array("hi"))
+}
+
+/// The value of an `Ok` result; any error aborts the test.
+pub fn must<T>(_ result: own CodecResult<T>) -> T {
+    match result {
+        Result::Ok(value) => value,
+        Result::Err(_) => core::panic(),
+    }
+}
+
+/// `result` is an error of `kind` at `offset` that names the field `name`.
+pub fn expect_field<T, const M: usize>(
+    _ result: own CodecResult<T>,
+    _ kind: ErrorKind,
+    _ offset: usize,
+    _ name: [u8; M],
+) {
+    match result {
+        Result::Err(error) => {
+            assert!(error.kind == kind)
+            assert!(error.offset == offset)
+            assert!(error.field().unwrap().as_bytes().equals(BoundedBuffer<M>::from_array(name)))
+        },
+        Result::Ok(_) => assert!(false),
+    }
+}
+
+/// Whether `format` encodes `value` as exactly `expected`, in a buffer of that size.
+pub fn encodes<T: Serialize, F: Format, const M: usize>(_ format: F, _ value: T, _ expected: [u8; M]) -> bool {
+    match format.encode<T, M>(value) {
+        Result::Ok(bytes) => bytes.equals(BoundedBuffer<M>::from_array(expected)),
+        Result::Err(_) => false,
+    }
+}
+
+/// Decodes `input` as a `T` in `format`.
+pub fn decodes<T: Deserialize, F: Format, const M: usize>(_ format: F, _ input: [u8; M]) -> CodecResult<T> {
+    format.decode<T, M>(BoundedBuffer<M>::from_array(input))
+}

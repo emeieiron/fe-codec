@@ -3,7 +3,7 @@ name = "codec_transfer"
 version = "0.1.0"
 
 [toolchain]
-fe = "26.6.0"
+fe = "26.7.0"
 
 [modules.io]
 path = "../../io"
@@ -25,6 +25,16 @@ path = "../compact_format"
 
 [modules.shared]
 path = "shared"
+
+# Tests that run on every platform, in their own modules: `fe test` on the EVM backend deploys
+# all the tests of a module as one contract, and Fe 26.7.0 rejects one that is too large
+# (CreateContractSizeLimit; 990 KB of code deploys, 1.2 MB does not). Keep each module's tests
+# well under that; see tools/README.md.
+[modules.eip712_tests]
+path = "eip712_tests"
+
+[modules.codec_field_tests]
+path = "codec_field_tests"
 
 [modules.shared.generate.serializers]
 command = [

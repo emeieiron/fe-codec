@@ -4,7 +4,7 @@ Fe Codec turns your Fe types into JSON, deterministic CBOR or a format of your o
 hashes them as EIP-712 typed data. You describe a type once, a generator writes its
 serializers, and the same code runs in contracts, native programs and WebAssembly.
 
-You need the Fe toolchain, version 26.6.0. Nothing else: the generator is written in Fe too.
+You need the Fe toolchain, version 26.7.0. Nothing else: the generator is written in Fe too.
 
 ## Install the generator
 

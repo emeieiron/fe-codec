@@ -240,7 +240,10 @@ pub fn parse_args() -> Result<Exit, Options> uses (args: Args) {
 
 /// `path: error: <reason> (os error N)` for an OS error on `path`.
 pub fn at_path(_ path: ref MemBuffer, _ error: Error) -> MemBuffer {
-    format!(path, ": error: ", error, " (os error ", error.code(), ")")
+    match error.code() {
+        Option::Some(code) => format!(path, ": error: ", error, " (os error ", code, ")"),
+        Option::None => format!(path, ": error: ", error),
+    }
 }
 
 /// The start and end of the last normal component of `path`, skipping trailing separators

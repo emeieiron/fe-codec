@@ -304,16 +304,37 @@ def check_seed(seed, args):
         for backend in backends:
             t0 = time.time()
             # A loaded machine can make a native test cross the default 60 s limit.
-            cmd = ["fe", "test"] + (["--backend", "native", "--native-timeout-secs", "900"]
-                                    if backend == "native" else [])
-            rc, so, se = run(cmd, ingot)
-            out = (so + se).decode(errors="replace")
-            m = re.search(r"test result: (\w+)\. (\d+) passed; (\d+) failed", out)
-            result.backend_summary[backend] = m.group(0) if m else "no result"
-            if rc != 0 or not m or m.group(1) != "ok" or m.group(3) != "0":
-                failed = parse_failed_tests(out)
-                result.fail("fe test (%s)" % backend,
-                            "failing tests: %s\n%s" % (", ".join(failed) or "(compile errors)", failure_digest(out)))
+            base = ["fe", "test"] + (["--backend", "native", "--native-timeout-secs", "900"]
+                                     if backend == "native" else [])
+            # The EVM backend deploys all the tests of a run as one contract, which has a size
+            # limit: run its tests in batches (see MAX_BATCH_TESTS in tests/fuzz/fetests.py).
+            def attempt(prefix):
+                rc, so, se = run(base + (["--filter", prefix] if prefix else []), ingot)
+                out = (so + se).decode(errors="replace")
+                m = re.search(r"test result: (\w+)\. (\d+) passed; (\d+) failed", out)
+                return rc, out, m
+
+            ran, bad = 0, []
+            for prefix in (builder.batches if backend == "sonatina" else [""]):
+                rc, out, m = attempt(prefix)
+                if "CreateContractSizeLimit" in out and len(builder.kinds.get(prefix, [])) > 1:
+                    # Still too large: one run per kind of test in the batch.
+                    runs = [(part,) + attempt(part) for part in builder.kinds[prefix]]
+                else:
+                    runs = [(prefix, rc, out, m)]
+                for part, rc, out, m in runs:
+                    if m:
+                        ran += int(m.group(2))
+                    if rc != 0 or not m or m.group(1) != "ok" or m.group(3) != "0":
+                        failed = parse_failed_tests(out)
+                        bad.append("batch %r: failing tests: %s\n%s" % (
+                            part, ", ".join(failed) or "(compile errors)", failure_digest(out)))
+            if not bad and ran != result.tests:
+                bad.append("the runs together ran %d tests, expected %d" % (ran, result.tests))
+            result.backend_summary[backend] = "test result: %s. %d of %d passed" % (
+                "FAILED" if bad else "ok", ran, result.tests)
+            if bad:
+                result.fail("fe test (%s)" % backend, "\n".join(bad))
             result.timings["fe test " + backend] = time.time() - t0
 
         # 4. Metamorphic checks.

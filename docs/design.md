@@ -31,13 +31,14 @@ runtime metadata is the field and variant names and IDs a format needs.
 
 ## What Fe provides and what it does not
 
-These were checked against the Fe 26.6.0 sources and with probe ingots on the EVM and
+These were checked against the Fe 26.7.0 sources and with probe ingots on the EVM and
 native backends.
 
 | Fe capability | Used for |
 | --- | --- |
 | Traits implemented on primitives, `Option<T>`, `[T; N]` and tuples from any ingot that owns the trait | The built-in impls in `core/src/impls.fe` |
 | Associated consts, generic and const-generic trait methods | `Encoder::OMIT_NONE`, `Format::encode<T, N>` |
+| Partial generic arguments, the rest inferred | `f<A>(x)` for `f<A, const N>` |
 | Inference from an annotated binding through `?` | `let bytes: BoundedBuffer<128> = fe_codec_json::encode(order)?` |
 | `Copy` arrays built with `[value; N]` | Decoding `[T; N]` without `unsafe` |
 | Unknown attributes are accepted | `#[serializable]`, `#[codec_id]` |
@@ -45,10 +46,9 @@ native backends.
 | Constraint | Consequence |
 | --- | --- |
 | No derive macros, reflection or compile-time code generation | `fe_codec_gen`, a generator written in Fe, writes the impls as ordinary Fe source |
-| Partial generic arguments are rejected (`f<A>(x)` for `f<A, const N>`) | Calls name every generic argument, or let both be inferred from an annotated binding |
 | `unsafe` in a dependency must be allowed by every consumer | Core has no `unsafe`. Generic `[T; N]` decoding therefore needs `T: Copy`, and cannot produce `[T; 0]`; generated code decodes literal-length arrays element by element instead |
 | `usize` is 256, 64 or 32 bits depending on the target | `usize` and `isize` are not serializable |
-| `fe test` runs the `sonatina` (EVM) and `native` backends | WebAssembly is checked through FeMP |
+| `fe test` has `sonatina` (EVM), `native` and `wasm` backends | FeMP runs the format tests on all three and the property tests and proofs besides |
 | On the EVM, a panic's value becomes revert data | `CodecError` ABI-encodes as its kind code and offset, so `unwrap` compiles in contracts |
 
 ## Design decisions
@@ -130,7 +130,7 @@ not yet cover the `mut` borrows the encoder and decoder traits use. They are tes
 - conformance with every JSON parser: values above 2^53 need an integer-preserving parser;
 - gas or code-size bounds; the property harness exceeds EIP-170 because it links every
   format, which says nothing about a contract that uses one;
-- behavior beyond the Fe 26.6.0 toolchain the tests ran on.
+- behavior beyond the Fe 26.7.0 toolchain the tests ran on.
 
 ## Source generation
 

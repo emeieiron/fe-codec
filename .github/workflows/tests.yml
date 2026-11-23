@@ -13,7 +13,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      FE_VERSION: v26.6.0
+      FE_VERSION: v26.7.0
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -31,12 +31,12 @@ jobs:
       - name: Runtime ingots
         run: |
           for ingot in io core; do
-            (cd "$ingot" && fe test && fe test --backend native)
+            (cd "$ingot" && fe test && fe test --backend native && fe test --backend wasm)
           done
 
       - name: Parser
         working-directory: tools/syntax
-        run: fe test && fe test --backend native
+        run: fe test && fe test --backend native && fe test --backend wasm
 
       - name: Generator diagnostics and command line
         run: python3 tests/generator_cases.py

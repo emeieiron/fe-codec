@@ -1,10 +1,12 @@
 use fe_codec_core::{BoundedBuffer, ErrorKind}
 use std::wasm::{HostText, Reply}
 
+#[unsafe(export)]
 pub fn verify_formats() -> bool {
     codec_transfer::verify_formats()
 }
 
+#[unsafe(export)]
 pub fn decode_json_value(_ input: HostText) -> Reply {
     if input.len() > 256 {
         return Reply::error(ErrorKind::CapacityExceeded.code())

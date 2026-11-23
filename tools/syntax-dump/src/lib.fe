@@ -362,7 +362,12 @@ pub fn main() -> i32 uses (out: mut Stdout, err: mut Stderr, args: Args, fs: mut
                 }
             },
             Result::Err(error) => {
-                eprintln!(args.get(index), ": error: cannot read: ", error.code())
+                match error.code() {
+                    Option::Some(code) => {
+                        eprintln!(args.get(index), ": error: cannot read: ", code)
+                    },
+                    Option::None => eprintln!(args.get(index), ": error: cannot read"),
+                }
                 status = 1
             },
         }

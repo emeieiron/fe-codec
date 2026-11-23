@@ -95,6 +95,7 @@ fn input<const N: usize>(_ text: HostText) -> CodecResult<BoundedBuffer<N>> {
 /// The module fe_codec_gen writes for `models`, the text of `src/models.fe`: serializers, or
 /// with `eip712` the EIP-712 module. Sends the module and replies 0, or sends the first error
 /// as `src/models.fe:line:column: error: message` and replies 1.
+#[unsafe(export)]
 pub fn generate_module(_ models: HostText, _ eip712: bool) -> Reply uses (log: mut Log) {
     var modules = MemVec<MemBuffer>::new()
     modules.push(format!("models"))
@@ -122,6 +123,7 @@ fn encode_order_value(_ json: HostText) -> CodecResult<()> uses (log: mut Log) {
 }
 
 /// Decodes `json` as an `Order` and sends it encoded again: compact JSON, then CBOR.
+#[unsafe(export)]
 pub fn encode_order(_ json: HostText) -> Reply uses (log: mut Log) {
     match encode_order_value(json) {
         Result::Ok(()) => Reply::ok(0),
@@ -153,6 +155,7 @@ fn hash_mail_value(_ json: HostText) -> CodecResult<()> uses (log: mut Log) {
 /// Decodes `json` as a `Mail` and sends its `hashStruct` from the generated code and from the
 /// generic path, its signing digest in the EIP's example domain, the wallet request, its
 /// `encodeType`, and its type hash from the generated code and from the generic path.
+#[unsafe(export)]
 pub fn hash_mail(_ json: HostText) -> Reply uses (log: mut Log) {
     match hash_mail_value(json) {
         Result::Ok(()) => Reply::ok(0),

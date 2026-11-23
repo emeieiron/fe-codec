@@ -1,0 +1,8 @@
+[ingot]
+name = "codec_transfer_eip712_tests"
+version = "0.1.0"
+
+[dependencies]
+codec_transfer = "../shared"
+fe_codec_core = "../../../core"
+fe_codec_eip712 = "../../../formats/eip712"

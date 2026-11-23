@@ -24,6 +24,23 @@ fn stable<T: Serialize + Deserialize, F: Format, const N: usize>(_ format: F, _ 
 """
 
 
+# `fe test` on the EVM (sonatina) backend compiles all the tests it runs into ONE contract and
+# deploys it in one transaction. Fe 26.7.0 fails that deployment with `CreateContractSizeLimit`
+# when the code is too large. Measured with `fe test --report` (runtime.bin):
+# the limit is not EIP-170's 24576 bytes, since suites of 340 to 990 KB deploy and run, and a
+# suite of 1.2 MB (150 tests) does not. A seed with 90 to 250 tests (2 KB to 90 KB of
+# code each) is over the limit about half the time. The harness therefore runs the tests in batches of
+# at most MAX_BATCH_TESTS = 16 tests (the tests of one generated type are never split, so a batch
+# is larger when one type has more), selected by the name prefix `b<N>__` (`fe test --filter`
+# matches a substring of the function name). The cost of a test depends on the types it uses and
+# varies from 2 KB to 90 KB (a batch of 22 tests of one large type came to 1.1 MB and failed), so
+# a batch that still fails with CreateContractSizeLimit is run again in parts, one per kind of
+# test (`b<N>__json_`, `b<N>__cbor_`, ...). Every test still runs on both backends, and the
+# harness checks that the runs together ran exactly as many tests as were generated. The native
+# backend has no such limit and runs everything in one go.
+MAX_BATCH_TESTS = 16
+
+
 def hex_list(data):
     rows = []
     for i in range(0, len(data), 16):
@@ -125,11 +142,42 @@ class Builder:
         return out
 
     def build(self):
-        spec, rng = self.spec, self.rng
+        """The source of the test module. `self.batches` lists the name prefixes (`b0__`, `b1__`,
+        ...) that split its tests into groups of at most MAX_BATCH_TESTS; the harness runs one
+        `fe test --filter <prefix>` per group (see MAX_BATCH_TESTS for why)."""
+        spec = self.spec
+        bounds = []  # the number of tests before each chunk, then the total
         for ti, t in enumerate(self.targets()):
+            bounds.append(self.stats["tests"])
             self.target(ti, t)
+        bounds.append(self.stats["tests"])
         self.eip712_tests()
         self.tuple_eip712_tests()
+        bounds.append(self.stats["tests"])
+        # Group adjacent chunks (one per generated type, then the EIP-712 tests) into batches.
+        batch_of = {}  # test index -> batch
+        batch, in_batch = 0, 0
+        for lo, hi in zip(bounds, bounds[1:]):
+            if in_batch and in_batch + (hi - lo) > MAX_BATCH_TESTS:
+                batch, in_batch = batch + 1, 0
+            for i in range(lo, hi):
+                batch_of[i] = batch
+            in_batch += hi - lo
+        self.batches = ["b%d__" % i for i in range(batch + 1)]
+        # For each batch, the prefixes of its tests by kind (`b3__json_`, `b3__cbor_`, ...), which
+        # split it again when its code is still too large.
+        self.kinds = {prefix: [] for prefix in self.batches}
+        index = 0
+        for k, fn in enumerate(self.fns):
+            if fn.startswith("#[test]\nfn "):
+                name = fn[len("#[test]\nfn "):]
+                prefix = "b%d__" % batch_of[index]
+                self.fns[k] = "#[test]\nfn " + prefix + name
+                word = name.split("(")[0].split("_")[0]
+                kind = prefix + word + ("_" if "_" in name.split("(")[0] else "")
+                if kind not in self.kinds[prefix]:
+                    self.kinds[prefix].append(kind)
+                index += 1
         mods = "".join("use ingot::%s::*\n" % chr(ord("a") + i) for i in range(spec.modules))
         header = HEADER.format(seed=self.seed, modules=mods)
         return header + "\n" + "\n".join(self.consts) + "\n\n" + "\n\n".join(self.fns) + "\n"
