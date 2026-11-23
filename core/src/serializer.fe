@@ -1,6 +1,6 @@
 use core::bytes::PackedBytes
 use fe_codec_io::BoundedBuffer
-use ingot::error::CodecResult
+use ingot::error::{CodecError, CodecResult, ErrorKind}
 use ingot::fields::FieldKey
 use ingot::schema::Schema
 use ingot::text::Text
@@ -80,6 +80,8 @@ pub trait Encoder {
 /// `read_some` reports whether an optional value follows, consuming the format's absence
 /// marker. `next_field` returns the next field present on the wire, positioned at its value,
 /// or `None` at the end of the record; the deserializer tracks duplicate and missing fields.
+/// When `R::skips_unknown_fields()` is true, `next_field` skips the fields `R` does not list
+/// with `skip_value`; otherwise it fails with `UnknownField`.
 pub trait Decoder {
     type Record
     type Sequence
@@ -97,6 +99,14 @@ pub trait Decoder {
     fn read_address(mut self) -> CodecResult<Address>
     fn read_some(mut self) -> CodecResult<bool>
     fn read_variant<V: Schema>(mut self) -> CodecResult<usize>
+    /// Consumes one complete value at the current position and discards it. The value must be
+    /// as well formed as any the decoder reads, within its limits. A format that cannot find
+    /// where a value ends, such as one that writes no markers, keeps this default.
+    fn skip_value(mut self) -> CodecResult<()> {
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.offset()),
+        )
+    }
 
     fn begin_record<R: Schema>(mut self) -> CodecResult<Self::Record>
     fn next_field<R: Schema>(mut self, _ record: mut Self::Record) -> CodecResult<Option<FieldKey>>

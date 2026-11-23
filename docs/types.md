@@ -15,8 +15,7 @@
 | `#[serializable]` enums | Unit variants of up to 31-byte names |
 | Your own types | With handwritten impls; see [writing serializers](writing-serializers.md) |
 
-Not supported yet: enums with payloads, variable-length collections, maps, and ignoring
-unknown fields.
+Not supported yet: enums with payloads, variable-length collections and maps.
 
 ## Choosing a serializer per field
 
@@ -85,6 +84,26 @@ pub struct Account {
     pub label: Option<Text<8>>,   // added later: old data still decodes
 }
 ```
+
+A reader built from an older model can accept data written by a newer one if its type opts in
+with `#[codec_skip_unknown]`, which skips every field the type does not list. Without it, an
+unknown field is an error.
+
+```fe
+#[serializable]
+#[codec_skip_unknown]
+pub struct Account {
+    #[codec_id = 1]
+    pub owner: u64,
+    #[codec_id = 2]
+    pub balance: u64,
+}
+```
+
+The skipped value must still be well formed and within the limits, and unknown fields count
+toward `Limits.max_items`. Only the marked record skips: a record nested inside it does so only
+if it is marked too. See [wire profiles](formats.md#ignoring-unknown-fields) for what each
+format checks, and [writing a format](writing-a-format.md) for formats that cannot skip.
 
 A type numbers all of its members or none. Field IDs start at 1 and variant IDs at 0; without
 IDs, members are numbered in declaration order. [Wire profiles](formats.md#schema-evolution)

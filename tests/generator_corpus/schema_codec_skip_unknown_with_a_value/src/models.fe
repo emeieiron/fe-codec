@@ -1,0 +1,3 @@
+#[serializable]
+#[codec_skip_unknown = true]
+pub struct A { pub a: u8 }

@@ -79,12 +79,13 @@ impl<const N: usize> TextWriter<N> {
 
 /// UTF-8 validation state: bytes still expected in the current sequence, and the range the
 /// next byte must fall in. `step` is a pure function so `femp prove` can check it against
-/// RFC 3629 (see `verification.fe`).
-pub(ingot) struct Utf8 { pub(ingot) remaining: u8, pub(ingot) lower: u8, pub(ingot) upper: u8 }
+/// RFC 3629 (see `verification.fe`). Decoders use `push` and `finish` to validate text they
+/// skip rather than store.
+pub struct Utf8 { pub(ingot) remaining: u8, pub(ingot) lower: u8, pub(ingot) upper: u8 }
 impl Copy for Utf8 {}
 
 impl Utf8 {
-    pub(ingot) fn new() -> Self {
+    pub fn new() -> Self {
         Self { remaining: 0, lower: 0x80, upper: 0xbf }
     }
 
@@ -115,7 +116,8 @@ impl Utf8 {
         Option::None
     }
 
-    fn push(mut self, _ byte: u8, _ offset: usize) -> CodecResult<()> {
+    /// Accepts the next byte, or fails with `InvalidUtf8` at `offset`.
+    pub fn push(mut self, _ byte: u8, _ offset: usize) -> CodecResult<()> {
         match self.step(byte) {
             Option::Some(next) => {
                 self.remaining = next.remaining
@@ -127,7 +129,8 @@ impl Utf8 {
         }
     }
 
-    fn finish(self, _ offset: usize) -> CodecResult<()> {
+    /// Fails with `InvalidUtf8` at `offset` when the text ends inside a sequence.
+    pub fn finish(self, _ offset: usize) -> CodecResult<()> {
         if self.remaining != 0 {
             return Result::Err(CodecError::at(kind: ErrorKind::InvalidUtf8, offset))
         }

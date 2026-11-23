@@ -21,7 +21,7 @@ use fe_codec_json::Json
 use codec_compact::Compact
 use std::evm::Address
 use std::evm::crypto::keccak_words
-use ingot::models::{Payment, Sample, Wallet, Wide}
+use ingot::models::{AccountReader, AccountV2, Payment, Sample, Wallet, Wide}
 use fe_codec_eip712::Eip712Struct
 use ingot::typed::{Asset, Contact, Flat, Order, Party, Terms}
 
@@ -368,5 +368,30 @@ pub fn typed_data_digests_agree(amount: u64, deadline: u64, who: u64, partial: b
     match fe_codec_eip712::signing_hash(domain, order) {
         Result::Ok(digest) => digest.downcast_truncate(),
         Result::Err(error) => error.kind.code() as u64,
+    }
+}
+
+/// A reader that skips unknown fields reads what a later version wrote, whatever the values
+/// and whether or not the added field is present.
+#[property(cases = 300)]
+pub fn readers_skip_fields_added_later(owner: u64, balance: u64, present: bool, label: u8) -> bool {
+    let ascii: u8 = label & 0x7f
+    let text = match Text<8>::from_array([ascii]) {
+        Result::Ok(text) => text,
+        Result::Err(_) => {
+            return false
+        },
+    }
+    let account = AccountV2 { owner, balance, label: if present { Option::Some(text) } else { Option::None } }
+    reads_old(Json::new(), account) && reads_old(Cbor::new(), account)
+}
+
+fn reads_old<F: Format>(_ format: F, _ account: AccountV2) -> bool {
+    match format.encode<AccountV2, 96>(account) {
+        Result::Ok(bytes) => match format.decode<AccountReader, 96>(bytes) {
+            Result::Ok(reader) => reader.owner == account.owner && reader.balance == account.balance,
+            Result::Err(_) => false,
+        },
+        Result::Err(_) => false,
     }
 }

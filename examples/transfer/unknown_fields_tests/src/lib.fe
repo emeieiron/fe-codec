@@ -1,0 +1,402 @@
+// A record marked #[codec_skip_unknown] reads data with fields it does not know; one without
+// the attribute rejects them. The inputs are written out byte for byte, and each rejected case
+// names the offset its error is reported at. These tests are their own ingot because `fe test` on the
+// EVM backend deploys all the tests of an ingot as one contract, which has a size limit (see
+// tools/README.md).
+
+use fe_codec_cbor::Cbor
+use fe_codec_core::{BoundedBuffer, CodecResult, Decoder, ErrorKind, Format, Limits, Schema, Text, validate_schema}
+use fe_codec_json::Json
+use codec_compact::{Compact, CompactDecoder}
+use codec_transfer::models::{AccountReader, AccountV1, AccountV2, Exact, Ledger, Lenient}
+use codec_transfer::testkit::{expect_error, expect_field, must}
+
+/// The value every accepted input stands for: owner and balance, and the label "hi" if any.
+fn check_lenient(_ result: own CodecResult<Lenient>, _ owner: u64, _ balance: u64, _ label: bool) {
+    let value = must(result)
+    assert!(value.owner == owner && value.balance == balance)
+    assert!(value.label.is_some() == label)
+    if label {
+        assert!(value.label.unwrap().equals(must(Text<8>::from_array("hi"))))
+    }
+}
+
+fn json_lenient<const N: usize>(_ input: [u8; N], _ limits: Limits) -> CodecResult<Lenient> {
+    Json::with_limits(limits).decode<Lenient, N>(BoundedBuffer<N>::from_array(input))
+}
+
+fn json_exact<const N: usize>(_ input: [u8; N], _ limits: Limits) -> CodecResult<Exact> {
+    Json::with_limits(limits).decode<Exact, N>(BoundedBuffer<N>::from_array(input))
+}
+
+fn json_ledger<const N: usize>(_ input: [u8; N]) -> CodecResult<Ledger> {
+    Json::new().decode<Ledger, N>(BoundedBuffer<N>::from_array(input))
+}
+
+fn cbor_lenient<const N: usize>(_ input: [u8; N], _ limits: Limits) -> CodecResult<Lenient> {
+    Cbor::with_limits(limits).decode<Lenient, N>(BoundedBuffer<N>::from_array(input))
+}
+
+fn cbor_exact<const N: usize>(_ input: [u8; N], _ limits: Limits) -> CodecResult<Exact> {
+    Cbor::with_limits(limits).decode<Exact, N>(BoundedBuffer<N>::from_array(input))
+}
+
+fn cbor_ledger<const N: usize>(_ input: [u8; N]) -> CodecResult<Ledger> {
+    Cbor::new().decode<Ledger, N>(BoundedBuffer<N>::from_array(input))
+}
+
+/// `{"owner":1,"x":[[...]],"balance":2}` with `depth` nested empty arrays, as bytes.
+fn nested_arrays<const N: usize, const DEPTH: usize>() -> [u8; N] {
+    var bytes: [u8; N] = [0; N]
+    let head: [u8; 15] = "{\"owner\":1,\"x\":"
+    let tail: [u8; 13] = ",\"balance\":2}"
+    var at: usize = 0
+    while at < 15 {
+        bytes[at] = head[at]
+        at += 1
+    }
+    var level: usize = 0
+    while level < DEPTH {
+        bytes[15 + level] = b'['
+        bytes[15 + DEPTH + level] = b']'
+        level += 1
+    }
+    var index: usize = 0
+    while index < 13 {
+        bytes[15 + 2 * DEPTH + index] = tail[index]
+        index += 1
+    }
+    bytes
+}
+
+/// `a3 02 01 03 81 .. 81 00 05 02`: a record with `DEPTH` nested arrays under an unknown ID.
+fn cbor_nested<const N: usize, const DEPTH: usize>() -> [u8; N] {
+    var bytes: [u8; N] = [0; N]
+    let head: [u8; 4] = [0xa3, 0x02, 0x01, 0x03]
+    var at: usize = 0
+    while at < 4 {
+        bytes[at] = head[at]
+        at += 1
+    }
+    var level: usize = 0
+    while level < DEPTH {
+        bytes[4 + level] = 0x81
+        level += 1
+    }
+    bytes[4 + DEPTH] = 0x00
+    bytes[5 + DEPTH] = 0x05
+    bytes[6 + DEPTH] = 0x02
+    bytes
+}
+
+#[test]
+fn json_skips_unknown_members_of_every_value_kind() {
+    let limits = Limits::standard()
+    check_lenient(json_lenient<23>("{\"owner\":1,\"balance\":2}", limits), 1, 2, false)
+    // Unknown members before, between and after the known ones.
+    check_lenient(json_lenient<41>("{\"x\":1,\"owner\":1,\"y\":2,\"balance\":2,\"z\":3}", limits), 1, 2, false)
+    check_lenient(json_lenient<59>("{\"a\":1,\"b\":2,\"owner\":1,\"c\":3,\"d\":4,\"balance\":2,\"e\":5,\"f\":6}", limits), 1, 2, false)
+    // Numbers, with fractions and exponents, and the literals.
+    check_lenient(json_lenient<153>("{\"a\":0,\"b\":-0,\"c\":-12,\"d\":1.5,\"e\":-0.25,\"f\":2e3,\"g\":1E+3,\"h\":1.5e-7,\"i\":123456789012345678901234567890,\"j\":true,\"k\":false,\"l\":null,\"owner\":1,\"balance\":2}", limits), 1, 2, false)
+    // Strings, with every escape, a surrogate pair and raw UTF-8.
+    check_lenient(json_lenient<93>("{\"owner\":1,\"s\":\"\",\"t\":\"plain\",\"u\":\"q\\\"b\\\\s\\/\\b\\f\\n\\r\\t\\u00e9\\uD83D\\uDE00 é😀\",\"balance\":2}", limits), 1, 2, false)
+    // Arrays and objects, nested, with whitespace.
+    check_lenient(json_lenient<82>("{\"owner\":1,\"a\":[],\"b\":{},\"c\":[1,[2,[3]],{\"d\":{\"e\":[null,{\"f\":\"g\"}]}}],\"balance\":2}", limits), 1, 2, false)
+    check_lenient(json_lenient<76>(" { \"x\" : [ 1 , { \"y\" : [ ] } ] , \"owner\" : 1 , \"z\" : { } , \"balance\" : 2 } \n", limits), 1, 2, false)
+    // Names that only resemble known ones, and a known name inside an unknown value.
+    check_lenient(json_lenient<66>("{\"Owner\":9,\"owner\":1,\"owne\":9,\"owners\":9,\"label\":\"hi\",\"balance\":2}", limits), 1, 2, true)
+    check_lenient(json_lenient<58>("{\"x\":{\"owner\":\"nope\",\"balance\":[1]},\"owner\":1,\"balance\":2}", limits), 1, 2, false)
+    // A name longer than any field name: plain, as surrogate pairs, and cut inside a character.
+    check_lenient(json_lenient<72>("{\"owner\":1,\"a_key_longer_than_thirty_one_bytes\":[1,{\"x\":2}],\"balance\":2}", limits), 1, 2, false)
+    check_lenient(json_lenient<127>("{\"owner\":1,\"\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\\ud83d\\ude00\":null,\"balance\":2}", limits), 1, 2, false)
+    check_lenient(json_lenient<65>("{\"owner\":1,\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa😀\":null,\"balance\":2}", limits), 1, 2, false)
+    // Repeated unknown names are not detected: no state is kept for them.
+    check_lenient(json_lenient<47>("{\"x\":1,\"x\":{\"y\":1,\"y\":2},\"owner\":1,\"balance\":2}", limits), 1, 2, false)
+}
+
+#[test]
+fn json_rejects_malformed_unknown_values() {
+    let limits = Limits::standard()
+    // Strings.
+    expect_error(json_lenient<33>("{\"owner\":1,\"s\":\"a\\q\",\"balance\":2}", limits), ErrorKind::InvalidSyntax, 18)
+    expect_error(json_lenient<36>("{\"owner\":1,\"s\":\"\\udc00\",\"balance\":2}", limits), ErrorKind::InvalidUtf8, 16)
+    expect_error(json_lenient<37>("{\"owner\":1,\"s\":\"\\ud83dx\",\"balance\":2}", limits), ErrorKind::InvalidUtf8, 22)
+    expect_error(json_lenient<33>("{\"owner\":1,\"s\":\"a\nb\",\"balance\":2}", limits), ErrorKind::InvalidSyntax, 17)
+    expect_error(json_lenient<19>("{\"owner\":1,\"s\":\"abc", limits), ErrorKind::UnexpectedEnd, 19)
+    // Bytes that are not UTF-8 in a skipped string, and in a skipped name.
+    expect_error(json_lenient<32>([
+        0x7b, 0x22, 0x6f, 0x77, 0x6e, 0x65, 0x72, 0x22, 0x3a, 0x31, 0x2c, 0x22, 0x73, 0x22, 0x3a, 0x22,
+        0xc3, 0x28, 0x22, 0x2c, 0x22, 0x62, 0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x22, 0x3a, 0x32, 0x7d,
+    ], limits), ErrorKind::InvalidUtf8, 17)
+    expect_error(json_lenient<32>([
+        0x7b, 0x22, 0x6f, 0x77, 0x6e, 0x65, 0x72, 0x22, 0x3a, 0x31, 0x2c, 0x22, 0x73, 0x22, 0x3a, 0x22,
+        0xc0, 0x80, 0x22, 0x2c, 0x22, 0x62, 0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x22, 0x3a, 0x32, 0x7d,
+    ], limits), ErrorKind::InvalidUtf8, 16)
+    expect_error(json_lenient<31>([
+        0x7b, 0x22, 0x6f, 0x77, 0x6e, 0x65, 0x72, 0x22, 0x3a, 0x31, 0x2c, 0x22, 0x73, 0x22, 0x3a, 0x22,
+        0xc3, 0x22, 0x2c, 0x22, 0x62, 0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x22, 0x3a, 0x32, 0x7d,
+    ], limits), ErrorKind::InvalidUtf8, 17)
+    expect_error(json_lenient<60>([
+        0x7b, 0x22, 0x6f, 0x77, 0x6e, 0x65, 0x72, 0x22, 0x3a, 0x31, 0x2c, 0x22, 0x61, 0x61, 0x61, 0x61,
+        0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61,
+        0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0xff, 0x22, 0x3a, 0x31, 0x2c,
+        0x22, 0x62, 0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x22, 0x3a, 0x32, 0x7d,
+    ], limits), ErrorKind::InvalidUtf8, 43)
+    // Numbers.
+    expect_error(json_lenient<30>("{\"owner\":1,\"x\":01,\"balance\":2}", limits), ErrorKind::InvalidSyntax, 16)
+    expect_error(json_lenient<30>("{\"owner\":1,\"x\":1.,\"balance\":2}", limits), ErrorKind::InvalidSyntax, 17)
+    expect_error(json_lenient<29>("{\"owner\":1,\"x\":-,\"balance\":2}", limits), ErrorKind::InvalidSyntax, 16)
+    expect_error(json_lenient<30>("{\"owner\":1,\"x\":1e,\"balance\":2}", limits), ErrorKind::InvalidSyntax, 17)
+    expect_error(json_lenient<31>("{\"owner\":1,\"x\":1e+,\"balance\":2}", limits), ErrorKind::InvalidSyntax, 18)
+    expect_error(json_lenient<30>("{\"owner\":1,\"x\":.5,\"balance\":2}", limits), ErrorKind::InvalidSyntax, 15)
+    expect_error(json_lenient<30>("{\"owner\":1,\"x\":+1,\"balance\":2}", limits), ErrorKind::InvalidSyntax, 15)
+    expect_error(json_lenient<33>("{\"owner\":1,\"x\":1.5.2,\"balance\":2}", limits), ErrorKind::InvalidSyntax, 18)
+    expect_error(json_lenient<30>("{\"owner\":1,\"x\":1x,\"balance\":2}", limits), ErrorKind::InvalidSyntax, 16)
+    expect_error(json_lenient<32>("{\"owner\":1,\"x\":1e5e,\"balance\":2}", limits), ErrorKind::InvalidSyntax, 18)
+    // Literals.
+    expect_error(json_lenient<31>("{\"owner\":1,\"x\":tru,\"balance\":2}", limits), ErrorKind::InvalidSyntax, 18)
+    expect_error(json_lenient<32>("{\"owner\":1,\"x\":True,\"balance\":2}", limits), ErrorKind::InvalidSyntax, 15)
+    expect_error(json_lenient<33>("{\"owner\":1,\"x\":truex,\"balance\":2}", limits), ErrorKind::InvalidSyntax, 19)
+    expect_error(json_lenient<19>("{\"owner\":1,\"x\":nul}", limits), ErrorKind::InvalidSyntax, 18)
+    // Structure.
+    expect_error(json_lenient<33>("{\"owner\":1,\"x\":[1,2},\"balance\":2}", limits), ErrorKind::InvalidSyntax, 19)
+    expect_error(json_lenient<35>("{\"owner\":1,\"x\":{\"a\":1],\"balance\":2}", limits), ErrorKind::InvalidSyntax, 21)
+    expect_error(json_lenient<33>("{\"owner\":1,\"x\":[1 2],\"balance\":2}", limits), ErrorKind::InvalidSyntax, 18)
+    expect_error(json_lenient<35>("{\"owner\":1,\"x\":{\"a\" 1},\"balance\":2}", limits), ErrorKind::InvalidSyntax, 20)
+    expect_error(json_lenient<33>("{\"owner\":1,\"x\":{1:2},\"balance\":2}", limits), ErrorKind::TypeMismatch, 16)
+    expect_error(json_lenient<32>("{\"owner\":1,\"x\":[1,],\"balance\":2}", limits), ErrorKind::InvalidSyntax, 18)
+    expect_error(json_lenient<36>("{\"owner\":1,\"x\":{\"a\":1,},\"balance\":2}", limits), ErrorKind::TypeMismatch, 22)
+    expect_error(json_lenient<29>("{\"owner\":1,\"x\":},\"balance\":2}", limits), ErrorKind::InvalidSyntax, 15)
+    expect_error(json_lenient<18>("{\"owner\":1,\"x\":[1,", limits), ErrorKind::UnexpectedEnd, 18)
+    expect_error(json_lenient<20>("{\"owner\":1,\"x\":{\"a\":", limits), ErrorKind::UnexpectedEnd, 20)
+    // What follows a skipped value is still checked.
+    expect_field(json_lenient<19>("{\"owner\":1,\"x\":[1]}", limits), ErrorKind::MissingField, 19, "balance")
+    expect_error(json_lenient<33>("{\"owner\":1,\"balance\":2,\"x\":[1]} 1", limits), ErrorKind::TrailingData, 32)
+}
+
+#[test]
+fn json_limits_apply_inside_skipped_values() {
+    let limits = Limits::standard()
+    check_lenient(json_lenient<33>("{\"owner\":1,\"x\":[[1]],\"balance\":2}", Limits { max_depth: 3, max_items: 256 }), 1, 2, false)
+    expect_error(json_lenient<35>("{\"owner\":1,\"x\":[[[1]]],\"balance\":2}", Limits { max_depth: 3, max_items: 256 }), ErrorKind::DepthLimit, 17)
+    expect_error(json_lenient<41>("{\"owner\":1,\"x\":{\"a\":{\"b\":1}},\"balance\":2}", Limits { max_depth: 2, max_items: 256 }), ErrorKind::DepthLimit, 20)
+    // With the standard limits, 31 nested arrays fit beside the record and the 32nd does not.
+    check_lenient(json_lenient<90>(nested_arrays<90, 31>(), limits), 1, 2, false)
+    expect_error(json_lenient<92>(nested_arrays<92, 32>(), limits), ErrorKind::DepthLimit, 46)
+    // Entries per container, in the record itself and in skipped arrays and objects.
+    expect_error(json_lenient<37>("{\"owner\":1,\"x\":[1,2,3,4],\"balance\":2}", Limits { max_depth: 32, max_items: 3 }), ErrorKind::CollectionLimit, 22)
+    check_lenient(json_lenient<35>("{\"owner\":1,\"x\":[1,2,3],\"balance\":2}", Limits { max_depth: 32, max_items: 3 }), 1, 2, false)
+    expect_error(json_lenient<53>("{\"owner\":1,\"x\":{\"a\":1,\"b\":2,\"c\":3,\"d\":4},\"balance\":2}", Limits { max_depth: 32, max_items: 3 }), ErrorKind::CollectionLimit, 34)
+    expect_error(json_lenient<35>("{\"owner\":1,\"a\":1,\"b\":2,\"balance\":2}", Limits { max_depth: 32, max_items: 3 }), ErrorKind::CollectionLimit, 23)
+    check_lenient(json_lenient<35>("{\"owner\":1,\"a\":1,\"b\":2,\"balance\":2}", Limits { max_depth: 32, max_items: 4 }), 1, 2, false)
+}
+
+#[test]
+fn json_still_rejects_what_skipping_does_not_excuse() {
+    let limits = Limits::standard()
+    // A type without the attribute rejects the same input, where it always did.
+    expect_error(json_exact<33>("{\"owner\":1,\"extra\":2,\"balance\":2}", limits), ErrorKind::UnknownField, 11)
+    check_lenient(json_lenient<33>("{\"owner\":1,\"extra\":2,\"balance\":2}", limits), 1, 2, false)
+    expect_error(json_exact<62>("{\"owner\":1,\"a_key_longer_than_thirty_one_bytes\":2,\"balance\":2}", limits), ErrorKind::UnknownField, 11)
+    check_lenient(json_lenient<62>("{\"owner\":1,\"a_key_longer_than_thirty_one_bytes\":2,\"balance\":2}", limits), 1, 2, false)
+    // Known fields are still checked for duplicates, types and presence.
+    expect_field(json_lenient<39>("{\"owner\":1,\"x\":0,\"owner\":2,\"balance\":2}", limits), ErrorKind::DuplicateField, 17, "owner")
+    expect_field(json_lenient<31>("{\"x\":1,\"owner\":\"a\",\"balance\":2}", limits), ErrorKind::TypeMismatch, 15, "owner")
+    expect_field(json_lenient<17>("{\"x\":1,\"owner\":1}", limits), ErrorKind::MissingField, 17, "balance")
+    // Only the marked record skips: the unmarked one beside it, and the unmarked parent, do not.
+    assert!(json_ledger<73>("{\"lenient\":{\"x\":1,\"owner\":1,\"balance\":2},\"exact\":{\"owner\":1,\"balance\":2}}").is_ok())
+    expect_field(json_ledger<77>("{\"lenient\":{\"owner\":1,\"balance\":2},\"exact\":{\"owner\":1,\"extra\":0,\"balance\":2}}"), ErrorKind::UnknownField, 54, "exact")
+    expect_error(json_ledger<77>("{\"extra\":0,\"lenient\":{\"owner\":1,\"balance\":2},\"exact\":{\"owner\":1,\"balance\":2}}"), ErrorKind::UnknownField, 1)
+}
+
+#[test]
+fn cbor_skips_unknown_fields_of_every_value_kind() {
+    let limits = Limits::standard()
+    check_lenient(cbor_lenient<5>([0xa2, 0x02, 0x01, 0x05, 0x02], limits), 1, 2, false)
+    // Unknown IDs before, between and after the known ones.
+    check_lenient(cbor_lenient<11>([0xa5, 0x01, 0x00, 0x02, 0x01, 0x03, 0xf6, 0x05, 0x02, 0x09, 0xf5], limits), 1, 2, false)
+    // Integers of every head width, positive and negative, and the simple values.
+    check_lenient(cbor_lenient<82>([
+        0xb4, 0x01, 0x00, 0x02, 0x01, 0x03, 0x17, 0x04, 0x18, 0x18, 0x05, 0x02, 0x06, 0x18, 0xff, 0x07,
+        0x19, 0x01, 0x00, 0x09, 0x19, 0xff, 0xff, 0x0a, 0x1a, 0x00, 0x01, 0x00, 0x00, 0x0b, 0x1a, 0xff,
+        0xff, 0xff, 0xff, 0x0c, 0x1b, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x0d, 0x1b, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x0e, 0x20, 0x0f, 0x37, 0x10, 0x38, 0x18, 0x11, 0x39,
+        0x01, 0x00, 0x12, 0x3b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x13, 0xf4, 0x14, 0xf5,
+        0x15, 0xf6,
+    ], limits), 1, 2, false)
+    // Bignums: just over 64 bits and the full 256, positive and negative.
+    check_lenient(cbor_lenient<101>([
+        0xa6, 0x01, 0xc2, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x01, 0x03,
+        0xc3, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0xc2, 0x58, 0x20, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x05,
+        0x02, 0x06, 0xc3, 0x58, 0x20, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff,
+    ], limits), 1, 2, false)
+    // Byte and text strings: empty, short, with a one-byte length, multi-byte UTF-8.
+    check_lenient(cbor_lenient<86>([
+        0xa9, 0x01, 0x40, 0x02, 0x01, 0x03, 0x43, 0x01, 0x02, 0x03, 0x04, 0x58, 0x20, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x02, 0x06,
+        0x60, 0x07, 0x62, 0xc3, 0xa9, 0x09, 0x64, 0xf0, 0x9f, 0x98, 0x80, 0x0a, 0x78, 0x18, 0x61, 0x61,
+        0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61, 0x61,
+        0x61, 0x61, 0x61, 0x61, 0x61, 0x61,
+    ], limits), 1, 2, false)
+    // Arrays and maps, nested.
+    check_lenient(cbor_lenient<29>([
+        0xa6, 0x01, 0x80, 0x02, 0x01, 0x03, 0xa0, 0x04, 0x83, 0x01, 0x82, 0x02, 0x81, 0x03, 0xa1, 0x01,
+        0xf6, 0x05, 0x02, 0x06, 0xa2, 0x61, 0x61, 0x01, 0x61, 0x62, 0xa1, 0x00, 0x80,
+    ], limits), 1, 2, false)
+    // A map whose keys are items of every kind, ascending by their encoded bytes.
+    check_lenient(cbor_lenient<36>([
+        0xa3, 0x02, 0x01, 0x05, 0x02, 0x09, 0xac, 0x00, 0x00, 0x01, 0x00, 0x17, 0x00, 0x18, 0x18, 0x00,
+        0x19, 0x01, 0x00, 0x00, 0x20, 0x00, 0x40, 0x00, 0x61, 0x61, 0x00, 0x80, 0x00, 0x81, 0x00, 0x00,
+        0xa0, 0x00, 0xf4, 0x00,
+    ], limits), 1, 2, false)
+    check_lenient(cbor_lenient<15>([0xa3, 0x02, 0x01, 0x05, 0x02, 0x09, 0xa2, 0xa1, 0x01, 0x00, 0x00, 0xa1, 0x02, 0x00, 0x00], limits), 1, 2, false)
+    // Large IDs.
+    check_lenient(cbor_lenient<21>([
+        0xa4, 0x02, 0x01, 0x05, 0x02, 0x1a, 0x00, 0x01, 0x00, 0x00, 0x00, 0x1b, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0x00,
+    ], limits), 1, 2, false)
+    // A known field with a value of its own beside unknown ones.
+    check_lenient(cbor_lenient<11>([0xa4, 0x01, 0xf6, 0x02, 0x01, 0x05, 0x02, 0x08, 0x62, 0x68, 0x69], limits), 1, 2, true)
+    // Thirty arrays nest inside the record, which makes 31 levels.
+    check_lenient(cbor_lenient<37>([
+        0xa3, 0x02, 0x01, 0x05, 0x02, 0x09, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81,
+        0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81,
+        0x81, 0x81, 0x81, 0x81, 0x00,
+    ], limits), 1, 2, false)
+}
+
+#[test]
+fn cbor_rejects_unknown_ids_that_do_not_ascend() {
+    let limits = Limits::standard()
+    expect_error(cbor_lenient<7>([0xa3, 0x02, 0x01, 0x05, 0x02, 0x03, 0x00], limits), ErrorKind::NonCanonical, 5)
+    expect_field(cbor_lenient<7>([0xa3, 0x03, 0x00, 0x02, 0x01, 0x05, 0x02], limits), ErrorKind::NonCanonical, 3, "owner")
+    expect_error(cbor_lenient<9>([0xa4, 0x02, 0x01, 0x03, 0x00, 0x03, 0x00, 0x05, 0x02], limits), ErrorKind::DuplicateField, 5)
+    expect_field(cbor_lenient<7>([0xa3, 0x02, 0x01, 0x02, 0x03, 0x05, 0x02], limits), ErrorKind::DuplicateField, 3, "owner")
+    expect_error(cbor_lenient<7>([0xa3, 0x00, 0x00, 0x02, 0x01, 0x05, 0x02], limits), ErrorKind::UnknownField, 1)
+    // The unmarked record reports the same errors at the same offsets.
+    expect_error(cbor_exact<7>([0xa3, 0x02, 0x01, 0x03, 0x00, 0x05, 0x02], limits), ErrorKind::UnknownField, 3)
+    expect_error(cbor_exact<7>([0xa3, 0x02, 0x01, 0x05, 0x02, 0x03, 0x00], limits), ErrorKind::NonCanonical, 5)
+    expect_error(cbor_exact<7>([0xa3, 0x00, 0x00, 0x02, 0x01, 0x05, 0x02], limits), ErrorKind::UnknownField, 1)
+}
+
+#[test]
+fn cbor_rejects_malformed_unknown_values() {
+    let limits = Limits::standard()
+    expect_error(cbor_lenient<8>([0xa3, 0x02, 0x01, 0x03, 0x18, 0x01, 0x05, 0x02], limits), ErrorKind::NonCanonical, 4)
+    expect_error(cbor_lenient<9>([0xa3, 0x02, 0x01, 0x03, 0x19, 0x00, 0xff, 0x05, 0x02], limits), ErrorKind::NonCanonical, 4)
+    expect_error(cbor_lenient<9>([0xa3, 0x02, 0x01, 0x03, 0x9f, 0x00, 0xff, 0x05, 0x02], limits), ErrorKind::NonCanonical, 4)
+    expect_error(cbor_lenient<10>([0xa3, 0x02, 0x01, 0x03, 0x5f, 0x41, 0x00, 0xff, 0x05, 0x02], limits), ErrorKind::NonCanonical, 4)
+    expect_error(cbor_lenient<8>([0xa3, 0x02, 0x01, 0x03, 0x7f, 0xff, 0x05, 0x02], limits), ErrorKind::NonCanonical, 4)
+    expect_error(cbor_lenient<8>([0xa3, 0x02, 0x01, 0x03, 0xbf, 0xff, 0x05, 0x02], limits), ErrorKind::NonCanonical, 4)
+    expect_error(cbor_lenient<7>([0xa3, 0x02, 0x01, 0x03, 0x1c, 0x05, 0x02], limits), ErrorKind::InvalidSyntax, 4)
+    expect_error(cbor_lenient<7>([0xa3, 0x02, 0x01, 0x03, 0xfc, 0x05, 0x02], limits), ErrorKind::InvalidSyntax, 4)
+    expect_error(cbor_lenient<7>([0xa3, 0x02, 0x01, 0x03, 0xff, 0x05, 0x02], limits), ErrorKind::InvalidSyntax, 4)
+    expect_error(cbor_lenient<9>([0xa3, 0x02, 0x01, 0x03, 0xf9, 0x3c, 0x00, 0x05, 0x02], limits), ErrorKind::Unsupported, 4)
+    expect_error(cbor_lenient<15>([0xa3, 0x02, 0x01, 0x03, 0xfb, 0x3f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x02], limits), ErrorKind::Unsupported, 4)
+    expect_error(cbor_lenient<7>([0xa3, 0x02, 0x01, 0x03, 0xf7, 0x05, 0x02], limits), ErrorKind::Unsupported, 4)
+    expect_error(cbor_lenient<7>([0xa3, 0x02, 0x01, 0x03, 0xf0, 0x05, 0x02], limits), ErrorKind::Unsupported, 4)
+    expect_error(cbor_lenient<8>([0xa3, 0x02, 0x01, 0x03, 0xf8, 0x20, 0x05, 0x02], limits), ErrorKind::Unsupported, 4)
+    expect_error(cbor_lenient<8>([0xa3, 0x02, 0x01, 0x03, 0xc1, 0x00, 0x05, 0x02], limits), ErrorKind::Unsupported, 4)
+    expect_error(cbor_lenient<9>([0xa3, 0x02, 0x01, 0x03, 0xd8, 0x18, 0x40, 0x05, 0x02], limits), ErrorKind::Unsupported, 4)
+    expect_error(cbor_lenient<17>([
+        0xa3, 0x02, 0x01, 0x03, 0xc2, 0x49, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05,
+        0x02,
+    ], limits), ErrorKind::NonCanonical, 4)
+    expect_error(cbor_lenient<9>([0xa3, 0x02, 0x01, 0x03, 0xc2, 0x41, 0x01, 0x05, 0x02], limits), ErrorKind::NonCanonical, 4)
+    expect_error(cbor_lenient<16>([0xa3, 0x02, 0x01, 0x03, 0xc3, 0x48, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x05, 0x02], limits), ErrorKind::NonCanonical, 4)
+    expect_error(cbor_lenient<42>([
+        0xa3, 0x02, 0x01, 0x03, 0xc2, 0x58, 0x21, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x05, 0x02,
+    ], limits), ErrorKind::IntegerOutOfRange, 4)
+    expect_error(cbor_lenient<8>([0xa3, 0x02, 0x01, 0x03, 0xc2, 0x01, 0x05, 0x02], limits), ErrorKind::TypeMismatch, 5)
+    expect_error(cbor_lenient<11>([0xa3, 0x02, 0x01, 0x03, 0xc2, 0x5f, 0x41, 0x01, 0xff, 0x05, 0x02], limits), ErrorKind::NonCanonical, 5)
+    expect_error(cbor_lenient<9>([0xa3, 0x02, 0x01, 0x03, 0x62, 0xc3, 0x28, 0x05, 0x02], limits), ErrorKind::InvalidUtf8, 6)
+    expect_error(cbor_lenient<9>([0xa3, 0x02, 0x01, 0x03, 0x62, 0xc0, 0x80, 0x05, 0x02], limits), ErrorKind::InvalidUtf8, 5)
+    expect_error(cbor_lenient<10>([0xa3, 0x02, 0x01, 0x03, 0x63, 0xed, 0xa0, 0x80, 0x05, 0x02], limits), ErrorKind::InvalidUtf8, 6)
+    expect_error(cbor_lenient<6>([0xa3, 0x02, 0x01, 0x03, 0x61, 0xc3], limits), ErrorKind::InvalidUtf8, 6)
+    expect_error(cbor_lenient<11>([0xa3, 0x02, 0x01, 0x03, 0xa1, 0xf9, 0x00, 0x00, 0x00, 0x05, 0x02], limits), ErrorKind::Unsupported, 5)
+    expect_error(cbor_lenient<6>([0xa3, 0x02, 0x01, 0x03, 0x82, 0x00], limits), ErrorKind::UnexpectedEnd, 6)
+    expect_error(cbor_lenient<7>([0xa3, 0x02, 0x01, 0x03, 0x44, 0x01, 0x02], limits), ErrorKind::UnexpectedEnd, 7)
+    expect_error(cbor_lenient<14>([0xa3, 0x02, 0x01, 0x03, 0x5b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01], limits), ErrorKind::UnexpectedEnd, 14)
+    // A value cut short at the end of the input.
+    expect_error(cbor_lenient<6>([0xa3, 0x02, 0x01, 0x03, 0x82, 0x00], limits), ErrorKind::UnexpectedEnd, 6)
+    expect_error(cbor_lenient<4>([0xa3, 0x02, 0x01, 0x03], limits), ErrorKind::UnexpectedEnd, 4)
+    // Data after the record.
+    expect_error(cbor_lenient<6>([0xa2, 0x02, 0x01, 0x05, 0x02, 0x00], limits), ErrorKind::TrailingData, 5)
+    // A missing known field is still reported, naming the field.
+    expect_field(cbor_lenient<5>([0xa2, 0x01, 0x00, 0x02, 0x01], limits), ErrorKind::MissingField, 5, "balance")
+}
+
+#[test]
+fn cbor_keeps_key_order_inside_skipped_maps() {
+    let limits = Limits::standard()
+    expect_error(cbor_lenient<11>([0xa3, 0x02, 0x01, 0x03, 0xa2, 0x02, 0x00, 0x01, 0x00, 0x05, 0x02], limits), ErrorKind::NonCanonical, 7)
+    expect_error(cbor_lenient<11>([0xa3, 0x02, 0x01, 0x03, 0xa2, 0x01, 0x00, 0x01, 0x00, 0x05, 0x02], limits), ErrorKind::DuplicateField, 7)
+    expect_error(cbor_lenient<13>([0xa3, 0x02, 0x01, 0x03, 0xa2, 0x61, 0x62, 0x00, 0x61, 0x61, 0x00, 0x05, 0x02], limits), ErrorKind::NonCanonical, 8)
+    expect_error(cbor_lenient<12>([0xa3, 0x02, 0x01, 0x03, 0xa2, 0x18, 0x18, 0x00, 0x17, 0x00, 0x05, 0x02], limits), ErrorKind::NonCanonical, 8)
+    expect_error(cbor_lenient<13>([0xa3, 0x02, 0x01, 0x03, 0x82, 0xa2, 0x02, 0x00, 0x01, 0x00, 0x00, 0x05, 0x02], limits), ErrorKind::NonCanonical, 8)
+    expect_error(cbor_lenient<13>([0xa3, 0x02, 0x01, 0x03, 0xa1, 0xa2, 0x02, 0x00, 0x01, 0x00, 0x00, 0x05, 0x02], limits), ErrorKind::NonCanonical, 8)
+    expect_error(cbor_lenient<15>([0xa3, 0x02, 0x01, 0x03, 0xa2, 0xa1, 0x02, 0x00, 0x00, 0xa1, 0x01, 0x00, 0x00, 0x05, 0x02], limits), ErrorKind::NonCanonical, 9)
+    expect_error(cbor_lenient<15>([0xa3, 0x02, 0x01, 0x03, 0xa2, 0xa1, 0x01, 0x00, 0x00, 0xa1, 0x01, 0x00, 0x00, 0x05, 0x02], limits), ErrorKind::DuplicateField, 9)
+}
+
+#[test]
+fn cbor_limits_apply_inside_skipped_values() {
+    let limits = Limits::standard()
+    check_lenient(cbor_lenient<9>([0xa3, 0x02, 0x01, 0x03, 0x81, 0x81, 0x00, 0x05, 0x02], Limits { max_depth: 3, max_items: 256 }), 1, 2, false)
+    expect_error(cbor_lenient<10>([0xa3, 0x02, 0x01, 0x03, 0x81, 0x81, 0x81, 0x00, 0x05, 0x02], Limits { max_depth: 3, max_items: 256 }), ErrorKind::DepthLimit, 6)
+    expect_error(cbor_lenient<11>([0xa3, 0x02, 0x01, 0x03, 0x81, 0xa1, 0x01, 0x81, 0x00, 0x05, 0x02], Limits { max_depth: 3, max_items: 256 }), ErrorKind::DepthLimit, 7)
+    // With the standard limits, 31 nested arrays fit beside the record and the 32nd does not.
+    check_lenient(cbor_lenient<38>(cbor_nested<38, 31>(), limits), 1, 2, false)
+    expect_error(cbor_lenient<39>(cbor_nested<39, 32>(), limits), ErrorKind::DepthLimit, 35)
+    // Entries per container: the record, a skipped array and a skipped map.
+    check_lenient(cbor_lenient<10>([0xa3, 0x02, 0x01, 0x03, 0x83, 0x00, 0x00, 0x00, 0x05, 0x02], Limits { max_depth: 32, max_items: 3 }), 1, 2, false)
+    expect_error(cbor_lenient<11>([0xa3, 0x02, 0x01, 0x03, 0x84, 0x00, 0x00, 0x00, 0x00, 0x05, 0x02], Limits { max_depth: 32, max_items: 3 }), ErrorKind::CollectionLimit, 4)
+    expect_error(cbor_lenient<15>([0xa3, 0x02, 0x01, 0x03, 0xa4, 0x00, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x05, 0x02], Limits { max_depth: 32, max_items: 3 }), ErrorKind::CollectionLimit, 4)
+    expect_error(cbor_lenient<9>([0xa4, 0x02, 0x01, 0x03, 0x00, 0x04, 0x00, 0x05, 0x02], Limits { max_depth: 32, max_items: 3 }), ErrorKind::CollectionLimit, 0)
+    check_lenient(cbor_lenient<9>([0xa4, 0x02, 0x01, 0x03, 0x00, 0x04, 0x00, 0x05, 0x02], Limits { max_depth: 32, max_items: 4 }), 1, 2, false)
+}
+
+#[test]
+fn cbor_ledger_skips_only_in_the_marked_record() {
+    let limits = Limits::standard()
+    assert!(cbor_ledger<15>([0xa2, 0x01, 0xa3, 0x01, 0x00, 0x02, 0x01, 0x05, 0x02, 0x02, 0xa2, 0x02, 0x01, 0x05, 0x02]).is_ok())
+    expect_field(cbor_ledger<15>([0xa2, 0x01, 0xa2, 0x02, 0x01, 0x05, 0x02, 0x02, 0xa3, 0x02, 0x01, 0x03, 0x00, 0x05, 0x02]), ErrorKind::UnknownField, 11, "exact")
+    expect_error(cbor_ledger<15>([0xa3, 0x01, 0xa2, 0x02, 0x01, 0x05, 0x02, 0x02, 0xa2, 0x02, 0x01, 0x05, 0x02, 0x03, 0x00]), ErrorKind::UnknownField, 13)
+}
+
+#[test]
+fn readers_skip_fields_added_by_later_versions() {
+    let limits = Limits::standard()
+    let labeled = AccountV2 { owner: 1, balance: 2, label: Option::Some(must(Text<8>::from_array([0x61]))) }
+    let json = must(Json::new().encode<AccountV2, 40>(labeled))
+    let reader = must(Json::new().decode<AccountReader, 40>(json))
+    assert!(reader.owner == 1 && reader.balance == 2)
+    let cbor = must(Cbor::new().encode<AccountV2, 40>(labeled))
+    let reader = must(Cbor::new().decode<AccountReader, 40>(cbor))
+    assert!(reader.owner == 1 && reader.balance == 2)
+    // Without the attribute the same data is an error.
+    expect_error(Json::new().decode<AccountV1, 40>(json), ErrorKind::UnknownField, 23)
+    expect_error(Cbor::new().decode<AccountV1, 40>(cbor), ErrorKind::UnknownField, 5)
+}
+
+#[test]
+fn compact_cannot_skip_and_ignores_the_attribute() {
+    let limits = Limits::standard()
+    let compact = Compact::new()
+    let value = Lenient { owner: 1, balance: 2, label: Option::None }
+    let bytes = must(compact.encode<Lenient, 32>(value))
+    let decoded = must(compact.decode<Lenient, 32>(bytes))
+    assert!(decoded.owner == 1 && decoded.balance == 2 && decoded.label.is_none())
+    // A positional format has no markers to find a value's end by.
+    var decoder = CompactDecoder<2>::new(BoundedBuffer<2>::from_array([1, 2]), Limits::standard())
+    expect_error(decoder.skip_value(), ErrorKind::Unsupported, 0)
+    assert!(Lenient::skips_unknown_fields() && !Exact::skips_unknown_fields())
+    assert!(validate_schema<Lenient>() && validate_schema<AccountReader>())
+}

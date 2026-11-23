@@ -15,6 +15,7 @@ use fe_codec_core::{
     Structure,
     Text,
     TextWriter,
+    Utf8,
     checked_signed,
     checked_unsigned,
     checked_wide_signed,
@@ -211,30 +212,33 @@ impl<const N: usize> JsonDecoder<N> {
         Result::Ok(first)
     }
 
-    fn escape<const M: usize>(mut self, _ text: mut TextWriter<M>, _ offset: usize) -> CodecResult<
-        (),
-    > {
+    /// The code point an escape stands for, after its backslash.
+    fn escape_value(mut self, _ offset: usize) -> CodecResult<u32> {
         let marker_offset = self.offset()
-        let byte = match self.byte()? {
-            b'"' => b'"',
-            b'\\' => b'\\',
-            b'/' => b'/',
+        let value: u32 = match self.byte()? {
+            b'"' => 0x22,
+            b'\\' => 0x5c,
+            b'/' => 0x2f,
             b'b' => 8,
             b'f' => 12,
             b'n' => 10,
             b'r' => 13,
             b't' => 9,
-            b'u' => {
-                let codepoint = self.codepoint(offset)?
-                return write_codepoint(mut text, codepoint, offset)
-            },
+            b'u' => self.codepoint(offset)?,
             _ => {
                 return Result::Err(
                     CodecError::at(kind: ErrorKind::InvalidSyntax, offset: marker_offset),
                 )
             },
         }
-        text.write(byte, offset)
+        Result::Ok(value)
+    }
+
+    fn escape<const M: usize>(mut self, _ text: mut TextWriter<M>, _ offset: usize) -> CodecResult<
+        (),
+    > {
+        let value = self.escape_value(offset)?
+        write_codepoint(mut text, value, offset)
     }
 
     fn string<const M: usize>(mut self) -> CodecResult<Text<M>> {
@@ -292,6 +296,109 @@ impl<const N: usize> JsonDecoder<N> {
                 Result::Err(error)
             },
         }
+    }
+
+    /// Reads a string and validates it as `string` does, without keeping it.
+    fn skip_string(mut self) -> CodecResult<()> {
+        self.expect(b'"', ErrorKind::TypeMismatch)?
+        var utf8 = Utf8::new()
+        loop {
+            let offset = self.offset()
+            let byte = self.byte()?
+            if byte == b'"' {
+                return utf8.finish(offset)
+            }
+            if byte == b'\\' {
+                utf8.finish(offset)?
+                let _ = self.escape_value(offset)?
+            } else {
+                if byte < 32 {
+                    return Result::Err(CodecError::at(kind: ErrorKind::InvalidSyntax, offset))
+                }
+                utf8.push(byte, offset)?
+            }
+        }
+    }
+
+    /// One or more digits.
+    fn skip_digits(mut self) -> CodecResult<()> {
+        if !is_digit(self.peek()?) {
+            return Result::Err(self.error(ErrorKind::InvalidSyntax))
+        }
+        while let Option::Some(byte) = self.input.peek() {
+            if !is_digit(byte) { break }
+            self.byte()?
+        }
+        Result::Ok(())
+    }
+
+    /// A number of RFC 8259's grammar: an integer without leading zeros, then an optional
+    /// fraction and exponent.
+    fn skip_number(mut self) -> CodecResult<()> {
+        if self.peek()? == b'-' {
+            self.byte()?
+        }
+        if self.peek()? == b'0' {
+            self.byte()?
+            if let Option::Some(byte) = self.input.peek() {
+                if is_digit(byte) {
+                    return Result::Err(self.error(ErrorKind::InvalidSyntax))
+                }
+            }
+        } else {
+            self.skip_digits()?
+        }
+        if self.input.peek() == Option::Some(b'.') {
+            self.byte()?
+            self.skip_digits()?
+        }
+        if self.input.peek() == Option::Some(b'e') || self.input.peek() == Option::Some(b'E') {
+            self.byte()?
+            if self.input.peek() == Option::Some(b'+') || self.input.peek() == Option::Some(b'-') {
+                self.byte()?
+            }
+            self.skip_digits()?
+        }
+        self.scalar_end()
+    }
+
+    /// An object whose members are skipped. Repeated names are not detected: no state is kept
+    /// for them.
+    fn skip_object(mut self) -> CodecResult<()> {
+        self.begin(b'{')?
+        var seen: usize = 0
+        loop {
+            self.whitespace()?
+            if self.peek()? == b'}' {
+                break
+            }
+            self.separator(seen)?
+            let offset = self.offset()
+            self.skip_string()?
+            self.whitespace()?
+            self.expect(b':', ErrorKind::InvalidSyntax)?
+            self.structure.member(offset)?
+            self.skip_value()?
+            seen += 1
+        }
+        self.end(b'}', ErrorKind::InvalidSyntax)
+    }
+
+    fn skip_array(mut self) -> CodecResult<()> {
+        self.begin(b'[')?
+        var seen: usize = 0
+        loop {
+            self.whitespace()?
+            if self.peek()? == b']' {
+                break
+            }
+            self.separator(seen)?
+            let offset = self.offset()
+            self.structure.member(offset)?
+            self.skip_value()?
+            seen += 1
+        }
+        self.end(b']', ErrorKind::InvalidSyntax)
     }
 }
 
@@ -448,32 +555,86 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
         Result::Err(CodecError::at(kind: ErrorKind::UnknownVariant, offset))
     }
 
+    /// Any RFC 8259 value. Numbers may have fractions and exponents. Containers count toward
+    /// `Limits.max_depth` and `Limits.max_items`.
+    fn skip_value(mut self) -> CodecResult<()> {
+        self.whitespace()?
+        let offset = self.offset()
+        let first = self.peek()?
+        if first == b'{' {
+            return self.skip_object()
+        }
+        if first == b'[' {
+            return self.skip_array()
+        }
+        if first == b'"' {
+            self.structure.value(offset)?
+            return self.skip_string()
+        }
+        if first == b'-' || is_digit(first) {
+            self.structure.value(offset)?
+            return self.skip_number()
+        }
+        if first == b't' {
+            self.structure.value(offset)?
+            return self.word<4>("true")
+        }
+        if first == b'f' {
+            self.structure.value(offset)?
+            return self.word<5>("false")
+        }
+        if first == b'n' {
+            self.structure.value(offset)?
+            return self.word<4>("null")
+        }
+        Result::Err(CodecError::at(kind: ErrorKind::InvalidSyntax, offset))
+    }
+
     fn begin_record<R: Schema>(mut self) -> CodecResult<Record> {
         self.begin(b'{')?
         Result::Ok(Record { seen: 0 })
     }
 
     fn next_field<R: Schema>(mut self, _ record: mut Record) -> CodecResult<Option<FieldKey>> {
-        self.whitespace()?
-        if self.peek()? == b'}' {
-            return Result::Ok(Option::None)
-        }
-        self.separator(record.seen)?
-        let offset = self.offset()
-        let name = self.member_name(ErrorKind::UnknownField, offset)?
-        self.whitespace()?
-        self.expect(b':', ErrorKind::InvalidSyntax)?
-        self.structure.member(offset)?
-        record.seen += 1
-
-        var position: usize = 0
-        while let Option::Some(field) = R::field(position) {
-            if field.name.equals(name) {
-                return Result::Ok(FieldKey::of<R>(position, offset))
+        loop {
+            self.whitespace()?
+            if self.peek()? == b'}' {
+                return Result::Ok(Option::None)
             }
-            position += 1
+            self.separator(record.seen)?
+            let offset = self.offset()
+            let skips = R::skips_unknown_fields()
+            var known: Option<Text<MAX_NAME_BYTES>> = Option::None
+            match self.member_name(ErrorKind::UnknownField, offset) {
+                Result::Ok(name) => known = Option::Some(name),
+                Result::Err(error) => {
+                    // A name too long for any field is unknown. Read it again to skip it.
+                    if !skips || error.kind != ErrorKind::UnknownField {
+                        return Result::Err(error)
+                    }
+                    self.input.rewind(offset)
+                    self.skip_string()?
+                },
+            }
+            self.whitespace()?
+            self.expect(b':', ErrorKind::InvalidSyntax)?
+            self.structure.member(offset)?
+            record.seen += 1
+
+            if let Option::Some(name) = known {
+                var position: usize = 0
+                while let Option::Some(field) = R::field(position) {
+                    if field.name.equals(name) {
+                        return Result::Ok(FieldKey::of<R>(position, offset))
+                    }
+                    position += 1
+                }
+            }
+            if !skips {
+                return Result::Err(CodecError::at(kind: ErrorKind::UnknownField, offset))
+            }
+            self.skip_value()?
         }
-        Result::Err(CodecError::at(kind: ErrorKind::UnknownField, offset))
     }
 
     fn end_record(mut self, _ record: own Record) -> CodecResult<()> {

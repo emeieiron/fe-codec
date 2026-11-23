@@ -1,0 +1,6 @@
+#[serializable]
+pub struct A { pub a: u8 }
+
+/// Not serializable.
+#[codec_skip_unknown]
+pub struct B { pub a: u8 }

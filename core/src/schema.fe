@@ -108,6 +108,9 @@ impl Copy for VariantInfo {}
 /// and `field` returns `None` past the last one. IDs ascend strictly and are positive, and
 /// names are unique. An enum lists its variants by declaration index. `validate_schema`
 /// checks these rules, and generated schemas always meet them.
+///
+/// A record decoder rejects a field the schema does not list with `UnknownField`, unless
+/// `skips_unknown_fields` is true.
 pub trait Schema {
     /// The type's name: the struct or enum identifier, without generic arguments.
     fn name() -> SchemaName
@@ -118,6 +121,13 @@ pub trait Schema {
 
     fn variant(_ index: usize) -> Option<VariantInfo> {
         Option::None
+    }
+
+    /// Whether a record decoder skips a field it does not know instead of failing with
+    /// `UnknownField`: the record opts in with `#[codec_skip_unknown]`. The skipped value
+    /// must still be well formed, and it counts toward the format's limits.
+    fn skips_unknown_fields() -> bool {
+        false
     }
 
     /// The value a record decoder collected for the field at `position`, or a

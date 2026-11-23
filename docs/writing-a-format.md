@@ -40,11 +40,22 @@ Your encoder and decoder implement the data model:
 | `write_bytes` | `read_bytes` | Byte strings |
 | `write_none`, `write_some` | `read_some` | `Option<T>`: `write_some` marks a value that follows |
 | `write_variant` | `read_variant` | Unit enum variants, described by `Schema::variant` |
+| none | `skip_value` | Discards one value; see below |
 | `begin_record`, `field`, `end_record` | `begin_record`, `next_field`, `end_record` | Records, described by `Schema::field` |
 | `begin_sequence`, `element`, `end_sequence` | `begin_sequence`, `element`, `end_sequence` | Fixed-length arrays, and tuples, which are sequences of their arity |
 
 Choose `OMIT_NONE`: `true` if your format identifies fields by a key and can leave out
 `None` fields, `false` if fields are positional.
+
+`skip_value` consumes exactly one complete value at the current position and returns
+nothing. It is optional: the default fails with `Unsupported`, which suits a format that cannot
+tell where a value ends, as the compact example cannot. A format that can implements it
+and makes `next_field` use it: when the key matches no field and `R::skips_unknown_fields()`
+is true, skip the value and move on to the next key; otherwise fail with `UnknownField`.
+Skip with the same checks as a value you read: keep `Structure` calls (`value`, or
+`begin`, `member` and `end`) and the limits, and check the bytes as strictly, so skipping never
+accepts input that reading would reject. Keep key-order and duplicate checks for the
+unknown keys too if the format has them.
 
 ## Helpers from core
 
@@ -57,7 +68,8 @@ Choose `OMIT_NONE`: `true` if your format identifies fields by a key and can lea
   that breaks the order fails in your format too.
 - `checked_unsigned`, `checked_signed` and their wide forms validate a value against its
   width.
-- `TextWriter<N>` validates UTF-8 as bytes arrive and reports the offending byte.
+- `TextWriter<N>` validates UTF-8 as bytes arrive and reports the offending byte. `Utf8`
+  does the same without storing the text, which is what `skip_value` needs.
 - `FieldKey::of<R>(position, offset)` builds what `next_field` returns.
 
 A format that reads types rather than values, as EIP-712 does, implements `Describer`. Its

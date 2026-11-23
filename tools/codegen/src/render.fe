@@ -169,7 +169,11 @@ fn render_record(
         }
         write!(mut out, "            _ => Option::None,\n        }\n")
     }
-    write!(mut out, "    }\n}\n")
+    write!(mut out, "    }\n")
+    if model.skip_unknown {
+        write!(mut out, "    fn skips_unknown_fields() -> bool {\n        true\n    }\n")
+    }
+    write!(mut out, "}\n")
 
     // Serialize: visit present fields in position order.
     write!(mut out, "\nimpl")

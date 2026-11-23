@@ -12,6 +12,7 @@ use ingot::{
     Schema,
     Text,
     TextWriter,
+    Utf8,
     checked_signed,
     checked_unsigned,
     checked_wide_signed,
@@ -364,4 +365,60 @@ fn field_codecs_do_not_describe_themselves_unless_they_opt_in() {
     var optional = Trace::new()
     assert!(kind(describe_optional_with<Silent, u64, Trace>(mut optional)) == 16)
     assert!(optional.len == 1 && optional.events[0] == 300)
+}
+
+/// A record schema that does not opt in to skipping.
+struct Plain {}
+
+impl Schema for Plain {
+    fn name() -> ingot::SchemaName {
+        schema_name<5>("Plain")
+    }
+}
+
+/// One that does.
+struct Tolerant {}
+
+impl Schema for Tolerant {
+    fn name() -> ingot::SchemaName {
+        schema_name<8>("Tolerant")
+    }
+
+    fn skips_unknown_fields() -> bool {
+        true
+    }
+}
+
+#[test]
+fn schemas_reject_unknown_fields_unless_they_opt_in() {
+    assert!(!Plain::skips_unknown_fields())
+    assert!(Tolerant::skips_unknown_fields())
+}
+
+/// Bytes that `Utf8` accepts, ending at a character boundary.
+fn utf8_valid<const N: usize>(_ bytes: [u8; N]) -> bool {
+    var utf8 = Utf8::new()
+    var index: usize = 0
+    while index < N {
+        if utf8.push(bytes[index], index).is_err() {
+            return false
+        }
+        index += 1
+    }
+    utf8.finish(N).is_ok()
+}
+
+#[test]
+fn utf8_validates_text_that_is_not_stored() {
+    assert!(utf8_valid([0x61, 0xc3, 0xa9, 0xe2, 0x82, 0xac, 0xf0, 0x9f, 0x98, 0x80, 0x00]))
+    assert!(!utf8_valid([0xc3, 0x28]))
+    assert!(!utf8_valid([0xc0, 0x80]))
+    assert!(!utf8_valid([0xed, 0xa0, 0x80]))
+    assert!(!utf8_valid([0xf4, 0x90, 0x80, 0x80]))
+    // Ending inside a sequence fails at `finish`, with the offset it is given.
+    assert!(!utf8_valid([0x61, 0xe2, 0x82]))
+    var utf8 = Utf8::new()
+    assert!(utf8.push(0xe2, 0).is_ok())
+    invalid(utf8.finish(7), 7)
+    invalid(utf8.push(0x28, 5), 5)
 }

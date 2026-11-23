@@ -26,7 +26,7 @@ use std::evm::Address
 use ingot::conformance::{I128_MIN, I256_MIN, U128_MAX, U256_MAX, conformance, emoji, label, sample_wallet}
 use ingot::custom::{Broken, Celsius, Disordered, Point, Short}
 use ingot::demo::verify_formats
-use ingot::testkit::{decodes, encodes, expect_field, hi, must}
+use ingot::testkit::{decodes, encodes, expect_error, expect_field, hi, must}
 use ingot::models::{
     AccountRenamed,
     AccountV1,
@@ -155,16 +155,6 @@ fn check_batch(_ value: Batch) {
     )
     assert!(transfer.hops == [1, 255] && transfer.flags == [])
     assert!(transfer.nonce.is_none())
-}
-
-fn expect_error<T>(_ result: own CodecResult<T>, _ kind: ErrorKind, _ offset: usize) {
-    match result {
-        Result::Err(error) => {
-            assert!(error.kind == kind)
-            assert!(error.offset == offset)
-        },
-        Result::Ok(_) => assert!(false),
-    }
 }
 
 /// `value` encodes as `expected` and `expected` decodes as `value`.

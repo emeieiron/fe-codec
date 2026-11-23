@@ -29,6 +29,18 @@ impl<const N: usize> ByteReader<N> {
         self.input.byte_at(self.position)
     }
 
+    /// The byte at `offset` of the whole input, read or not yet read.
+    pub fn byte_at(self, _ offset: usize) -> Option<u8> {
+        self.input.byte_at(offset)
+    }
+
+    /// Moves back to `offset`, which must not be past the current position, so that bytes
+    /// can be read again.
+    pub fn rewind(mut self, _ offset: usize) {
+        assert!(offset <= self.position)
+        self.position = offset
+    }
+
     pub fn read(mut self) -> Result<IoError, u8> {
         match self.peek() {
             Option::Some(byte) => {

@@ -1,0 +1,3 @@
+#[serializable]
+#[codec_skip_unknown]
+pub enum E { A }

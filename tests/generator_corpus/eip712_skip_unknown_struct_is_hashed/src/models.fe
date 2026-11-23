@@ -1,0 +1,12 @@
+/// Skipping unknown fields changes how a record is decoded, not how it is hashed.
+#[serializable]
+#[eip712]
+#[codec_skip_unknown]
+pub struct Mail {
+    pub id: u64,
+    pub to: Person,
+}
+
+#[serializable]
+#[codec_skip_unknown]
+pub struct Person { pub wallet: u64 }

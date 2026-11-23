@@ -56,7 +56,7 @@ def consumer_project(app, generator, source, rev):
         text = text[:start] + f"command = {json.dumps(command)}\n" + text[stop:]
     manifest.write_text(text)
 
-    for ingot in [app / module / "fe.toml" for module in ("shared", "eip712_tests", "codec_field_tests", "native", "wasm")] + [
+    for ingot in [app / module / "fe.toml" for module in ("shared", "eip712_tests", "codec_field_tests", "unknown_fields_tests", "native", "wasm")] + [
         app.parent / "compact_format/fe.toml"
     ]:
         lines = []

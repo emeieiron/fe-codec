@@ -10,6 +10,8 @@
 //!   the shortest ULEB128 form; a longer one is rejected as non-canonical.
 //! - Sequences, which carry arrays and tuples, have no header, because their length is part of
 //!   the type.
+//! - Nothing marks where a value ends, so it keeps `Decoder::skip_value`'s default, which fails
+//!   with `Unsupported`, and `#[codec_skip_unknown]` has no effect: fields are read by position.
 
 use fe_codec_core::{BoundedBuffer, CodecResult, Deserialize, Format, Limits, Serialize}
 use ingot::encoder::CompactEncoder

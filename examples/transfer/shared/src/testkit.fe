@@ -16,6 +16,17 @@ pub fn must<T>(_ result: own CodecResult<T>) -> T {
     }
 }
 
+/// `result` is an error of `kind` at `offset`.
+pub fn expect_error<T>(_ result: own CodecResult<T>, _ kind: ErrorKind, _ offset: usize) {
+    match result {
+        Result::Err(error) => {
+            assert!(error.kind == kind)
+            assert!(error.offset == offset)
+        },
+        Result::Ok(_) => assert!(false),
+    }
+}
+
 /// `result` is an error of `kind` at `offset` that names the field `name`.
 pub fn expect_field<T, const M: usize>(
     _ result: own CodecResult<T>,

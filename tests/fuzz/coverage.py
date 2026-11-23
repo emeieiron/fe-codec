@@ -28,6 +28,7 @@ REQUIRED = (
        "blank line between fields", "several attributes on one item", "one-line struct",
        "unrelated item: fn", "unrelated item: trait", "unrelated item: impl block", "unrelated item: const",
        "test: missing required field", "test: dropped optional field", "metamorphic: field permutation",
+       "skip: marked record", "skip: unknown JSON members", "skip: unknown CBOR fields",
        "metamorphic: newline variant accepted",
        "metamorphic: newline variant rejected where fe check rejects it"]
 )
@@ -51,6 +52,8 @@ def count(spec, renderer_stats, extra):
             c["source: empty record"] += 1
         if m.eip712:
             c["eip712: root"] += 1
+        if m.skip_unknown:
+            c["skip: marked record"] += 1
         if m.generics:
             c["generic: instantiation"] += 0
             for is_const, name, copy_bound in m.generics:

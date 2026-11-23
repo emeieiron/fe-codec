@@ -36,6 +36,9 @@ path = "eip712_tests"
 [modules.codec_field_tests]
 path = "codec_field_tests"
 
+[modules.unknown_fields_tests]
+path = "unknown_fields_tests"
+
 [modules.shared.generate.serializers]
 command = [
     "../../../tools/fe_codec_gen",

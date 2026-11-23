@@ -82,6 +82,8 @@ pub struct Model {
     pub name: usize,
     /// Marked `#[eip712]`: `--eip712` generates static struct hashing for it.
     pub eip712: bool,
+    /// Marked `#[codec_skip_unknown]`: the record's decoder skips fields it does not know.
+    pub skip_unknown: bool,
     /// The source file and byte offset of the declaration, for diagnostics.
     pub source: usize,
     pub offset: usize,
@@ -356,6 +358,37 @@ fn serializable(_ file: ref File, _ source: usize, _ attrs: Run) -> Result<Diagn
     Result::Ok(found)
 }
 
+/// Whether the attributes carry `#[codec_skip_unknown]`, which takes no arguments and belongs
+/// on `#[serializable]` structs. `is_serializable` and `is_struct` say what the declaration is.
+fn skip_unknown(
+    _ file: ref File,
+    _ source: usize,
+    _ attrs: Run,
+    _ is_serializable: bool,
+    _ is_struct: bool,
+) -> Result<Diagnostic, bool> {
+    var found = false
+    var i: usize = 0
+    while i < attrs.len {
+        let attribute = file.attrs[attrs.start + i]
+        i += 1
+        if attr_path(file, attrs, i - 1) != "codec_skip_unknown" {
+            continue
+        }
+        if !is_serializable || !is_struct {
+            return fail(source, attribute.start, format!("codec_skip_unknown belongs on serializable structs"))
+        }
+        if attribute.has_args || attribute.value.is_some() {
+            return fail(source, attribute.start, format!("#[codec_skip_unknown] takes no arguments"))
+        }
+        if found {
+            return fail(source, attribute.start, format!("duplicate codec_skip_unknown attribute"))
+        }
+        found = true
+    }
+    Result::Ok(found)
+}
+
 /// Fails if a schema name token is longer than `MAX_NAME_BYTES`.
 fn check_name(_ file: ref File, _ source: usize, _ name: usize, _ site: usize) -> Result<Diagnostic, ()> {
     if file.token_text(name).len() > MAX_NAME_BYTES {
@@ -518,6 +551,9 @@ fn member_attrs(_ file: ref File, _ source: usize, _ attrs: Run, _ field: bool) 
             }
             continue
         }
+        if path == "codec_skip_unknown" {
+            return fail(source, attribute.start, format!("codec_skip_unknown belongs on serializable structs"))
+        }
         if (starts_with(path, "codec") && path != "codec_id") || path == "serializable" {
             if field {
                 return fail(
@@ -589,11 +625,13 @@ impl Program {
                     ItemKind::Struct => {
                         let model = file.structs[item.detail]
                         is_serializable = serializable(file, index, model.attrs)?
+                        skip_unknown(file, index, model.attrs, is_serializable, true)?
                         name = model.name
                     },
                     ItemKind::Enum => {
                         let model = file.enums[item.detail]
                         is_serializable = serializable(file, index, model.attrs)?
+                        skip_unknown(file, index, model.attrs, is_serializable, false)?
                         name = model.name
                     },
                     ItemKind::ImplTrait => {
@@ -675,6 +713,7 @@ impl Program {
                             let last = output.models.len() - 1
                             var record = output.models[last]
                             record.eip712 = marked(file, model.attrs, "eip712")
+                            record.skip_unknown = marked(file, model.attrs, "codec_skip_unknown")
                             output.models.set(last, record)
                         } else if marked(file, model.attrs, "eip712") {
                             return fail(index, item.start, format!("#[eip712] types must also be #[serializable]"))
@@ -838,6 +877,7 @@ impl Program {
         output.models.push(Model {
             name: model.name,
             eip712: false,
+            skip_unknown: false,
             source,
             offset: start,
             is_record: true,
@@ -896,6 +936,7 @@ impl Program {
         output.models.push(Model {
             name: model.name,
             eip712: false,
+            skip_unknown: false,
             source,
             offset: start,
             is_record: false,

@@ -74,6 +74,7 @@ class Model:
         self.explicit = False  # members carry #[codec_id]
         self.copy_impl = False
         self.eip712 = False
+        self.skip_unknown = False  # #[codec_skip_unknown]
         self.plain = False
         self.copy_path = "Copy"  # how `impl Copy for` spells the trait
 
@@ -379,6 +380,69 @@ def to_cbor(spec, t, v):
     return {fid: to_cbor(spec, ft, v[name]) for name, ft, fid in instance_fields(spec, t)}
 
 
+def junk_json(rng, depth=0):
+    """JSON text of a value an older reader knows nothing about: every kind, fractions and
+    exponents included, small enough for any limit."""
+    kinds = ["int", "real", "bool", "null", "text"] + (["arr", "obj"] if depth < 3 else [])
+    k = rng.choice(kinds)
+    if k == "int":
+        return str(rng.choice([0, -1, 7, 255, 2 ** 64, -(2 ** 70)]))
+    if k == "real":
+        return rng.choice(["0.5", "-1.25", "1e3", "2E-2", "1.5e+10", "-0.0", "10.125e2"])
+    if k == "bool":
+        return rng.choice(["true", "false"])
+    if k == "null":
+        return "null"
+    if k == "text":
+        return rng.choice(['""', '"x"', '"a\\"b\\\\c\\/d\\n\\u00e9\\ud83d\\ude00"', '"héllo 😀"'])
+    if k == "arr":
+        return "[" + ",".join(junk_json(rng, depth + 1) for _ in range(rng.randint(0, 3))) + "]"
+    names = rng.sample(["a", "b", "owner", "id", "k" * 40], rng.randint(0, 3))
+    return "{" + ",".join('"%s":%s' % (n, junk_json(rng, depth + 1)) for n in names) + "}"
+
+
+def junk_cbor(rng, depth=0):
+    """A Python value for `reference.cbor` that is never None, since a map leaves those out."""
+    kinds = ["int", "bool", "text", "bytes", "null"] + (["arr", "map"] if depth < 3 else [])
+    k = rng.choice(kinds)
+    if k == "int":
+        return rng.choice([0, 23, 24, 255, 256, 65536, 2 ** 32, 2 ** 64 - 1, 2 ** 64, -1, -25, -(2 ** 64), -(2 ** 200)])
+    if k == "bool":
+        return rng.random() < 0.5
+    if k == "text":
+        return rng.choice(["", "x", "héllo 😀"])
+    if k == "bytes":
+        return bytes(rng.randrange(256) for _ in range(rng.randint(0, 4)))
+    if k == "null":
+        return [None]
+    if k == "arr":
+        return [junk_cbor(rng, depth + 1) for _ in range(rng.randint(0, 3))]
+    return {i: junk_cbor(rng, depth + 1) for i in rng.sample([0, 1, 5, 23, 24, 300], rng.randint(0, 3))}
+
+
+def to_cbor_with_unknown(spec, rng, t, v, added):
+    """`to_cbor`, with unknown fields added to every record marked #[codec_skip_unknown]: IDs the
+    record does not use, before, between and after its own. `added` counts them."""
+    k = t[0]
+    if k == "opt":
+        return None if v is None else to_cbor_with_unknown(spec, rng, t[1], v, added)
+    if k == "arr":
+        return [to_cbor_with_unknown(spec, rng, t[1], x, added) for x in v]
+    if k == "tup":
+        return [to_cbor_with_unknown(spec, rng, e, x, added) for e, x in zip(t[1], v)]
+    if k != "ref" or not spec.model(t[1]).is_record:
+        return to_cbor(spec, t, v)
+    m = spec.model(t[1])
+    out = {fid: to_cbor_with_unknown(spec, rng, ft, v[name], added) for name, ft, fid in instance_fields(spec, t)}
+    if m.skip_unknown:
+        top = max(out, default=0)
+        free = [i for i in range(1, top + 3) if i not in out] + [top + 1000, 2 ** 32 + top, 2 ** 64 - 1]
+        for i in rng.sample(free, rng.randint(1, min(3, len(free)))):
+            out[i] = junk_cbor(rng)
+            added[0] += 1
+    return out
+
+
 def json_bytes(spec, t, v):
     return reference.js(to_js(spec, t, v)).encode()
 
@@ -393,9 +457,10 @@ def cbor_bytes(spec, t, v):
 WS = [" ", "\t", "\n", "\r", "  ", " \n\t"]
 
 
-def noisy_json(spec, rng, t, v, drop=None, counter=None):
+def noisy_json(spec, rng, t, v, drop=None, counter=None, added=None):
     """Compact-JSON-equivalent text of `v`. `drop` is (occurrence, field name): that field of that
-    record occurrence (numbered in visiting order) is left out."""
+    record occurrence (numbered in visiting order) is left out. A record marked
+    #[codec_skip_unknown] also gets members it does not know; `added` counts them."""
     counter = counter if counter is not None else [0]
 
     def ws():
@@ -464,6 +529,13 @@ def noisy_json(spec, rng, t, v, drop=None, counter=None):
             if ft[0] == "opt" and v[name] is None and rng.random() < 0.5:
                 continue
             members.append(ws() + '"' + name + '"' + ws() + ":" + ws() + go(ft, v[name]) + ws())
+        if m.skip_unknown and added is not None:
+            known = {name for name, _, _ in instance_fields(spec, t)}
+            for i in range(rng.randint(1, 3)):
+                name = rng.choice(["unknown_%d" % i, "extra", "k" * rng.randint(32, 40)])
+                if name not in known:
+                    members.append(ws() + '"' + name + '"' + ws() + ":" + ws() + junk_json(rng) + ws())
+                    added[0] += 1
         rng.shuffle(members)
         return "{" + ws() + ",".join(members) + ws() + "}"
 

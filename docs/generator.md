@@ -47,6 +47,8 @@ The generator rejects only what the compiler cannot catch:
 - a misplaced or malformed `#[codec_with]`: on a struct, an enum or a variant, twice on one
   field, without a value, or with anything but a path such as `Hex` or `ingot::codecs::Hex`
   (generic arguments are rejected);
+- a misplaced or malformed `#[codec_skip_unknown]`: on an enum, a field, a variant or a struct
+  that isn't `#[serializable]`, with arguments or a value, or twice on one struct;
 - names longer than 31 bytes, private fields, generic enums, enums with payloads, `where`
   clauses and generic parameters with defaults.
 
@@ -84,6 +86,19 @@ pub struct Payment {
 - `--eip712` rejects a `codec_with` field in an `#[eip712]` struct or in a struct one reaches,
   since the type string comes from the field type. Other structs with `codec_with` fields
   are fine in that mode. The generic EIP-712 path uses the codec's `describe`.
+
+## Skipping unknown fields
+
+`#[codec_skip_unknown]` on a `#[serializable]` struct takes no arguments. The generated
+`Schema` then returns true from `skips_unknown_fields`, which JSON and CBOR decoders read to
+skip a field the struct does not list instead of failing with `UnknownField`. Nothing else in
+the generated code changes, and IDs, field order and EIP-712 hashing are the same.
+
+```fe
+#[serializable]
+#[codec_skip_unknown]
+pub struct Account { pub owner: u64, pub balance: u64 }
+```
 
 ## Running it from FeMP
 

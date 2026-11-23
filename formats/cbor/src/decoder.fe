@@ -15,6 +15,7 @@ use fe_codec_core::{
     Structure,
     Text,
     TextWriter,
+    Utf8,
     checked_signed,
     checked_unsigned,
     checked_wide_signed,
@@ -26,6 +27,13 @@ use ingot::canonical::minimum_argument
 const MAX_SIGNED: u256 = 0x7fffffffffffffff
 const MAX_ARGUMENT: u256 = 0xffffffffffffffff
 const MAX_WIDE_SIGNED: u256 = 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+
+/// The order of two map keys, by their encoded bytes.
+enum KeyOrder {
+    Ascending,
+    Equal,
+    Descending,
+}
 
 pub struct CborDecoder<const N: usize> { input: ByteReader<N>, structure: Structure }
 
@@ -102,6 +110,11 @@ impl<const N: usize> CborDecoder<N> {
         if number != 2 && number != 3 {
             return Result::Err(CodecError::at(kind: ErrorKind::TypeMismatch, offset))
         }
+        self.bignum(number, offset)
+    }
+
+    /// The byte string of a bignum whose tag `number`, 2 or 3, was just read at `offset`.
+    fn bignum(mut self, _ number: u64, _ offset: usize) -> CodecResult<(bool, u256)> {
         let length = self.header(2)?
         if length > 32 {
             return Result::Err(CodecError::at(kind: ErrorKind::IntegerOutOfRange, offset))
@@ -120,6 +133,73 @@ impl<const N: usize> CborDecoder<N> {
             return Result::Err(CodecError::at(kind: ErrorKind::NonCanonical, offset))
         }
         Result::Ok((number == 3, value))
+    }
+
+    /// How the encoded key at `first` to `first_end` sorts against the one at `second` to
+    /// `second_end`, both already read: bytewise, with a prefix sorting first.
+    fn compare_keys(
+        self,
+        _ first: usize,
+        _ first_end: usize,
+        _ second: usize,
+        _ second_end: usize,
+    ) -> KeyOrder {
+        var index: usize = 0
+        while first + index < first_end && second + index < second_end {
+            let a = self.input.byte_at(first + index).unwrap()
+            let b = self.input.byte_at(second + index).unwrap()
+            if a != b {
+                if a < b {
+                    return KeyOrder::Ascending
+                }
+                return KeyOrder::Descending
+            }
+            index += 1
+        }
+        let first_length = first_end - first
+        let second_length = second_end - second
+        if first_length < second_length {
+            KeyOrder::Ascending
+        } else if first_length == second_length {
+            KeyOrder::Equal
+        } else {
+            KeyOrder::Descending
+        }
+    }
+
+    /// A map whose entries are skipped. Keys are items of any kind and must ascend in the
+    /// bytes they are encoded as, as the keys of a record do.
+    fn skip_map(mut self) -> CodecResult<()> {
+        var frame = self.begin(5)?
+        var previous: usize = 0
+        var previous_end: usize = 0
+        while frame.remaining() != 0 {
+            let key = self.offset()
+            self.structure.member(key)?
+            frame.take(key)?
+            self.skip_value()?
+            let key_end = self.offset()
+            if frame.taken() > 1 {
+                match self.compare_keys(previous, previous_end, key, key_end) {
+                    KeyOrder::Ascending => {},
+                    KeyOrder::Equal => {
+                        return Result::Err(
+                            CodecError::at(kind: ErrorKind::DuplicateField, offset: key),
+                        )
+                    },
+                    KeyOrder::Descending => {
+                        return Result::Err(
+                            CodecError::at(kind: ErrorKind::NonCanonical, offset: key),
+                        )
+                    },
+                }
+            }
+            previous = key
+            previous_end = key_end
+            self.structure.member(key_end)?
+            self.skip_value()?
+        }
+        self.end(frame)
     }
 
     fn begin(mut self, _ major: u8) -> CodecResult<Frame> {
@@ -272,30 +352,103 @@ impl<const N: usize> Decoder for CborDecoder<N> {
         Result::Err(CodecError::at(kind: ErrorKind::UnknownVariant, offset))
     }
 
+    /// One data item of the profile: heads in their shortest form, definite lengths, major
+    /// types 0 to 5, bignums within 256 bits, valid UTF-8 text, and false, true and null.
+    /// Maps keep the profile's key order. Containers count toward `Limits.max_depth` and
+    /// `Limits.max_items`. Anything else, such as a float or another tag, is `Unsupported`.
+    fn skip_value(mut self) -> CodecResult<()> {
+        let offset = self.offset()
+        let first = match self.input.peek() {
+            Option::Some(byte) => byte,
+            Option::None => {
+                return Result::Err(CodecError::at(kind: ErrorKind::UnexpectedEnd, offset))
+            },
+        }
+        let major = first >> 5
+        if major == 4 {
+            var frame = self.begin(4)?
+            while frame.remaining() != 0 {
+                self.element(mut frame)?
+                self.skip_value()?
+            }
+            return self.end(frame)
+        }
+        if major == 5 {
+            return self.skip_map()
+        }
+        self.structure.value(offset)?
+        if major < 2 {
+            let _ = self.header(major)?
+        } else if major == 2 {
+            let length = self.header(2)?
+            var index: u64 = 0
+            while index < length {
+                let _ = self.byte()?
+                index += 1
+            }
+        } else if major == 3 {
+            let length = self.header(3)?
+            var utf8 = Utf8::new()
+            var index: u64 = 0
+            while index < length {
+                let at = self.offset()
+                utf8.push(self.byte()?, at)?
+                index += 1
+            }
+            utf8.finish(self.offset())?
+        } else if major == 6 {
+            let _ = self.byte()?
+            let number = self.argument(first & 31, offset)?
+            if number != 2 && number != 3 {
+                return Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset))
+            }
+            let _ = self.bignum(number, offset)?
+        } else if first == 0xf4 || first == 0xf5 || first == 0xf6 {
+            let _ = self.byte()?
+        } else {
+            // The rest of major type 7: a float, `undefined` or another simple value is well
+            // formed but outside the profile, and 28 to 31 is not well formed at all.
+            let kind = if first & 31 > 27 {
+                ErrorKind::InvalidSyntax
+            } else {
+                ErrorKind::Unsupported
+            }
+            return Result::Err(CodecError::at(kind, offset))
+        }
+        Result::Ok(())
+    }
+
     fn begin_record<R: Schema>(mut self) -> CodecResult<Frame> {
         self.begin(5)
     }
 
     fn next_field<R: Schema>(mut self, _ record: mut Frame) -> CodecResult<Option<FieldKey>> {
-        if record.remaining() == 0 {
-            return Result::Ok(Option::None)
-        }
-        let offset = self.offset()
-        let id = self.header(0)?
-        var position: usize = 0
-        while let Option::Some(field) = R::field(position) {
-            if field.id == id {
-                // A repeated or out-of-order key names the field it repeats.
-                if let Result::Err(error) = record.key(id, offset) {
-                    return Result::Err(error.in_field(field.name))
-                }
-                self.structure.member(offset)?
-                return Result::Ok(FieldKey::of<R>(position, offset))
+        loop {
+            if record.remaining() == 0 {
+                return Result::Ok(Option::None)
             }
-            position += 1
+            let offset = self.offset()
+            let id = self.header(0)?
+            var position: usize = 0
+            while let Option::Some(field) = R::field(position) {
+                if field.id == id {
+                    // A repeated or out-of-order key names the field it repeats.
+                    if let Result::Err(error) = record.key(id, offset) {
+                        return Result::Err(error.in_field(field.name))
+                    }
+                    self.structure.member(offset)?
+                    return Result::Ok(FieldKey::of<R>(position, offset))
+                }
+                position += 1
+            }
+            // An unknown ID still has to ascend.
+            record.key(id, offset)?
+            if !R::skips_unknown_fields() {
+                return Result::Err(CodecError::at(kind: ErrorKind::UnknownField, offset))
+            }
+            self.structure.member(offset)?
+            self.skip_value()?
         }
-        record.key(id, offset)?
-        Result::Err(CodecError::at(kind: ErrorKind::UnknownField, offset))
     }
 
     fn end_record(mut self, _ record: own Frame) -> CodecResult<()> {

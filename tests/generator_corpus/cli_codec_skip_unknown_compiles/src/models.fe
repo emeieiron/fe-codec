@@ -1,0 +1,24 @@
+#[serializable]
+#[codec_skip_unknown]
+pub struct Plain { pub id: u8 }
+
+/// Beside other attributes and doc comments, with explicit IDs and an optional field.
+#[serializable]
+#[codec_skip_unknown]
+pub struct Tagged {
+    #[codec_id = 4]
+    pub id: u64,
+    #[codec_id = 2]
+    pub note: Option<Plain>,
+}
+
+#[serializable]
+#[codec_skip_unknown]
+pub struct Pair<A, const N: usize> {
+    pub items: [A; N],
+    pub other: Option<A>,
+}
+
+/// A record that does not skip, holding one that does.
+#[serializable]
+pub struct Holder { pub plain: Plain, pub tagged: Tagged }

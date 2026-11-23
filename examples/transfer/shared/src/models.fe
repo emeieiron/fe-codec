@@ -149,3 +149,40 @@ pub struct Receipt {
     #[codec_with = HexWord]
     pub hash: [u8; 4],
 }
+
+/// A record that skips fields it does not know. Its IDs leave gaps for unknown ones.
+#[serializable]
+#[codec_skip_unknown]
+pub struct Lenient {
+    #[codec_id = 2]
+    pub owner: u64,
+    #[codec_id = 5]
+    pub balance: u64,
+    #[codec_id = 8]
+    pub label: Option<Text<8>>,
+}
+
+/// `Lenient` without the attribute: any unknown field is an error.
+#[serializable]
+pub struct Exact {
+    #[codec_id = 2]
+    pub owner: u64,
+    #[codec_id = 5]
+    pub balance: u64,
+    #[codec_id = 8]
+    pub label: Option<Text<8>>,
+}
+
+/// Only the nested record skips unknown fields.
+#[serializable]
+pub struct Ledger { pub lenient: Lenient, pub exact: Exact }
+
+/// An `AccountV1` reader that accepts data written by `AccountV2` and later versions.
+#[serializable]
+#[codec_skip_unknown]
+pub struct AccountReader {
+    #[codec_id = 1]
+    pub owner: u64,
+    #[codec_id = 2]
+    pub balance: u64,
+}

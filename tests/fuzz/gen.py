@@ -317,6 +317,9 @@ class Gen:
         for m in spec.models:
             if m.is_record and not m.generics and m.plain and eligible_for_eip712(spec, m):
                 m.eip712 = self.rng.random() < 0.75
+        for m in spec.models:
+            if m.is_record:
+                m.skip_unknown = self.rng.random() < 0.4
         return spec
 
 

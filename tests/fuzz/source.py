@@ -240,8 +240,10 @@ class Renderer:
     def record(self, rng, m, style):
         s = Src()
         attrs = ["#[serializable]"] + (["#[eip712]"] if m.eip712 else [])
-        if m.eip712 and rng.random() < 0.3:
-            attrs.reverse()
+        if m.skip_unknown:
+            attrs.append("#[codec_skip_unknown]")
+        if len(attrs) > 1 and rng.random() < 0.3:
+            rng.shuffle(attrs)
         if len(attrs) > 1:
             self.stats["several attributes on one item"] += 1
         for i, a in enumerate(attrs):
