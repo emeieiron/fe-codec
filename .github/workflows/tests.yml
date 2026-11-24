@@ -44,8 +44,12 @@ jobs:
 
       - name: Parser against fe check
         run: |
+          # The test mutates the toolchain's own core and std sources, so fetch them.
+          git clone -q --depth 1 --branch "$FE_VERSION" --filter=blob:none --sparse \
+            https://github.com/argotorg/fe "$RUNNER_TEMP/fe"
+          git -C "$RUNNER_TEMP/fe" sparse-checkout set ingots
           fe build --backend native tools/syntax-dump --out-dir target/fe
-          python3 tests/parser_vs_fe.py
+          FE_TOOLCHAIN_INGOTS="$RUNNER_TEMP/fe/ingots" python3 tests/parser_vs_fe.py
 
       - name: Playground module matches the generator
         run: node tests/playground_parity.mjs
