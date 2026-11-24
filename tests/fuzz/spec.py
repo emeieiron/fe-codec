@@ -10,9 +10,15 @@ Types are tuples:
     ('text', n)  ('buf', n)  ('packed', n)       n is an int, or a const parameter's name
     ('opt', t)  ('arr', t, n)                    n likewise
     ('list', t, n)                               List<t, n>: 0 to n elements, which are Copy
+    ('map', k, v, n)                             Map<k, v, n>: 0 to n entries; k is an unsigned
+                                                 integer, text, addr or packed, never a parameter,
+                                                 and v is Copy
     ('tup', (t, ...))                            1 to 8 element types
     ('ref', name, args)                          a local record or enum; args are types or ints
     ('param', name)                              a type parameter of the enclosing generic record
+
+A map's value is a list of (key, value) pairs in the order they are inserted, which is never the
+key order of two or more of them. Keys are Python ints, strs, and bytes (addr and packed).
 """
 
 import contextlib
@@ -127,6 +133,8 @@ def fe_type(t):
         return "[%s; %s]" % (fe_type(t[1]), t[2])
     if k == "list":
         return "List<%s, %s>" % (fe_type(t[1]), t[2])
+    if k == "map":
+        return "Map<%s, %s, %s>" % (fe_type(t[1]), fe_type(t[2]), t[3])
     if k == "tup":
         return "(%s%s)" % (", ".join(fe_type(e) for e in t[1]), "," if len(t[1]) == 1 else "")
     if k == "ref":
@@ -155,6 +163,8 @@ def subst(t, env):
         return ("arr", subst(t[1], env), size(t[2]))
     if k == "list":
         return ("list", subst(t[1], env), size(t[2]))
+    if k == "map":
+        return ("map", t[1], subst(t[2], env), size(t[3]))
     if k == "tup":
         return ("tup", tuple(subst(e, env) for e in t[1]))
     if k == "ref":
@@ -168,6 +178,9 @@ def walk(t):
     yield t
     if t[0] in ("opt", "arr", "list"):
         yield from walk(t[1])
+    elif t[0] == "map":
+        yield from walk(t[1])
+        yield from walk(t[2])
     elif t[0] == "tup":
         for e in t[1]:
             yield from walk(e)
@@ -194,6 +207,8 @@ def weight(spec, t):
         return 1 + weight(spec, t[1])
     if k in ("arr", "list"):
         return 1 + (t[2] if isinstance(t[2], int) else 3) * weight(spec, t[1])
+    if k == "map":
+        return 1 + (t[3] if isinstance(t[3], int) else 3) * (1 + weight(spec, t[2]))
     if k == "tup":
         return 1 + sum(weight(spec, e) for e in t[1])
     if k == "ref" and spec.model(t[1]).is_record:
@@ -207,6 +222,8 @@ def is_copy(spec, t):
         return is_copy(spec, t[1])
     if k == "arr" or k == "list":
         return is_copy(spec, t[1])
+    if k == "map":
+        return is_copy(spec, t[2])  # the keys always are
     if k == "tup":
         return all(is_copy(spec, e) for e in t[1])
     if k == "ref":
@@ -216,10 +233,12 @@ def is_copy(spec, t):
 
 
 def uses_array(t):
-    """Whether a parameter appears under an array or a list in `t`."""
+    """Whether a parameter appears under an array, a list or a map in `t`."""
     k = t[0]
     if k == "arr" or k == "list":
         return any(w[0] == "param" for w in walk(t[1]))
+    if k == "map":
+        return any(w[0] == "param" for w in walk(t[2]))
     if k == "opt":
         return uses_array(t[1])
     if k == "tup":
@@ -232,6 +251,8 @@ def type_param_needs_copy(m, name):
         t = f.ty
         for w in walk(t):
             if w[0] in ("arr", "list") and any(x == ("param", name) for x in walk(w[1])):
+                return True
+            if w[0] == "map" and any(x == ("param", name) for x in walk(w[2])):
                 return True
     return any(g[1] == name and g[2] for g in m.generics)
 
@@ -336,6 +357,8 @@ def gen_value(spec, rng, t):
         n = t[2]
         count = rng.choice([0, 1, n, n, rng.randint(0, n), rng.randint(0, n)])
         return [gen_value(spec, rng, t[1]) for _ in range(min(count, n))]
+    if k == "map":
+        return gen_map(spec, rng, t)
     if k == "tup":
         return [gen_value(spec, rng, e) for e in t[1]]
     if k == "ref":
@@ -344,6 +367,52 @@ def gen_value(spec, rng, t):
             return rng.choice(m.variants).name
         return {name: gen_value(spec, rng, ft) for name, ft, _ in instance_fields(spec, t)}
     raise ValueError(t)
+
+
+def key_order(keys):
+    """`keys` in the canonical order of a map: the order of their deterministic CBOR encodings."""
+    return sorted(keys, key=reference.cbor)
+
+
+def gen_map(spec, rng, t):
+    """The (key, value) pairs of a map of type `t`, in an insertion order that is not key order.
+    Short of room in a small key type, the map has fewer entries than it drew."""
+    n = t[3]
+    count = min(rng.choice([0, 1, 2, n, n, rng.randint(0, n), rng.randint(0, n)]), n)
+    keys = []
+    for _ in range(count * 4):
+        if len(keys) == count:
+            break
+        key = gen_value(spec, rng, t[1])
+        if key not in keys:
+            keys.append(key)
+    rng.shuffle(keys)
+    if len(keys) > 1 and keys == key_order(keys):
+        keys.reverse()
+    return [(key, gen_value(spec, rng, t[2])) for key in keys]
+
+
+def maps_in(spec, t, v):
+    """[(map type, pairs)] for every map in the value `v` of type `t`, outermost first."""
+    k = t[0]
+    out = []
+    if k == "map":
+        out.append((t, v))
+        for _, x in v:
+            out.extend(maps_in(spec, t[2], x))
+    elif k == "opt":
+        if v is not None:
+            out.extend(maps_in(spec, t[1], v))
+    elif k == "arr" or k == "list":
+        for x in v:
+            out.extend(maps_in(spec, t[1], x))
+    elif k == "tup":
+        for e, x in zip(t[1], v):
+            out.extend(maps_in(spec, e, x))
+    elif k == "ref" and spec.model(t[1]).is_record:
+        for name, ft, _ in instance_fields(spec, t):
+            out.extend(maps_in(spec, ft, v[name]))
+    return out
 
 
 def replace_field(value, name, new):
@@ -366,6 +435,8 @@ def to_js(spec, t, v):
         return None if v is None else to_js(spec, t[1], v)
     if k == "arr" or k == "list":
         return [to_js(spec, t[1], x) for x in v]
+    if k == "map":
+        return reference.Map({to_js(spec, t[1], key): to_js(spec, t[2], x) for key, x in v})
     if k == "tup":
         return [to_js(spec, e, x) for e, x in zip(t[1], v)]
     m = spec.model(t[1])
@@ -382,6 +453,8 @@ def to_cbor(spec, t, v):
         return None if v is None else to_cbor(spec, t[1], v)
     if k == "arr" or k == "list":
         return [to_cbor(spec, t[1], x) for x in v]
+    if k == "map":
+        return reference.Map({key: to_cbor(spec, t[2], x) for key, x in v})
     if k == "tup":
         return [to_cbor(spec, e, x) for e, x in zip(t[1], v)]
     m = spec.model(t[1])
@@ -438,6 +511,8 @@ def to_cbor_with_unknown(spec, rng, t, v, added):
         return None if v is None else to_cbor_with_unknown(spec, rng, t[1], v, added)
     if k == "arr" or k == "list":
         return [to_cbor_with_unknown(spec, rng, t[1], x, added) for x in v]
+    if k == "map":
+        return reference.Map({key: to_cbor_with_unknown(spec, rng, t[2], x, added) for key, x in v})
     if k == "tup":
         return [to_cbor_with_unknown(spec, rng, e, x, added) for e, x in zip(t[1], v)]
     if k != "ref" or not spec.model(t[1]).is_record:
@@ -446,7 +521,10 @@ def to_cbor_with_unknown(spec, rng, t, v, added):
     out = {fid: to_cbor_with_unknown(spec, rng, ft, v[name], added) for name, ft, fid in instance_fields(spec, t)}
     if m.skip_unknown:
         top = max(out, default=0)
-        free = [i for i in range(1, top + 3) if i not in out] + [top + 1000, 2 ** 32 + top, 2 ** 64 - 1]
+        # Gaps among the small IDs (the range is cut short, since an ID may be 2 ** 64 - 1), and a
+        # few far above the record's own.
+        free = [i for i in range(1, min(top, 1000) + 3) if i not in out]
+        free += [i for i in sorted({top + 1000, 2 ** 32 + top, 2 ** 64 - 1}) if i not in out and i < 2 ** 64]
         for i in rng.sample(free, rng.randint(1, min(3, len(free)))):
             out[i] = junk_cbor(rng)
             added[0] += 1
@@ -508,6 +586,13 @@ def noisy_json(spec, rng, t, v, drop=None, counter=None, added=None):
         out.append('"')
         return "".join(out)
 
+    def key_text(t, key):
+        """A map key: always a JSON string, with an integer in canonical decimal."""
+        k = t[0]
+        if k == "int":
+            return '"%d"' % key
+        return go(t, key)
+
     def go(t, v):
         k = t[0]
         if k == "int":
@@ -524,6 +609,11 @@ def noisy_json(spec, rng, t, v, drop=None, counter=None, added=None):
         if k == "arr" or k == "list":
             items = [ws() + go(t[1], x) + ws() for x in v]
             return "[" + ws() + ",".join(items) + ws() + "]"
+        if k == "map":
+            # Members in any order; the keys are strings whatever their type.
+            members = [ws() + key_text(t[1], key) + ws() + ":" + ws() + go(t[2], x) + ws() for key, x in v]
+            rng.shuffle(members)
+            return "{" + ws() + ",".join(members) + ws() + "}"
         if k == "tup":
             items = [ws() + go(e, x) + ws() for e, x in zip(t[1], v)]
             return "[" + ws() + ",".join(items) + ws() + "]"
@@ -552,23 +642,29 @@ def noisy_json(spec, rng, t, v, drop=None, counter=None, added=None):
     return ws() + go(t, v) + ws()
 
 
-def record_occurrences(spec, t, v, out=None):
-    """[(occurrence, record type, value)] for every record in `v`, in visiting order."""
+def record_occurrences(spec, t, v, out=None, in_maps=None, under_map=False):
+    """[(occurrence, record type, value)] for every record in `v`, in visiting order. The numbers
+    of the records that lie inside the value of a map are added to the set `in_maps`."""
     out = [] if out is None else out
     k = t[0]
     if k == "opt":
         if v is not None:
-            record_occurrences(spec, t[1], v, out)
+            record_occurrences(spec, t[1], v, out, in_maps, under_map)
     elif k == "arr" or k == "list":
         for x in v:
-            record_occurrences(spec, t[1], x, out)
+            record_occurrences(spec, t[1], x, out, in_maps, under_map)
+    elif k == "map":
+        for _, x in v:
+            record_occurrences(spec, t[2], x, out, in_maps, True)
     elif k == "tup":
         for e, x in zip(t[1], v):
-            record_occurrences(spec, e, x, out)
+            record_occurrences(spec, e, x, out, in_maps, under_map)
     elif k == "ref" and spec.model(t[1]).is_record:
+        if under_map and in_maps is not None:
+            in_maps.add(len(out))
         out.append((len(out), t, v))
         for name, ft, _ in instance_fields(spec, t):
-            record_occurrences(spec, ft, v[name], out)
+            record_occurrences(spec, ft, v[name], out, in_maps, under_map)
     return out
 
 
@@ -582,6 +678,8 @@ def dropped_value(spec, t, v, occurrence, name):
             return None if v is None else go(t[1], v)
         if k == "arr" or k == "list":
             return [go(t[1], x) for x in v]
+        if k == "map":
+            return [(key, go(t[2], x)) for key, x in v]
         if k == "tup":
             return [go(e, x) for e, x in zip(t[1], v)]
         if k == "ref" and spec.model(t[1]).is_record:
@@ -665,7 +763,7 @@ def eligible_for_eip712(spec, m):
             structs += 1
             for f in c.fields:
                 for w in walk(f.ty):
-                    if w[0] == "opt" or w[0] == "tup":
+                    if w[0] in ("opt", "tup", "map"):
                         return False
                     if w[0] == "packed" and not 1 <= w[1] <= 32:
                         return False

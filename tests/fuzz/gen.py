@@ -30,8 +30,9 @@ def long_name(rng, base):
 
 
 class Gen:
-    def __init__(self, rng):
+    def __init__(self, rng, seed=0):
         self.rng = rng
+        self.seed = seed
         self.spec = Spec()
 
     # -- scalars
@@ -77,6 +78,8 @@ class Gen:
             choices.append(("list", 2.2))
             if not plain:
                 choices.append(("opt", 2.0))
+                # EIP-712 has no maps either.
+                choices.append(("map", 2.2))
                 # EIP-712 has no tuples, so the types a root may use have none.
                 choices.append(("tup", 2.4))
         if params:
@@ -104,6 +107,8 @@ class Gen:
             return self.tuple(depth, force_copy, plain, params, consts, avail_generics)
         if kind == "list":
             return self.list(depth, top, plain, params, consts, avail_generics)
+        if kind == "map":
+            return self.map(depth, top, plain, params, consts, avail_generics)
         if kind == "opt":
             inner = self.gen_type(depth + 1, False, force_copy, plain, params, consts, avail_generics)
             if inner[0] == "opt":
@@ -137,6 +142,33 @@ class Gen:
         else:
             elem = self.gen_type(depth + 1, False, True, plain, params, consts, avail_generics)
         return ("list", elem, length)
+
+    def map_key(self):
+        """The key of a `Map`: an unsigned integer of any width, `Text<N>`, `Address` or
+        `PackedBytes<N>`, always concrete."""
+        rng = self.rng
+        r = rng.random()
+        if r < 0.50:
+            return Int(False, rng.choice([8, 16, 32, 64, 128, 256]))
+        if r < 0.70:
+            return ("text", rng.choice([1, 2, 3, 5, 8, rng.randint(1, 32)]))
+        if r < 0.82:
+            return ADDR
+        return ("packed", rng.choice([1, 2, 3, 4, 8, 20, 31, 32, rng.randint(1, 32)]))
+
+    def map(self, depth, top, plain, params, consts, avail_generics):
+        """`Map<K, V, N>`. Its values are always `Copy`, since a map stores copies of them. A
+        capacity of 0 is a field's whole type only, as for an empty array and list."""
+        rng = self.rng
+        if consts and rng.random() < 0.35:
+            length = rng.choice(consts)
+        else:
+            length = rng.choice([0, 0, 1, 2, 3, 4]) if top and rng.random() < 0.35 else rng.choice([1, 2, 3, 4])
+        if not plain and depth < 1 and rng.random() < 0.2:
+            value = self.tuple(depth + 1, True, plain, params, consts, avail_generics)
+        else:
+            value = self.gen_type(depth + 1, False, True, plain, params, consts, avail_generics)
+        return ("map", self.map_key(), value, length)
 
     def tuple(self, depth, force_copy, plain, params, consts, avail_generics):
         """A tuple of 1 to 8 elements. Core decodes the elements one by one, so none needs `Copy`
@@ -271,17 +303,20 @@ class Gen:
         options = [pt, ("opt", pt), ("arr", pt, rng.randint(1, 3)), ("arr", ("opt", pt), rng.randint(1, 3)),
                    ("opt", ("arr", pt, rng.randint(1, 3))), ("arr", ("arr", pt, rng.randint(1, 2)), rng.randint(1, 3)),
                    ("list", pt, rng.randint(1, 3)), ("opt", ("list", pt, rng.randint(1, 3))),
-                   ("list", ("opt", pt), rng.randint(1, 3))]
+                   ("list", ("opt", pt), rng.randint(1, 3)), ("map", self.map_key(), pt, rng.randint(1, 3)),
+                   ("opt", ("map", self.map_key(), pt, rng.randint(1, 3))),
+                   ("map", self.map_key(), ("opt", pt), rng.randint(1, 3))]
         if consts:
             n = rng.choice(consts)
             options += [("arr", pt, n), ("opt", ("arr", pt, n)), ("arr", ("opt", pt), n), ("list", pt, n),
-                        ("list", ("arr", pt, 2), n)]
+                        ("list", ("arr", pt, 2), n), ("map", self.map_key(), pt, n)]
         return rng.choice(options)
 
     def const_use(self, c, params):
         rng = self.rng
         options = [("text", c), ("buf", c), ("packed", c), ("arr", Int(False, rng.choice([8, 64])), c),
-                   ("arr", BOOL, c), ("list", Int(False, rng.choice([8, 64])), c), ("list", ADDR, c)]
+                   ("arr", BOOL, c), ("list", Int(False, rng.choice([8, 64])), c), ("list", ADDR, c),
+                   ("map", self.map_key(), Int(False, rng.choice([8, 64])), c), ("map", self.map_key(), BOOL, c)]
         return rng.choice(options)
 
     def run(self):
@@ -334,14 +369,68 @@ class Gen:
                 user.fields.append(Field("alpha", ("ref", g.name, tuple(args)), 1, "pub"))
                 spec.models.append(user)
                 break
+        slot = Model("Slot%d" % len(spec.models), "record", rng.randrange(spec.modules))
+        slot.fields = [Field("id", Int(False, 8), 1, "pub"), Field("tag", ("opt", ("text", 4)), 2, "pub")]
+        slot.copy_impl = True
+        spec.models.append(slot)
         for m in spec.models:
             if m.is_record and not m.generics and m.plain and eligible_for_eip712(spec, m):
                 m.eip712 = self.rng.random() < 0.75
         for m in spec.models:
             if m.is_record:
                 m.skip_unknown = self.rng.random() < 0.4
+        slot.skip_unknown = True
+        self.map_models(slot)
         return spec
 
+    def map_models(self, slot):
+        """Rare map features come from random types too rarely to count on, so every spec also
+        gets records of maps, taken from `MAP_MENU` in turn: `MAP_PER_SPEC` entries a spec, starting
+        where the previous seed stopped, so every entry is used by any run of 4 or more seeds in a row
+        of the default. `slot` is a record that is `Copy`, has a required and an optional field,
+        and skips unknown fields; the menu's record entry holds maps of it."""
+        rng, spec = self.rng, self.spec
+        first = (self.seed * MAP_PER_SPEC) % len(MAP_MENU)
+        fields = [MAP_MENU[(first + i) % len(MAP_MENU)] for i in range(MAP_PER_SPEC)]
+        user = Model("Mapped%d" % len(spec.models), "record", rng.randrange(spec.modules))
+        names = rng.sample(FIELD_WORDS, len(fields))
+        for i, (name, make) in enumerate(zip(names, fields)):
+            user.fields.append(Field(name, make(slot.name), i + 1, "pub"))
+        if self.seed % 3 == 0:
+            # A generic record whose map has a parameter for its values and a const capacity.
+            table = Model("Table%d" % len(spec.models), "record", rng.randrange(spec.modules))
+            table.generics = [(False, "T", False), (True, "N", False)]
+            table.fields = [Field("rows", ("map", Int(False, 8), ("param", "T"), "N"), 1, "pub")]
+            spec.models.append(table)
+            user.fields.append(Field("table", ("ref", table.name, (Int(False, 16), rng.randint(1, 3))),
+                                     len(user.fields) + 1, "pub"))
+        spec.models.append(user)
 
-def make_spec(rng):
-    return Gen(rng).run()
+
+# Forms of map that reach rare cases, as functions of the name of a `Copy` record: a key of each
+# kind, a capacity of 0, and maps inside other types.
+def _int_key(bits):
+    return lambda slot: ("map", Int(False, bits), Int(False, 8), 2)
+
+
+MAP_MENU = (
+    [_int_key(b) for b in (8, 16, 32, 64, 128, 256)]
+    + [lambda slot: ("map", ("text", 5), BOOL, 2), lambda slot: ("map", ADDR, Int(False, 64), 2),
+       lambda slot: ("map", ("packed", 3), Int(True, 16), 2),
+       lambda slot: ("map", Int(False, 8), BOOL, 0),
+       lambda slot: ("map", Int(False, 16), ("ref", slot, ()), 3),
+       lambda slot: ("map", Int(False, 8), ("list", Int(False, 8), 2), 2),
+       lambda slot: ("map", Int(False, 8), ("map", Int(False, 8), Int(False, 8), 2), 2),
+       lambda slot: ("map", Int(False, 8), ("tup", (BOOL, Int(False, 8))), 2),
+       lambda slot: ("map", Int(False, 8), ("arr", Int(False, 8), 2), 2),
+       lambda slot: ("map", ADDR, ("opt", Int(False, 8)), 2),
+       lambda slot: ("opt", ("map", Int(False, 16), BOOL, 2)),
+       lambda slot: ("list", ("map", Int(False, 8), Int(False, 8), 2), 2),
+       lambda slot: ("arr", ("map", Int(False, 8), Int(False, 8), 2), 2),
+       lambda slot: ("tup", (("map", Int(False, 8), BOOL, 2), BOOL))]
+)
+MAP_PER_SPEC = 5
+
+
+def make_spec(rng, seed=0):
+    return Gen(rng, seed).run()

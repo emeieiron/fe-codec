@@ -6,6 +6,8 @@ from .spec import instances, walk
 
 INT_TYPES = ["%s%d" % (p, b) for p in "ui" for b in (8, 16, 32, 64, 128, 256)]
 
+MAP_KEYS = ["u%d" % b for b in (8, 16, 32, 64, 128, 256)] + ["Text<N>", "Address", "PackedBytes<N>"]
+
 # The features every run with the default seeds must exercise, in report order.
 REQUIRED = (
     ["type: bool"] + ["type: " + n for n in INT_TYPES]
@@ -22,6 +24,13 @@ REQUIRED = (
        "type: List<T, N>", "list: capacity zero", "list: of local record", "list: of tuples", "list: nested",
        "list: Option of list", "list: of Option", "list: array of lists", "list: of arrays",
        "list: of a generic parameter", "list: const capacity", "eip712: list",
+       "type: Map<K, V, N>"] + ["map: key " + n for n in MAP_KEYS]
+    + ["map: capacity zero", "map: const capacity", "map: of local record", "map: of tuples", "map: of lists",
+       "map: of arrays", "map: of Option", "map: nested", "map: Option of map", "map: list of maps",
+       "map: array of maps", "map: tuple holding a map", "map: of a generic parameter",
+       "map: entries inserted out of key order", "map: empty value", "map: full to capacity",
+       "map: of a record that skips unknown fields", "map: field left out inside a map value",
+       "test: compact rejects maps", "test: maps have no EIP-712 form",
        "ids: explicit decimal", "ids: explicit hex", "ids: explicit with underscores", "ids: on enum variants",
        "ids: sparse", "ids: out of order", "ids: wider than 32 bits",
        "eip712: root", "eip712: struct reached from a root", "eip712: array of structs", "eip712: nested arrays",
@@ -129,6 +138,8 @@ def kinds(spec, model, t, c, top=False):
             c["tuple: Option of tuple"] += 1
         if t[1][0] == "list":
             c["list: Option of list"] += 1
+        if t[1][0] == "map":
+            c["map: Option of map"] += 1
         kinds(spec, model, t[1], c)
     elif k == "arr":
         c["type: [T; N]"] += 1
@@ -147,6 +158,8 @@ def kinds(spec, model, t, c, top=False):
             c["tuple: array of tuples"] += 1
         if e[0] == "list":
             c["list: array of lists"] += 1
+        if e[0] == "map":
+            c["map: array of maps"] += 1
         if e[0] == "ref":
             em = spec.model(e[1])
             if em.is_record:
@@ -175,6 +188,34 @@ def kinds(spec, model, t, c, top=False):
             c["list: of arrays"] += 1
         if e[0] == "param":
             c["list: of a generic parameter"] += 1
+        if e[0] == "map":
+            c["map: list of maps"] += 1
+        kinds(spec, model, e, c)
+    elif k == "map":
+        c["type: Map<K, V, N>"] += 1
+        key, e = t[1], t[2]
+        c["map: key " + (("u%d" % key[2]) if key[0] == "int" else {
+            "text": "Text<N>", "addr": "Address", "packed": "PackedBytes<N>"}[key[0]])] += 1
+        if t[3] == 0:
+            c["map: capacity zero"] += 1
+        if isinstance(t[3], str):
+            c["map: const capacity"] += 1
+        if e[0] == "ref" and spec.model(e[1]).is_record:
+            c["map: of local record"] += 1
+            if spec.model(e[1]).skip_unknown:
+                c["map: of a record that skips unknown fields"] += 1
+        if e[0] == "tup":
+            c["map: of tuples"] += 1
+        if e[0] == "list":
+            c["map: of lists"] += 1
+        if e[0] == "arr":
+            c["map: of arrays"] += 1
+        if e[0] == "opt":
+            c["map: of Option"] += 1
+        if e[0] == "map":
+            c["map: nested"] += 1
+        if e[0] == "param":
+            c["map: of a generic parameter"] += 1
         kinds(spec, model, e, c)
     elif k == "tup":
         c["type: tuple"] += 1
@@ -183,6 +224,8 @@ def kinds(spec, model, t, c, top=False):
         if len(t[1]) == 8:
             c["tuple: eight elements"] += 1
         for e in t[1]:
+            if e[0] == "map":
+                c["map: tuple holding a map"] += 1
             if e[0] == "tup":
                 c["tuple: nested"] += 1
             if e[0] == "param":
@@ -210,6 +253,8 @@ def known_copy(spec, t):
         return True
     if k in ("opt", "arr", "list"):
         return known_copy(spec, t[1])
+    if k == "map":
+        return known_copy(spec, t[2])
     if k == "tup":
         return all(known_copy(spec, e) for e in t[1])
     if k == "ref":

@@ -45,18 +45,21 @@ class Src:
         return "".join(out)
 
 
-def mix_fill(rng, newline_gaps=False):
+def mix_fill(rng, newline_gaps=False, chance=1.0, placed=None):
     """A gap filler that picks a different nonempty mix of spaces, tabs and newlines, sometimes
-    with a `// comment` before a newline."""
+    with a `// comment` before a newline. With `newline_gaps`, a gap where a newline may or may not
+    be accepted takes one with probability `chance`; `placed[0]` counts the newlines it put there."""
 
     def fill(gap):
         if gap.kind == "fattr":  # Fe takes empty lines here, but not lines of spaces
             return "\n" * rng.randint(1, 3) + rng.choice(["", " ", "\t", "  "])
         need_nl = gap.kind == "nl"
-        horizontal = gap.kind == "h" or (gap.kind == "x" and not newline_gaps)
+        horizontal = gap.kind == "h" or (gap.kind == "x" and not (newline_gaps and rng.random() < chance))
         out = ""
         for _ in range(rng.randint(1, 3)):
             out += rng.choice([" ", "\t", "  ", " \t "] if horizontal else [" ", "\t", "  ", "\n", "\n\n", " \t "])
+        if gap.kind == "x" and not horizontal and "\n" in out and placed is not None:
+            placed[0] += 1
         if gap.kind != "fattr" and not horizontal and rng.random() < 0.3:
             out += " // note %d\n" % rng.randrange(100)
             out += rng.choice(["", " ", "\t"])
@@ -174,6 +177,21 @@ class Renderer:
             s.t(",")
             s.g(" " if rng.random() < 0.85 else "")
             s.t(str(t[2]))
+            s.g(self.tight_or_space(rng, style["tspace"]))
+            s.t(">")
+        elif k == "map":
+            s.t("Map")
+            s.t("<")
+            s.g(self.tight_or_space(rng, style["tspace"]))
+            self.emit_type(s, t[1], rng, style)
+            s.g(self.tight_or_space(rng, style["tspace"]))
+            s.t(",")
+            s.g(" " if rng.random() < 0.85 else "")
+            self.emit_type(s, t[2], rng, style)
+            s.g(self.tight_or_space(rng, style["tspace"]))
+            s.t(",")
+            s.g(" " if rng.random() < 0.85 else "")
+            s.t(str(t[3]))
             s.g(self.tight_or_space(rng, style["tspace"]))
             s.t(">")
         elif k == "arr":
@@ -393,6 +411,8 @@ class Renderer:
                         names.add("PackedBytes")
                     elif w[0] == "list":
                         names.add("List")
+                    elif w[0] == "map":
+                        names.add("Map")
                     elif w[0] == "addr":
                         names.add("Address")
                     elif w[0] == "ref":
@@ -400,7 +420,7 @@ class Renderer:
                         if o.module != m_index:
                             foreign.setdefault(o.module, set()).add(o.name)
         lines = []
-        core = sorted(n for n in names if n in ("Text", "BoundedBuffer", "List"))
+        core = sorted(n for n in names if n in ("Text", "BoundedBuffer", "List", "Map"))
         if rng.random() < 0.15:
             core = sorted(set(core) | {"Text", "BoundedBuffer"})  # an unused import
         if core:

@@ -185,11 +185,14 @@ def metamorphic(result, spec, seed, base_files, crlf_flags, modules, workdir, ei
         return {name: finalize(s, crlf[name], fill) for name, s in src_map.items()}
 
     permuted = permutation(spec, rng)
+    few = [0]  # the newlines variant (e) put in gaps where they may be rejected
     variants = {
         "(a) whitespace": finals(base_src, fill=mix_fill(rng)),
         "(b) line endings": finals(base_src, crlf={n: not crlf_flags[n] for n in modules}),
         "(c) field order": finals(Renderer(spec, seed, permuted).render()),
         "(d) newlines": finals(base_src, fill=mix_fill(rng, newline_gaps=True)),
+        # A few newlines only, which a model with many gaps can still have accepted.
+        "(e) few newlines": finals(base_src, fill=mix_fill(rng, newline_gaps=True, chance=0.02, placed=few)),
     }
     if permuted:
         result.features["metamorphic: field permutation"] += 1
@@ -210,7 +213,7 @@ def metamorphic(result, spec, seed, base_files, crlf_flags, modules, workdir, ei
             write_sources(d, files)
             rc, out, err = run(cmd, d)
             if rc != 0:
-                if name.startswith("(d)") and rejected_as_fe_check_does(err, d):
+                if name[1] in "de" and rejected_as_fe_check_does(err, d):
                     result.features["metamorphic: newline variant rejected where fe check rejects it"] += 1
                     continue
                 result.fail("metamorphic", "%s: generator rejected the variant (%s): %s\nvariant sources are in %s"
@@ -218,7 +221,7 @@ def metamorphic(result, spec, seed, base_files, crlf_flags, modules, workdir, ei
             elif out != base_out:
                 result.fail("metamorphic", "%s: output differs from the base (%s); variant sources are in %s"
                             % (name, label, d))
-            elif name.startswith("(d)"):
+            elif name.startswith("(d)") or (name.startswith("(e)") and few[0]):
                 result.features["metamorphic: newline variant accepted"] += 1
     # --check must notice a stale or missing module.
     d = os.path.join(workdir, "stale")
@@ -265,7 +268,7 @@ def check_seed(seed, args):
     result.directory = workdir
     ingot = os.path.join(workdir, "ingot")
     try:
-        spec = make_spec(random.Random("spec/%d" % seed))
+        spec = make_spec(random.Random("spec/%d" % seed), seed)
         result.models = len(spec.models)
         modules = [chr(ord("a") + i) for i in range(spec.modules)]
         crng = random.Random("crlf/%d" % seed)
@@ -317,7 +320,8 @@ def check_seed(seed, args):
             ran, bad = 0, []
             for prefix in (builder.batches if backend == "sonatina" else [""]):
                 rc, out, m = attempt(prefix)
-                if "CreateContractSizeLimit" in out and len(builder.kinds.get(prefix, [])) > 1:
+                if ("CreateContractSizeLimit" in out or "create initcode size limit" in out) \
+                        and len(builder.kinds.get(prefix, [])) > 1:
                     # Still too large: one run per kind of test in the batch.
                     runs = [(part,) + attempt(part) for part in builder.kinds[prefix]]
                 else:
@@ -361,6 +365,7 @@ def check_seed(seed, args):
                             extra["eip712: nested arrays"] += 1
                         if any(w[0] == "list" for w in walk(f.ty)):
                             extra["eip712: list"] += 1
+        extra.update(builder.features)
         if "missing_" in "".join(builder.fns):
             extra["test: missing required field"] += 1
         if "dropped_" in "".join(builder.fns):
