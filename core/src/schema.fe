@@ -98,7 +98,7 @@ pub const fn schema_name<const N: usize>(_ bytes: [u8; N]) -> SchemaName {
 pub struct FieldInfo { pub name: SchemaName, pub id: u64, pub optional: bool }
 impl Copy for FieldInfo {}
 
-/// One variant of a unit enum. `id` is unique within the enum and may be zero.
+/// One variant of an enum. `id` is unique within the enum and may be zero.
 pub struct VariantInfo { pub name: SchemaName, pub id: u64 }
 impl Copy for VariantInfo {}
 

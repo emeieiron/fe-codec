@@ -1,0 +1,9 @@
+#[serializable]
+pub enum A_B {
+    C { pub x: u8 },
+}
+
+#[serializable]
+pub enum A {
+    B_C { pub x: u8 },
+}

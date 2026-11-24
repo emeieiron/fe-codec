@@ -50,13 +50,19 @@ The generator rejects only what the compiler cannot catch:
 - the unit type `()`, which has no wire form;
 - duplicate or missing `#[codec_id]`s, a zero field ID, and IDs that aren't 64-bit integer
   literals;
-- a misplaced or malformed `#[codec_with]`: on a struct, an enum or a variant, twice on one
-  field, without a value, or with anything but a path such as `Hex` or `ingot::codecs::Hex`
-  (generic arguments are rejected);
-- a misplaced or malformed `#[codec_skip_unknown]`: on an enum, a field, a variant or a struct
-  that isn't `#[serializable]`, with arguments or a value, or twice on one struct;
-- names longer than 31 bytes, private fields, generic enums, enums with payloads, `where`
-  clauses and generic parameters with defaults.
+- a misplaced or malformed `#[codec_with]`: on a struct, an enum or a variant (it belongs on
+  struct fields and record variant fields), twice on one field, without a value, or with
+  anything but a path such as `Hex` or `ingot::codecs::Hex` (generic arguments are rejected);
+- a misplaced or malformed `#[codec_skip_unknown]`: on a field, a variant, or a struct or enum
+  that isn't `#[serializable]`, with arguments or a value, or twice on one declaration;
+- an attribute starting with `codec` that the place doesn't take, such as the typo
+  `#[codec_skip_unkown]` on a struct or an enum (structs and enums take `codec_skip_unknown`,
+  fields `codec_id` and `codec_with`, variants `codec_id`), which is an error on a
+  `#[serializable]` declaration, its fields and its variants;
+- a tuple variant without elements (`A()`), and a record variant whose generated type
+  (below) has the name of another type;
+- names longer than 31 bytes, private fields, generic enums, empty enums, `where` clauses and
+  generic parameters with defaults.
 
 ```text
 src/models.fe:5:12: error: 'usize' has a different width on each target; use a fixed-width integer
@@ -93,9 +99,24 @@ pub struct Payment {
   since the type string comes from the field type. Other structs with `codec_with` fields
   are fine in that mode. The generic EIP-712 path uses the codec's `describe`.
 
+## Enums with payloads
+
+An enum may have tuple variants, `A(T0, T1)`, and record variants, `A { pub x: T0, pub y: T1 }`,
+as well as unit ones. The generator checks their types as it does a struct's fields: a tuple
+variant's elements as the elements of a tuple, a record variant's fields as a struct's, with
+the same attributes. `#[codec_id]` goes on variants and on the fields of record variants, and
+`#[codec_with]` on the fields of record variants; the elements of a tuple variant take
+neither. An enum whose variants all have no payload generates the code it always did.
+
+A record variant needs a schema to name its fields, so the generator writes a type for it, an
+empty `struct Codec_Enum_Variant {}` with a `Schema` impl, in the generated module. A type of
+yours may not have that name, and neither may two variants; the generator reports it.
+`--eip712` rejects a payload enum that an `#[eip712]` struct uses, as it does a tuple, because
+EIP-712 has no union type; a payload enum nothing of the kind reaches is fine.
+
 ## Skipping unknown fields
 
-`#[codec_skip_unknown]` on a `#[serializable]` struct takes no arguments. The generated
+`#[codec_skip_unknown]` on a `#[serializable]` struct or enum takes no arguments. The generated
 `Schema` then returns true from `skips_unknown_fields`, which JSON and CBOR decoders read to
 skip a field the struct does not list instead of failing with `UnknownField`. Nothing else in
 the generated code changes, and IDs, field order and EIP-712 hashing are the same.
@@ -105,6 +126,9 @@ the generated code changes, and IDs, field order and EIP-712 hashing are the sam
 #[codec_skip_unknown]
 pub struct Account { pub owner: u64, pub balance: u64 }
 ```
+
+On an enum, each record variant skips; unit and tuple variants have no fields to skip, and an
+unknown variant is still an error.
 
 ## Running it from FeMP
 

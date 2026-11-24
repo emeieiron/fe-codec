@@ -1,0 +1,5 @@
+#[codec_other]
+pub struct Other { pub a: u8 }
+
+#[serializable]
+pub struct S { pub a: u8 }

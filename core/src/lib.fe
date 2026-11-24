@@ -14,7 +14,7 @@ pub use schema::{
     validate_schema,
 }
 pub use serializer::{Serialize, Deserialize, Encoder, Decoder, Format}
-pub use fields::{FieldKey, optional}
+pub use fields::{FieldKey, VariantKey, optional}
 pub use integer::{checked_signed, checked_unsigned, checked_wide_signed, checked_wide_unsigned}
 pub use structure::{Structure, Frame}
 pub use describe::{Describe, Describer}

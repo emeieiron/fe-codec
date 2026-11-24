@@ -204,6 +204,27 @@ impl<const N: usize> Encoder for CborEncoder<N> {
         }
     }
 
+    /// A variant with a payload is a map of one entry: the variant's ID and the payload.
+    fn begin_variant<V: Schema>(mut self, _ index: usize) -> CodecResult<Frame> {
+        let offset = self.offset()
+        let variant = match V::variant(index) {
+            Option::Some(variant) => variant,
+            Option::None => {
+                return Result::Err(CodecError::at(kind: ErrorKind::InvalidState, offset))
+            },
+        }
+        var wrapper = self.begin(5, 1)?
+        let key_offset = self.offset()
+        self.structure.member(key_offset)?
+        wrapper.take(key_offset)?
+        self.header(0, variant.id)?
+        Result::Ok(wrapper)
+    }
+
+    fn end_variant(mut self, _ variant: own Frame) -> CodecResult<()> {
+        self.end(variant)
+    }
+
     fn begin_record<R: Schema>(mut self, _ present: usize) -> CodecResult<Frame> {
         self.begin(5, present)
     }

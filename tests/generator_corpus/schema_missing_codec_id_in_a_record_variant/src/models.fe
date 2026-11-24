@@ -1,0 +1,8 @@
+#[serializable]
+pub enum E {
+    A {
+        #[codec_id = 1]
+        pub x: u8,
+        pub y: u8,
+    },
+}

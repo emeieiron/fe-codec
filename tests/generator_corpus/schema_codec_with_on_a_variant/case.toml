@@ -1,2 +1,2 @@
 sources = ["src/models.fe"]
-expect_stderr = "src/models.fe:4:5: error: codec_with belongs on struct fields\n"
+expect_stderr = "src/models.fe:4:5: error: codec_with belongs on struct and record variant fields\n"

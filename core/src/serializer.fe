@@ -1,14 +1,14 @@
 use core::bytes::PackedBytes
 use fe_codec_io::BoundedBuffer
 use ingot::error::{CodecError, CodecResult, ErrorKind}
-use ingot::fields::FieldKey
+use ingot::fields::{FieldKey, VariantKey}
 use ingot::schema::Schema
 use ingot::text::Text
 use std::evm::Address
 
 /// A value that can be written through any `Encoder`.
 ///
-/// `fe_codec_gen` implements this for `#[serializable]` records and unit enums. Write it by
+/// `fe_codec_gen` implements this for `#[serializable]` records and enums. Write it by
 /// hand to give a type its own representation: a serializer makes exactly one value call on
 /// the encoder, or opens one record, sequence or map and closes it again.
 pub trait Serialize {
@@ -34,7 +34,8 @@ pub trait Format {
 /// Values: `bool`; unsigned and signed integers, passed as `u64`/`i64` with a width of 8, 16,
 /// 32 or 64 bits, or as `u256`/`i256` with a width of 128 or 256 bits; UTF-8 text; byte
 /// strings of a bounded length; byte strings of an exact length; EVM addresses; optional
-/// values; unit enum variants; records; sequences, which are fixed-length or lists; and maps.
+/// values; enum variants, with or without a payload; records; sequences, which are
+/// fixed-length or lists; and maps.
 ///
 /// A record visits its fields in ascending ID order. When `OMIT_NONE` is true, the format
 /// identifies fields by key and a serializer leaves `None` fields out; otherwise it visits
@@ -52,6 +53,13 @@ pub trait Format {
 /// then `map_value`, then the value's, and `end_map` closes the map. The entries arrive in the
 /// canonical order of `MapKey`, so a format whose maps are ordered by the encoded keys writes
 /// them as they come. A format with no maps keeps the defaults, which fail with `Unsupported`.
+///
+/// A variant with no payload is one `write_variant` call. A variant with a payload is wrapped:
+/// `begin_variant` opens the wrapper and names the variant, the serializer writes exactly one
+/// value, which is the payload, and `end_variant` closes the wrapper. The payload is a record
+/// opened with `begin_record` on a schema of the variant's fields, a sequence of its elements,
+/// or the single value of a one-element variant. A format with no payload variants keeps the
+/// defaults, which fail with `Unsupported`.
 ///
 /// Encoders report errors with the offset of the output byte being written.
 pub trait Encoder {
@@ -81,6 +89,20 @@ pub trait Encoder {
     fn begin_record<R: Schema>(mut self, _ present: usize) -> CodecResult<Self::Record>
     fn field<R: Schema>(mut self, _ record: mut Self::Record, _ position: usize) -> CodecResult<()>
     fn end_record(mut self, _ record: own Self::Record) -> CodecResult<()>
+
+    /// Opens the wrapper of the variant at `index` of `V`, which has a payload. The state is
+    /// the one of a record, so a format reuses its record bookkeeping.
+    fn begin_variant<V: Schema>(mut self, _ index: usize) -> CodecResult<Self::Record> {
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.offset()),
+        )
+    }
+    /// Closes the wrapper once the payload is written.
+    fn end_variant(mut self, _ variant: own Self::Record) -> CodecResult<()> {
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.offset()),
+        )
+    }
 
     fn begin_sequence(mut self, _ length: usize) -> CodecResult<Self::Sequence>
     /// Opens a list of `length` elements, which `element` and `end_sequence` then fill and
@@ -130,6 +152,15 @@ pub trait Encoder {
 /// element, or, in a format that counts first, at the start of the list. A format with no
 /// lists keeps the defaults, which fail with `Unsupported`.
 ///
+/// A variant is read with `begin_variant`, which reads either form: a variant with no payload
+/// written bare, or a wrapper holding the variant's name or ID and its payload. It returns the
+/// variant's index, whether a payload follows and where the variant starts. A payload follows
+/// with the decoder positioned at it, and `end_variant` closes the wrapper after the payload.
+/// A variant written the wrong way for its kind is `TypeMismatch` at its start, which the
+/// deserializer reports through `VariantKey::expect_unit` and `expect_payload`; a wrapper
+/// holding anything but one entry is `InvalidLength`; an unknown name or ID is `UnknownVariant`.
+/// A format with no payload variants keeps the defaults, which fail with `Unsupported`.
+///
 /// A map is read with `begin_map`, which takes the most entries the type holds, then for each
 /// entry `next_key`, the key's own `deserialize`, `map_value` and the value's, and then
 /// `end_map`. `next_key` returns true when another entry follows, with the decoder positioned
@@ -156,6 +187,18 @@ pub trait Decoder {
     fn read_address(mut self) -> CodecResult<Address>
     fn read_some(mut self) -> CodecResult<bool>
     fn read_variant<V: Schema>(mut self) -> CodecResult<usize>
+    /// Reads a variant of `V`, with or without a payload; see `Decoder`.
+    fn begin_variant<V: Schema>(mut self) -> CodecResult<VariantKey> {
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.offset()),
+        )
+    }
+    /// Closes the variant `begin_variant` returned, after its payload when it had one.
+    fn end_variant(mut self, _ key: VariantKey) -> CodecResult<()> {
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.offset()),
+        )
+    }
     /// Consumes one complete value at the current position and discards it. The value must be
     /// as well formed as any the decoder reads, within its limits. A format that cannot find
     /// where a value ends, such as one that writes no markers, keeps this default.

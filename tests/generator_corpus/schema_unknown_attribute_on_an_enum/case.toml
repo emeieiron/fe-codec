@@ -1,0 +1,2 @@
+sources = ["src/models.fe"]
+expect_stderr = "src/models.fe:2:1: error: unknown codec attribute 'codec'; structs and enums take codec_skip_unknown\n"

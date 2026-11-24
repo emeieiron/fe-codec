@@ -1,4 +1,4 @@
-use ingot::{ArgKind, File, ItemKind, TypeKind, lex, parse}
+use ingot::{ArgKind, File, ItemKind, TypeKind, VariantKind, lex, parse}
 use core::{MemBuffer, Option, Result}
 
 fn buffer<const N: usize>(_ text: [u8; N]) -> MemBuffer {
@@ -184,6 +184,46 @@ fn records_tuple_element_types() {
     // Other types have no elements.
     assert!(file.types[file.fields[model.fields.start].ty].elems.len == 0)
     assert!(tuple_len(file, element) == 2 && file.types[g].elems.len == 0)
+}
+
+#[test]
+fn records_tuple_variant_elements_and_record_variant_fields() {
+    let file = parsed("enum E {\n    A,\n    B(),\n    C(u8),\n    D(u8, [u16; 2], (bool, Option<u8>),),\n    F { x: u8, y: (u8, u8) },\n    G(Text<8>),\n}")
+    let model = file.enums[file.items[0].detail]
+    assert!(model.variants.len == 6)
+    let start = model.variants.start
+    // Only a tuple variant has elements, and only a record variant has fields.
+    assert!(file.variants[start].elems.len == 0 && file.variants[start].fields.len == 0)
+    assert!(file.variants[start + 1].elems.len == 0)
+    match file.variants[start + 1].kind {
+        VariantKind::Tuple => {},
+        _ => assert!(false),
+    }
+    assert!(file.variants[start + 2].elems.len == 1)
+    assert!(same(file.type_text(file.elems[file.variants[start + 2].elems.start]), "u8"))
+    let triple = file.variants[start + 3].elems
+    assert!(triple.len == 3 && file.variants[start + 3].fields.len == 0)
+    assert!(same(file.type_text(file.elems[triple.start]), "u8"))
+    assert!(same(file.type_text(file.elems[triple.start + 1]), "[u16; 2]"))
+    // A tuple element keeps its own elements, which come after the variant's own.
+    let nested = file.elems[triple.start + 2]
+    assert!(tuple_len(file, nested) == 2)
+    assert!(same(file.type_text(tuple_elem(file, nested, 1)), "Option<u8>"))
+    // A record variant's fields are fields, with types and no elements.
+    let record = file.variants[start + 4]
+    assert!(record.elems.len == 0 && record.fields.len == 2)
+    assert!(same(file.token_text(file.fields[record.fields.start + 1].name.unwrap()), "y"))
+    assert!(tuple_len(file, file.fields[record.fields.start + 1].ty) == 2)
+    // Elements are per variant, in declaration order.
+    assert!(same(file.type_text(file.elems[file.variants[start + 5].elems.start]), "Text<8>"))
+}
+
+#[test]
+fn rejects_malformed_tuple_variants() {
+    assert!(error_offset("enum E { A(u8 u8) }") != 999999)
+    assert!(error_offset("enum E { A(u8,, u8) }") != 999999)
+    assert!(error_offset("enum E { A(u8, u8 }") != 999999)
+    assert!(error_offset("enum E { A(u8,) }") == 999999)
 }
 
 #[test]

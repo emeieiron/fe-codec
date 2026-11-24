@@ -316,6 +316,18 @@ fn dump_file(_ out: mut MemBuffer, _ file: ref File) {
                     }
                     out.push(b'\n')
                     put_attrs(mut out, file, variant.attrs, 4)
+                    var e: usize = 0
+                    while e < variant.elems.len {
+                        put(mut out, "    elem ")
+                        put_shape(mut out, file, file.elems[variant.elems.start + e])
+                        out.push(b'\n')
+                        e += 1
+                    }
+                    var f: usize = 0
+                    while f < variant.fields.len {
+                        put_field(mut out, file, variant.fields.start + f)
+                        f += 1
+                    }
                     v += 1
                 }
             },

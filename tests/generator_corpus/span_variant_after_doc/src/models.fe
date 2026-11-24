@@ -4,5 +4,5 @@ pub enum Kind {
     A,
     /// b
     #[codec_id = 2]
-    B(u8),
+    A,
 }

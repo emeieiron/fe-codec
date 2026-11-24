@@ -1,0 +1,4 @@
+#[serializable]
+pub enum E {
+    A { x: u8 },
+}

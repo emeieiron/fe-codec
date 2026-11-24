@@ -979,20 +979,21 @@ impl Parser {
         let name = self.bump()
         var kind = VariantKind::Unit
         var fields = empty_run(self.file.fields.len())
+        var elems = empty_run(self.file.elems.len())
         if self.code() == K_LPAREN {
             kind = VariantKind::Tuple
-            let _elems = self.parse_type_tuple()?
+            elems = self.parse_type_tuple()?
         } else if self.code() == K_LBRACE {
             kind = VariantKind::Record
             fields = self.parse_record_fields()?
         }
         self.nl = true
-        self.file.variants.push(Variant { start, first, last: self.last, name, kind, attrs, fields })
+        self.file.variants.push(Variant { start, first, last: self.last, name, kind, attrs, fields, elems })
         Result::Ok(())
     }
 
     /// `(` type, ... `)` as a tuple type or tuple variant. Returns the run of `File::elems`
-    /// holding the element type nodes; a variant does not use it.
+    /// holding the element type nodes.
     fn parse_type_tuple(mut self) -> Result<SyntaxError, Run> {
         let saved_ctx = self.ctx
         self.ctx = self.ctx | bit(K_RPAREN) | bit(K_COMMA)

@@ -16,6 +16,7 @@ use fe_codec_core::{
     Text,
     TextWriter,
     Utf8,
+    VariantKey,
     checked_signed,
     checked_unsigned,
     checked_wide_signed,
@@ -367,6 +368,49 @@ impl<const N: usize> Decoder for CborDecoder<N> {
             index += 1
         }
         Result::Err(CodecError::at(kind: ErrorKind::UnknownVariant, offset))
+    }
+
+    /// A variant is an unsigned integer, its ID, or a map of one entry whose key is the ID and
+    /// whose value is the payload. A map of any other size is `InvalidLength` at its head, an
+    /// unknown ID is `UnknownVariant` at the ID, and a key that is not an unsigned integer is
+    /// `TypeMismatch` at the key.
+    fn begin_variant<V: Schema>(mut self) -> CodecResult<VariantKey> {
+        let offset = self.offset()
+        let first = match self.input.peek() {
+            Option::Some(byte) => byte,
+            Option::None => {
+                return Result::Err(CodecError::at(kind: ErrorKind::UnexpectedEnd, offset))
+            },
+        }
+        let wrapped = first >> 5 == 5
+        var id_offset = offset
+        if wrapped {
+            let wrapper = self.begin(5)?
+            if wrapper.remaining() != 1 {
+                return Result::Err(CodecError::at(kind: ErrorKind::InvalidLength, offset))
+            }
+            id_offset = self.offset()
+            self.structure.member(id_offset)?
+        } else {
+            self.structure.value(offset)?
+        }
+        let id = self.header(0)?
+        var index: usize = 0
+        while let Option::Some(variant) = V::variant(index) {
+            if variant.id == id {
+                return Result::Ok(VariantKey { index, payload: wrapped, offset })
+            }
+            index += 1
+        }
+        Result::Err(CodecError::at(kind: ErrorKind::UnknownVariant, offset: id_offset))
+    }
+
+    /// The wrapper's one entry is the payload, so nothing follows it.
+    fn end_variant(mut self, _ key: VariantKey) -> CodecResult<()> {
+        if !key.payload {
+            return Result::Ok(())
+        }
+        self.structure.end(self.offset())
     }
 
     /// One data item of the profile: heads in their shortest form, definite lengths, major

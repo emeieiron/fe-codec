@@ -291,6 +291,27 @@ impl<const N: usize> Encoder for JsonEncoder<N> {
         }
     }
 
+    /// A variant with a payload is an object of one member: the variant's name and the payload.
+    fn begin_variant<V: Schema>(mut self, _ index: usize) -> CodecResult<Frame> {
+        let offset = self.offset()
+        let variant = match V::variant(index) {
+            Option::Some(variant) => variant,
+            Option::None => {
+                return Result::Err(self.error(ErrorKind::InvalidState))
+            },
+        }
+        var wrapper = self.begin(b'{', 1)?
+        wrapper.take(offset)?
+        self.separate(true, offset)?
+        self.name(variant.name)?
+        self.byte(b':')?
+        Result::Ok(wrapper)
+    }
+
+    fn end_variant(mut self, _ variant: own Frame) -> CodecResult<()> {
+        self.end(b'}', variant)
+    }
+
     fn begin_record<R: Schema>(mut self, _ present: usize) -> CodecResult<Frame> {
         self.begin(b'{', present)
     }

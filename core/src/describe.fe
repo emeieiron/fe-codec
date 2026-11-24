@@ -61,6 +61,21 @@ pub trait Describer {
         Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
     }
     fn enumeration<V: Schema>(mut self) -> CodecResult<()>
+    /// An enum with payloads opens, then for each variant in index order calls
+    /// `union_variant` and describes the payload: nothing for a variant with none, the value
+    /// itself for one element, a tuple for several, a record of a schema listing the variant's
+    /// fields for a record variant. It closes with `end_union`. An enum whose variants all have
+    /// no payload is described by `enumeration`. A format with no union type keeps these
+    /// defaults.
+    fn begin_union<V: Schema>(mut self) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+    fn union_variant<V: Schema>(mut self, _ index: usize) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+    fn end_union<V: Schema>(mut self) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
     fn begin_record<R: Schema>(mut self) -> CodecResult<()>
     fn field<R: Schema>(mut self, _ position: usize) -> CodecResult<()>
     fn end_record<R: Schema>(mut self) -> CodecResult<()>

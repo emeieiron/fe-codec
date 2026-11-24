@@ -13,6 +13,7 @@ only that encoding (JSON also accepts insignificant variations listed below).
 - **Decoders reject** unknown fields (unless the record is marked `#[codec_skip_unknown]`; see
   [below](#ignoring-unknown-fields)), duplicate fields, missing required fields, trailing
   data after the root value, sequences of the wrong length, lists and maps longer than their capacity, repeated map keys,
+  variants written in the wrong form (see [Enums with payloads](#enums-with-payloads)),
   and integers outside the field's type.
 - **Limits** cap nesting depth and entries per container. `Limits::standard()` allows 32
   nested containers and 256 entries. Buffers have a fixed capacity `N`, and the encoder
@@ -34,7 +35,8 @@ Output is compact UTF-8 with no whitespace. [RFC 8259](https://www.rfc-editor.or
 | `Text<N>` | A string; `"`, `\` and control characters escaped, other bytes as UTF-8 |
 | Bytes (`BoundedBuffer<N>`, `PackedBytes<N>`, `Address`) | A string of `0x` and two lowercase hex digits per byte |
 | `None` | `null` (left out as a record field) |
-| Unit enum variant | Its name as a string |
+| Enum variant without a payload | Its name as a string |
+| Enum variant with a payload | An object of one member: its name, and the payload; see [Enums with payloads](#enums-with-payloads) |
 | Record | An object keyed by field name |
 | Array `[T; N]` | An array of exactly `N` values |
 | List `List<T, N>` | An array of 0 to `N` values |
@@ -62,7 +64,8 @@ Deterministic encoding as specified by
 | `Text<N>` | Major type 3 |
 | Bytes | Major type 2 |
 | `None` | `0xf6` (left out as a record field) |
-| Unit enum variant | Its ID as an unsigned integer |
+| Enum variant without a payload | Its ID as an unsigned integer |
+| Enum variant with a payload | A map of one entry: its ID, and the payload; see [Enums with payloads](#enums-with-payloads) |
 | Record | A definite-length map keyed by field ID, keys ascending |
 | Array `[T; N]` | A definite-length array of exactly `N` items |
 | List `List<T, N>` | A definite-length array of 0 to `N` items |
@@ -120,6 +123,45 @@ is checked first, and a map is one level of `Limits.max_depth`.
   sees the bytes of a key and not its type, and cannot enforce the order.
 - **EIP-712** has no map type; see [its notes](eip712.md).
 
+## Enums with payloads
+
+A variant with no payload is written as above in every enum, whether or not the enum has other
+variants that do. A variant with a payload is a wrapper of one entry, the variant's name (JSON)
+or ID (CBOR), and the payload: `{"Point":5}`, `{"Pair":[1,"a"]}`, `{"Circle":{"radius":2}}`
+and `a1 01 05`. The payload is the element itself for a tuple variant of one element, a
+sequence of the elements for one of several, and for a record variant a record of its fields,
+keyed by name in JSON and by field ID in CBOR, in ascending ID order, with `None` fields left
+out. An option payload stays: `{"Maybe":null}` and `a1 01 f6`.
+
+A decoder accepts exactly that. Each error is reported at the byte shown:
+
+| Input | Error |
+| --- | --- |
+| A variant with no payload written as a wrapper, or one with a payload written bare | `TypeMismatch` at the start of the variant |
+| Neither a string nor an object (JSON), neither an unsigned integer nor a map (CBOR) | `TypeMismatch` at the start |
+| A wrapper key that is not a string (JSON) or an unsigned integer (CBOR) | `TypeMismatch` at the key |
+| A wrapper of no entry | `InvalidLength`, at the closing brace (JSON) or at the head of the map (CBOR) |
+| A wrapper of two or more entries | `InvalidLength`, at the comma after the first (JSON) or at the head of the map (CBOR) |
+| An unknown name or ID | `UnknownVariant`, at the name or ID, inside the wrapper when there is one |
+| A wrapper missing its colon, or JSON that ends inside it | `InvalidSyntax` or `UnexpectedEnd`, as anywhere else |
+
+The wrapper is a container: it counts as one level of `Limits.max_depth` and one entry toward
+`Limits.max_items`, and the payload's own container is another level. A record variant's fields,
+and the elements of a tuple variant, are checked as those of a record or a tuple are, and an
+error in one is named after its field, if it has one. When a required field of a record
+variant is missing, `MissingField` is reported where the record ends, before the wrapper is
+checked for a second entry. JSON accepts whitespace around the wrapper's tokens as usual.
+
+- **`#[codec_skip_unknown]`** on the enum makes each record variant skip the fields it does
+  not list, as [below](#ignoring-unknown-fields); it has no effect on the other variants, and
+  an unknown variant is `UnknownVariant` all the same.
+- **Compact** keeps the `Unsupported` defaults of `begin_variant` and `end_variant`. A
+  positional format has nothing in the bytes to say whether a payload follows a variant's ID,
+  so it cannot read an enum with payloads: reading any variant of one, even one with no
+  payload, is `Unsupported`, and so is writing one with a payload. A variant with no payload
+  still writes as it does in any enum.
+- **EIP-712** has no union type; see [its notes](eip712.md).
+
 ## Schema evolution
 
 | Change | JSON | CBOR |
@@ -140,6 +182,7 @@ needs a field it requires: removing one breaks it.
 ## Ignoring unknown fields
 
 A record marked `#[codec_skip_unknown]` skips the fields it does not list, in JSON and CBOR.
+An enum marked so does it for each of its record variants.
 The decoder reads each skipped value as strictly as any other, so a malformed or over-limit
 value is still an error, with its usual kind and offset. Skipped fields count toward
 `Limits.max_items` and their values toward `Limits.max_depth`. Duplicates, order and missing

@@ -39,7 +39,8 @@ Your encoder and decoder implement the data model:
 | `write_text` | `read_text` | UTF-8 `Text<N>` |
 | `write_bytes` | `read_bytes` | Byte strings |
 | `write_none`, `write_some` | `read_some` | `Option<T>`: `write_some` marks a value that follows |
-| `write_variant` | `read_variant` | Unit enum variants, described by `Schema::variant` |
+| `write_variant` | `read_variant` | Enum variants with no payload, described by `Schema::variant` |
+| `begin_variant`, `end_variant` | `begin_variant`, `end_variant` | Enum variants with a payload; see below |
 | none | `skip_value` | Discards one value; see below |
 | `begin_record`, `field`, `end_record` | `begin_record`, `next_field`, `end_record` | Records, described by `Schema::field` |
 | `begin_sequence`, `element`, `end_sequence` | `begin_sequence`, `element`, `end_sequence` | Fixed-length arrays, and tuples, which are sequences of their arity |
@@ -85,6 +86,22 @@ decide what a key may be, and reject the rest. Every map method defaults to `Uns
 for lists, and so does the compact example's, since its decoder cannot tell a key's order
 without its type. As for lists, check `Limits.max_items` before the capacity.
 
+A variant with a payload is written with `begin_variant<V>(index)`, which opens a wrapper and
+names the variant, then exactly one value, the payload, and `end_variant`. The state is the
+`Record` type the format already has. The decoder reads one call with `begin_variant<V>()`,
+which accepts either form: it returns a `VariantKey` of the variant's index, whether a payload
+follows, and the offset where the variant starts. A variant with no payload that the format
+writes bare, as `write_variant` does, comes back with `payload` false; one in a wrapper comes
+back with `payload` true, the decoder positioned at the payload, and `end_variant(key)` closes
+the wrapper after it. The deserializer reports a variant written the wrong way, through
+`key.expect_unit()` and `key.expect_payload()`, as `TypeMismatch` at `key.offset`; the format
+reports a wrapper that does not hold exactly one entry (`InvalidLength`) and an unknown
+variant (`UnknownVariant`). JSON and CBOR peek the first byte, a quote or a brace and major
+type 0 or 5, to tell the forms apart, and count the wrapper as a container for `Limits`. A
+format that cannot tell, as the compact example cannot, because nothing in its bytes says
+whether a payload follows an ID, keeps the defaults, which fail with `Unsupported`; the encoder's
+`write_variant` still works for the variants with no payload.
+
 ## Helpers from core
 
 - `ByteWriter<N>` and `ByteReader<N>` write and read bounded buffers.
@@ -103,7 +120,7 @@ without its type. As for lists, check `Limits.max_items` before the capacity.
 A format that reads types rather than values, as EIP-712 does, implements `Describer`. Its
 `begin_tuple` and `end_tuple` default to `Unsupported`, so a format with no tuple type needs
 no code to reject them, and so do `begin_list` and `end_list` for a format with no dynamic
-arrays; EIP-712 writes lists as `T[]`. `begin_map` and `end_map` default the same way, and EIP-712, which has no map type, rejects them naming the field.
+arrays; EIP-712 writes lists as `T[]`. `begin_map` and `end_map` default the same way, and EIP-712, which has no map type, rejects them naming the field. So do `begin_union`, `union_variant` and `end_union`, which describe an enum with payloads: the union opens, each variant calls `union_variant(index)` and then describes its payload (nothing, the value, a tuple of the elements, or a record), and the union closes. EIP-712 rejects `begin_union`, naming the field.
 
 ## Rules a format must follow
 

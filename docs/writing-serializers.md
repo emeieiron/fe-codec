@@ -1,7 +1,7 @@
 # Writing serializers by hand
 
 `fe_codec_gen` writes serializers for `#[serializable]` structs and enums. Write one yourself
-when a type needs its own representation, or when it is not a plain record or unit enum.
+when a type needs its own representation, or when it is not a plain record or enum.
 A handwritten serializer is used exactly like a generated one, including as a field of a
 generated record.
 
@@ -184,8 +184,104 @@ Check a handwritten schema in a test with `fe_codec_core::validate_schema<Point>
 the type through every format you support. `examples/transfer/shared/src/conformance.fe`
 shows a check that works for any `Format`.
 
-## Unit enums
+## Enums
 
 An enum implements `Schema::variant`, listing each variant's name and ID, and writes
 its variant's index with `encoder.write_variant<Self>(index)`. On decode,
 `decoder.read_variant<Self>()` returns the index of the variant on the wire.
+
+A variant with a payload is written inside a wrapper: `begin_variant<Self>(index)`, the
+payload as one value, and `end_variant`. On decode, `begin_variant<Self>()` reads either form of
+any variant and returns a `VariantKey`; the variant's index is `key.index`. The example has one
+variant of each kind. The record variant has a schema of its own, an empty type that lists its
+fields, which `begin_record` and `next_field` take in place of `Self`:
+
+```fe
+pub enum Shape {
+    Empty,
+    Point(u64),
+    Circle { pub radius: u64 },
+}
+
+struct CircleFields {}
+
+impl Schema for CircleFields {
+    fn name() -> SchemaName { schema_name<6>("Circle") }
+    fn field(_ position: usize) -> Option<FieldInfo> {
+        match position {
+            0 => Option::Some(FieldInfo { name: schema_name<6>("radius"), id: 1, optional: false }),
+            _ => Option::None,
+        }
+    }
+}
+
+impl Schema for Shape {
+    fn name() -> SchemaName { schema_name<5>("Shape") }
+    fn variant(_ index: usize) -> Option<VariantInfo> {
+        match index {
+            0 => Option::Some(VariantInfo { name: schema_name<5>("Empty"), id: 0 }),
+            1 => Option::Some(VariantInfo { name: schema_name<5>("Point"), id: 1 }),
+            2 => Option::Some(VariantInfo { name: schema_name<6>("Circle"), id: 2 }),
+            _ => Option::None,
+        }
+    }
+}
+
+impl Serialize for Shape {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        match self {
+            Shape::Empty => encoder.write_variant<Self>(0),
+            Shape::Point(ref value) => {
+                let variant = encoder.begin_variant<Self>(1)?
+                value.serialize(mut encoder)?
+                encoder.end_variant(variant)
+            },
+            Shape::Circle { radius: ref radius } => {
+                let variant = encoder.begin_variant<Self>(2)?
+                var record = encoder.begin_record<CircleFields>(1)?
+                encoder.field<CircleFields>(mut record, 0)?
+                radius.serialize(mut encoder)?
+                encoder.end_record(record)?
+                encoder.end_variant(variant)
+            },
+        }
+    }
+}
+
+impl Deserialize for Shape {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        let variant = decoder.begin_variant<Self>()?
+        match variant.index {
+            0 => {
+                variant.expect_unit()?
+                Result::Ok(Shape::Empty)
+            },
+            1 => {
+                variant.expect_payload()?
+                let value = u64::deserialize(mut decoder)?
+                decoder.end_variant(variant)?
+                Result::Ok(Shape::Point(value))
+            },
+            2 => {
+                variant.expect_payload()?
+                var radius: Option<u64> = Option::None
+                var record = decoder.begin_record<CircleFields>()?
+                while let Option::Some(key) = decoder.next_field<CircleFields>(mut record)? {
+                    match key.position {
+                        0 => key.read(mut decoder, mut radius)?,
+                        _ => return Result::Err(key.unknown()),
+                    }
+                }
+                decoder.end_record(record)?
+                let value = Shape::Circle { radius: <CircleFields as Schema>::required(radius, 0, decoder.offset())? }
+                decoder.end_variant(variant)?
+                Result::Ok(value)
+            },
+            _ => Result::Err(variant.unknown()),
+        }
+    }
+}
+```
+
+A payload of several elements is a sequence, written as in `impl Serialize for (T0, T1)`. A format
+that does not support payload variants fails with `Unsupported` at `begin_variant`.

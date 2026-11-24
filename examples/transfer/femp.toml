@@ -45,6 +45,9 @@ path = "list_tests"
 [modules.map_tests]
 path = "map_tests"
 
+[modules.enum_tests]
+path = "enum_tests"
+
 [modules.shared.generate.serializers]
 command = [
     "../../../tools/fe_codec_gen",

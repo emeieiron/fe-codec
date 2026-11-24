@@ -6,6 +6,7 @@
 use core::bytes::PackedBytes
 use fe_codec_core::{BoundedBuffer, List, Map, Text}
 use std::evm::Address
+use ingot::models::Shape
 
 /// The EIP's own example: `Person(string name,address wallet)`.
 #[serializable]
@@ -134,3 +135,7 @@ pub struct Route { pub stops: [(u8, u8); 2] }
 /// A user type may not take the domain's reserved name.
 #[serializable]
 pub struct EIP712Domain { pub name: Text<8> }
+
+/// EIP-712 has no union types, so a struct holding an enum with payloads has no type.
+#[serializable]
+pub struct Drawing { pub shape: Shape }

@@ -788,6 +788,9 @@ pub enum Shape {
     Circle(u32),
     Rect { w: u32, h: u32 },
     Pair(u8, u8),
+    Many(u8, [u16; 2], (bool, u8), Option<(u8, u8,)>,),
+    Parenthesized((u8)),
+    Unit(),
 }
 enum Empty {}
 pub enum Number {

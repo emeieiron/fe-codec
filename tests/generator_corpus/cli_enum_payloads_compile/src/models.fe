@@ -1,0 +1,83 @@
+use fe_codec_core::{CodecError, CodecResult, Decoder, Encoder, ErrorKind, FieldCodec, List, Map, Text}
+
+/// A codec for every type, which writes and reads nothing.
+pub struct Never {}
+
+impl<T> FieldCodec<T> for Never {
+    fn serialize<E: Encoder>(_ value: T, _ encoder: mut E) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<T> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+}
+
+#[serializable]
+pub struct Leg { pub from: u8, pub to: u8 }
+impl Copy for Leg {}
+
+#[serializable]
+pub struct Plain { pub id: u8 }
+
+#[serializable]
+pub enum Tag { Red, Green }
+impl Copy for Tag {}
+
+#[serializable]
+pub enum Shape {
+    Empty,
+    Point(u64),
+    Pair(u64, Text<8>),
+    Circle { pub radius: u64, pub label: Option<Text<8>> },
+}
+impl Copy for Shape {}
+
+/// Every kind of payload type.
+#[serializable]
+pub enum Kinds {
+    Unit,
+    Wrapped(Plain),
+    Mixed(Tag, Option<Leg>, [Leg; 2], (u8, bool), List<Leg, 2>),
+    Whole([Leg; 2]),
+    Inner(Shape),
+    Fields {
+        pub legs: [Plain; 3],
+        pub none: [u8; 0],
+        pub shapes: [Shape; 2],
+        pub list: List<Shape, 2>,
+        pub map: Map<u8, Shape, 2>,
+        pub maybe: Option<Shape>,
+        pub pair: (u8, Plain),
+    },
+    Empty {},
+}
+
+/// Explicit IDs on variants and on the fields of a record variant, and codecs.
+#[serializable]
+pub enum Numbered {
+    #[codec_id = 9]
+    A,
+    #[codec_id = 4]
+    B(u8, u8),
+    #[codec_id = 1]
+    C {
+        #[codec_id = 7]
+        pub x: u8,
+        #[codec_id = 3]
+        #[codec_with = Never]
+        pub y: u64,
+        #[codec_id = 5]
+        #[codec_with = Never]
+        pub z: Option<u64>,
+    },
+}
+
+#[serializable]
+pub struct Holder {
+    pub shape: Shape,
+    pub kinds: Option<Kinds>,
+    pub ring: [Shape; 2],
+    pub numbered: [Numbered; 100],
+}
+impl Copy for Numbered {}

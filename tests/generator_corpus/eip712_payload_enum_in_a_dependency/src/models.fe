@@ -1,0 +1,11 @@
+#[serializable]
+pub enum Shape {
+    Wrapped(u8, u8),
+}
+
+#[serializable]
+pub struct Inner { pub shape: Shape }
+
+#[serializable]
+#[eip712]
+pub struct Outer { pub inner: Inner }

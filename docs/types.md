@@ -14,10 +14,8 @@
 | `Map<K, V, N>` | 0 to `N` entries with unique keys; `K` is an unsigned integer, `Text<N>`, `Address` or `PackedBytes<N>`, and `V` a `Copy` type; `Copy` itself when both are. A field or nested, with any supported value type |
 | `(T0, ..., T7)` | Tuples of 1 to 8 supported types, anywhere a type can appear. `()` has no wire form and is rejected |
 | `#[serializable]` structs | Named fields of up to 31-byte names; type and const generic parameters |
-| `#[serializable]` enums | Unit variants of up to 31-byte names |
+| `#[serializable]` enums | Variants of up to 31-byte names: unit variants, tuple variants and record variants; not generic. See [Enums](#enums) |
 | Your own types | With handwritten impls; see [writing serializers](writing-serializers.md) |
-
-Not supported yet: enums with payloads.
 
 ## Lists
 
@@ -75,6 +73,52 @@ let gone = balances.remove(owner)   // Option<u64>
 values are. Decoding rejects a key that appears twice with `DuplicateField` at the key, and
 more than `N` entries with `CapacityExceeded`. [Wire profiles](formats.md#maps) say how each
 format writes one.
+
+## Enums
+
+A variant holds nothing, elements, or named fields. A variant with no payload is written as
+its name (JSON) or its ID (CBOR), in every enum; a variant with one is a wrapper of one entry,
+the name or ID and the payload.
+
+```fe
+#[serializable]
+pub enum Shape {
+    Empty,
+    Point(u64),
+    Pair(u64, Text<8>),
+    Circle { pub radius: u64, pub label: Option<Text<8>> },
+}
+```
+
+| Value | JSON | CBOR |
+| --- | --- | --- |
+| `Shape::Empty` | `"Empty"` | `00` |
+| `Shape::Point(5)` | `{"Point":5}` | `a1 01 05` |
+| `Shape::Pair(1, a)` | `{"Pair":[1,"a"]}` | `a1 02 82 01 61 61` |
+| `Shape::Circle { radius: 2, label: None }` | `{"Circle":{"radius":2}}` | `a1 03 a1 01 02` |
+
+- A tuple variant of one element holds that element itself; one of several holds a sequence of
+  them, as a tuple does. A record variant holds a record, whose fields are keyed by name in
+  JSON and by ID in CBOR, and which leaves out `None` fields as a struct does.
+- Variant IDs are declaration positions from 0 unless every variant has `#[codec_id]`. The
+  fields of a record variant number from 1, apart from the enum's own IDs, unless every one of
+  them has `#[codec_id]`, and `#[codec_with]` takes effect on them as on a struct's fields.
+  Tuple elements have no attributes.
+- Record variant fields are `pub`, as a struct's are, because the generated module reads and
+  builds the enum from outside its module.
+- The payload types are checked as a struct's fields are. A tuple variant's elements are
+  checked as those of a tuple are: an array of a non-`Copy` type is rejected, and an empty
+  array cannot be one. A record variant's fields are checked as a struct's, so there an array
+  of up to 64 non-`Copy` elements, or an empty one, is fine.
+- A payload enum is `Copy` only if you implement `Copy` for it, and that is what an enum needs
+  to be an element of an array, a list or a map's value.
+- `#[codec_skip_unknown]` on an enum makes each of its record variants skip fields it does not
+  list; it does nothing for the other variants.
+- Decoding accepts exactly what encoding writes: a variant with a payload written bare, a
+  variant without one written as a wrapper, and a wrapper of no entry or of two are errors.
+  [Wire profiles](formats.md#enums-with-payloads) lists the kinds.
+- The compact example format and EIP-712 have no payload variants; see
+  [wire profiles](formats.md#enums-with-payloads) and [EIP-712](eip712.md).
 
 ## Choosing a serializer per field
 
@@ -165,5 +209,5 @@ if it is marked too. See [wire profiles](formats.md#ignoring-unknown-fields) for
 format checks, and [writing a format](writing-a-format.md) for formats that cannot skip.
 
 A type numbers all of its members or none. Field IDs start at 1 and variant IDs at 0; without
-IDs, members are numbered in declaration order. [Wire profiles](formats.md#schema-evolution)
-lists what each change preserves in each format.
+IDs, members are numbered in declaration order, and each record variant numbers its own fields.
+[Wire profiles](formats.md#schema-evolution) lists what each change preserves in each format.

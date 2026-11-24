@@ -98,3 +98,34 @@ pub fn optional<T>(_ slot: own Option<Option<T>>) -> Option<T> {
         Option::None => Option::None,
     }
 }
+
+/// A variant a decoder found on the wire: its index in the schema, whether a payload follows,
+/// and the byte offset where the variant starts, for errors. A variant written bare has no
+/// payload; one written as a wrapper has one, which the decoder is positioned at.
+pub struct VariantKey { pub index: usize, pub payload: bool, pub offset: usize }
+impl Copy for VariantKey {}
+
+impl VariantKey {
+    /// Fails with `TypeMismatch` at the variant when it carries a payload: the variant has
+    /// none, so the wrapper is the wrong form.
+    pub fn expect_unit(self) -> CodecResult<()> {
+        if self.payload {
+            return Result::Err(CodecError::at(kind: ErrorKind::TypeMismatch, offset: self.offset))
+        }
+        Result::Ok(())
+    }
+
+    /// Fails with `TypeMismatch` at the variant when it carries no payload: the variant has
+    /// one, so the bare form is the wrong one.
+    pub fn expect_payload(self) -> CodecResult<()> {
+        if !self.payload {
+            return Result::Err(CodecError::at(kind: ErrorKind::TypeMismatch, offset: self.offset))
+        }
+        Result::Ok(())
+    }
+
+    /// The error for a variant the deserializer does not handle.
+    pub fn unknown(self) -> CodecError {
+        CodecError::at(kind: ErrorKind::UnknownVariant, offset: self.offset)
+    }
+}

@@ -18,6 +18,7 @@ use ingot::{
     Text,
     TextWriter,
     Utf8,
+    VariantKey,
     checked_signed,
     checked_unsigned,
     checked_wide_signed,
@@ -1136,4 +1137,50 @@ fn decoders_reject_maps_unless_they_opt_in() {
     fails_with(decoder.next_key(mut state), ErrorKind::Unsupported, 6)
     fails_with(decoder.map_value(mut state), ErrorKind::Unsupported, 6)
     fails_with(Map<u8, u8, 4>::deserialize(mut decoder), ErrorKind::Unsupported, 6)
+}
+
+#[test]
+fn variant_keys_check_the_form_a_variant_was_written_in() {
+    let bare = VariantKey { index: 2, payload: false, offset: 7 }
+    let wrapped = VariantKey { index: 3, payload: true, offset: 9 }
+    assert!(bare.expect_unit().is_ok() && wrapped.expect_payload().is_ok())
+    // The wrong form is reported where the variant starts.
+    fails_with(wrapped.expect_unit(), ErrorKind::TypeMismatch, 9)
+    fails_with(bare.expect_payload(), ErrorKind::TypeMismatch, 7)
+    assert!(bare.unknown().kind == ErrorKind::UnknownVariant && bare.unknown().offset == 7)
+}
+
+#[test]
+fn describers_reject_unions_unless_they_opt_in() {
+    var plain = NoTuples {}
+    assert!(kind(plain.begin_union<Marker>()) == 16)
+    assert!(kind(plain.union_variant<Marker>(1)) == 16)
+    assert!(kind(plain.end_union<Marker>()) == 16)
+}
+
+#[test]
+fn encoders_reject_payload_variants_unless_they_opt_in() {
+    var encoder = Counting { sequence_length: 99 }
+    fails_with(encoder.begin_variant<Marker>(1), ErrorKind::Unsupported, 0)
+    fails_with(encoder.end_variant(Frame::new(1)), ErrorKind::Unsupported, 0)
+}
+
+#[test]
+fn decoders_reject_payload_variants_unless_they_opt_in() {
+    var decoder = NoLists { at: 6 }
+    fails_with(decoder.begin_variant<Marker>(), ErrorKind::Unsupported, 6)
+    fails_with(
+        decoder.end_variant(VariantKey { index: 0, payload: true, offset: 6 }),
+        ErrorKind::Unsupported,
+        6,
+    )
+}
+
+/// A schema with no fields or variants, for the calls that only name a type.
+struct Marker {}
+
+impl Schema for Marker {
+    fn name() -> ingot::SchemaName {
+        schema_name<6>("Marker")
+    }
 }

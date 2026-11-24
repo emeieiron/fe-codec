@@ -1,0 +1,14 @@
+#[serializable]
+pub enum Status { Pending, Sent }
+
+#[serializable]
+pub enum Shape {
+    Empty,
+    Point(u8),
+    Circle { pub radius: u8 },
+}
+
+/// A payload enum nobody names needs no EIP-712 type, and a unit enum is a uint8.
+#[serializable]
+#[eip712]
+pub struct Order { pub status: Status, pub amount: u8 }

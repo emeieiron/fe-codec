@@ -1,4 +1,0 @@
-#[serializable]
-pub enum Item {
-    Variant(u8)
-}

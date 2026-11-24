@@ -1,2 +1,2 @@
 sources = ["src/models.fe"]
-expect_stderr = "src/models.fe:5:5: error: only unit enum variants are supported\n"
+expect_stderr = "src/models.fe:5:5: error: duplicate variant 'A'\n"

@@ -230,3 +230,79 @@ pub struct AccountReader {
     #[codec_id = 2]
     pub balance: u64,
 }
+
+/// An enum with payloads: a variant with none, a one-element variant, whose payload is the value
+/// itself, a tuple variant and a record variant. A variant with none is written as in an enum
+/// without payloads.
+#[serializable]
+pub enum Shape {
+    Empty,
+    Point(u64),
+    Pair(u64, Text<8>),
+    Circle { pub radius: u64, pub label: Option<Text<8>> },
+}
+
+impl Copy for Shape {}
+
+/// Payload enums inside an option, an array, a list and a map, which need them `Copy`.
+#[serializable]
+pub struct Canvas {
+    pub main: Shape,
+    pub spare: Option<Shape>,
+    pub ring: [Shape; 2],
+    pub layers: List<Shape, 2>,
+    pub named: Map<u8, Shape, 2>,
+}
+
+/// Variant IDs, field IDs inside a record variant, a variant holding a payload enum and a
+/// codec on the fields of a record variant.
+#[serializable]
+pub enum Event {
+    #[codec_id = 7]
+    Start,
+    #[codec_id = 3]
+    Move {
+        #[codec_id = 9]
+        pub dx: i16,
+        #[codec_id = 2]
+        pub dy: i16,
+        #[codec_id = 4]
+        pub note: Option<Text<8>>,
+    },
+    #[codec_id = 40]
+    Draw(Shape),
+    #[codec_id = 12]
+    Pay {
+        #[codec_with = HexAmount]
+        pub amount: u64,
+        #[codec_with = HexAmount]
+        pub tip: Option<u64>,
+    },
+}
+
+/// Record variants of arrays: one of records that are not `Copy`, which decodes element by
+/// element, and an empty one. A variant of one such record.
+#[serializable]
+pub enum Layout {
+    Row { pub cells: [Recipient; 2], pub flags: [bool; 0] },
+    Cell(Recipient),
+}
+
+/// Tuple variants of every kind of element, and one-element variants of an option and an
+/// array.
+#[serializable]
+pub enum Parts {
+    Mixed(Option<u8>, [u8; 2], (bool, u8), List<u8, 2>),
+    Maybe(Option<u8>),
+    Pair([u8; 2]),
+}
+
+/// `#[codec_skip_unknown]` on an enum skips unknown fields of its record variants.
+#[serializable]
+#[codec_skip_unknown]
+pub enum Tolerant {
+    Gone,
+    Account { pub owner: u64, pub balance: u64 },
+    Ping {},
+    Plain(u64),
+}

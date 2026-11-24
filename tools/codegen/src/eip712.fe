@@ -7,7 +7,7 @@ use core::{MemBuffer, MemVec, Option, Result}
 use fe_syntax::{ArgKind, File, Span}
 use ingot::render::{header, imports}
 use ingot::schema::{
-    Diagnostic, Model, Output, Program, TyKind, array_elem, array_len, arg_run, arg_ty, list_element,
+    Diagnostic, Model, Output, Payload, Program, TyKind, array_elem, array_len, arg_run, arg_ty, list_element,
     ty_kind, ty_name,
 }
 use ingot::text::{copy, is_text, part, same}
@@ -145,6 +145,18 @@ fn eip712_type(
                     var v: usize = 0
                     while v < target.members.len {
                         let variant = output.variants[target.members.start + v]
+                        match variant.payload {
+                            Payload::Unit => {},
+                            _ => {
+                                return Result::Err(format!(
+                                    "enum '",
+                                    name,
+                                    "' has variant '",
+                                    target_file.token_text(variant.name),
+                                    "' with a payload, and EIP-712 has no union types",
+                                ))
+                            },
+                        }
                         if variant.id > 255 {
                             return Result::Err(format!(
                                 "enum '",

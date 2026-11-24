@@ -1,0 +1,11 @@
+#[serializable]
+pub enum Shape {
+    Empty,
+    Point(u8),
+}
+
+#[serializable]
+#[eip712]
+pub struct Drawing {
+    pub shape: Shape,
+}

@@ -1,0 +1,7 @@
+#[serializable]
+pub struct Codec_E_A { pub x: u8 }
+
+#[serializable]
+pub enum E {
+    A { pub x: u8 },
+}

@@ -16,6 +16,7 @@ use fe_codec_core::{
     Text,
     TextWriter,
     Utf8,
+    VariantKey,
     checked_signed,
     checked_unsigned,
     checked_wide_signed,
@@ -585,6 +586,52 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
             index += 1
         }
         Result::Err(CodecError::at(kind: ErrorKind::UnknownVariant, offset))
+    }
+
+    /// A variant is a string, or an object of one member whose name is the variant's and whose
+    /// value is its payload.
+    fn begin_variant<V: Schema>(mut self) -> CodecResult<VariantKey> {
+        self.whitespace()?
+        let offset = self.offset()
+        let wrapped = self.peek()? == b'{'
+        if wrapped {
+            self.begin(b'{')?
+            self.whitespace()?
+            // An object with no member holds no variant.
+            if self.peek()? == b'}' {
+                return Result::Err(self.error(ErrorKind::InvalidLength))
+            }
+            self.separator(0)?
+        } else {
+            self.value(offset)?
+        }
+        let name_offset = self.offset()
+        let name = self.member_name(ErrorKind::UnknownVariant, name_offset)?
+        var index: usize = 0
+        while let Option::Some(variant) = V::variant(index) {
+            if variant.name.equals(name) {
+                if wrapped {
+                    self.whitespace()?
+                    self.expect(b':', ErrorKind::InvalidSyntax)?
+                    self.structure.member(name_offset)?
+                }
+                return Result::Ok(VariantKey { index, payload: wrapped, offset })
+            }
+            index += 1
+        }
+        Result::Err(CodecError::at(kind: ErrorKind::UnknownVariant, offset: name_offset))
+    }
+
+    /// The wrapper holds one member, so only its end may follow the payload.
+    fn end_variant(mut self, _ key: VariantKey) -> CodecResult<()> {
+        if !key.payload {
+            return Result::Ok(())
+        }
+        self.whitespace()?
+        if self.peek()? == b',' {
+            return Result::Err(self.error(ErrorKind::InvalidLength))
+        }
+        self.end(b'}', ErrorKind::InvalidSyntax)
     }
 
     /// Any RFC 8259 value. Numbers may have fractions and exponents. Containers count toward

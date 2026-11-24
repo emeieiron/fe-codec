@@ -1,0 +1,2 @@
+sources = ["src/models.fe"]
+expect_stderr = "src/models.fe:6:20: error: decoding this array builds it from copies of its first element; implement Copy for the element type\n"

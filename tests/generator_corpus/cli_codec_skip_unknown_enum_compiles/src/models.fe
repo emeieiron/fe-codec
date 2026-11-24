@@ -1,0 +1,12 @@
+#[serializable]
+#[codec_skip_unknown]
+pub enum E {
+    A,
+    B { pub x: u8 },
+    C(u8),
+}
+
+/// Without a record variant the attribute has nothing to skip, and is accepted.
+#[serializable]
+#[codec_skip_unknown]
+pub enum Units { A, B }

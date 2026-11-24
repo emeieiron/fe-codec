@@ -1,0 +1,13 @@
+use fe_codec_core::List
+
+#[serializable]
+pub enum Shape {
+    Circle { pub radius: u8 },
+}
+impl Copy for Shape {}
+
+#[serializable]
+#[eip712]
+pub struct Drawing {
+    pub shapes: List<Shape, 2>,
+}

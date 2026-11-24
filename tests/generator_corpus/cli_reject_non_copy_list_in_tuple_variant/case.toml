@@ -1,0 +1,2 @@
+sources = ["src/models.fe"]
+expect_stderr = "src/models.fe:6:7: error: a list stores copies of its elements; implement Copy for the element type\n"

@@ -1,2 +1,0 @@
-sources = ["src/models.fe"]
-expect_stderr = "src/models.fe:2:1: error: codec_skip_unknown belongs on serializable structs\n"

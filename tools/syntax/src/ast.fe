@@ -165,6 +165,9 @@ pub enum VariantKind {
 
 impl Copy for VariantKind {}
 
+/// An enum variant. A record variant's `fields` are a run of `File::fields`; a tuple variant's
+/// `elems` are a run of `File::elems` holding the type node of each element, in order, as for a
+/// tuple type (`A()` has none).
 pub struct Variant {
     pub start: usize,
     pub first: usize,
@@ -173,6 +176,7 @@ pub struct Variant {
     pub kind: VariantKind,
     pub attrs: Run,
     pub fields: Run,
+    pub elems: Run,
 }
 
 impl Copy for Variant {}

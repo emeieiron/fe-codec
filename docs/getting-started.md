@@ -37,7 +37,7 @@ Add `fe_codec_eip712` the same way if you sign typed data.
 
 ## Describe your types
 
-Mark structs and unit enums `#[serializable]`. The types are ordinary Fe: nothing else
+Mark structs and enums `#[serializable]`. The types are ordinary Fe: nothing else
 changes about how you use them.
 
 ```fe

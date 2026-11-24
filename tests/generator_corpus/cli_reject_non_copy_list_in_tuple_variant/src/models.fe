@@ -1,0 +1,7 @@
+#[serializable]
+pub struct Plain { pub id: u8 }
+
+#[serializable]
+pub enum E {
+    A(List<Plain, 2>),
+}

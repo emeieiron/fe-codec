@@ -18,7 +18,7 @@ model types ──impl──▶ Serialize / Deserialize / Schema      generated 
   serializers all compose through trait resolution. `Schema` lists a record's fields
   (name, ID, whether optional) and an enum's variants.
 - **The data model.** `Encoder` and `Decoder` are the vocabulary every format speaks:
-  booleans, integers up to 256 bits, text, bytes, options, unit variants, records and
+  booleans, integers up to 256 bits, text, bytes, options, enum variants with and without payloads, records and
   sequences, which carry fixed-length arrays, tuples and lists, and maps. Records visit fields in ascending ID
   order; `OMIT_NONE` tells a serializer whether the format leaves out `None` fields.
 - **The format side.** A `Format` value (`Json`, `Cbor`, or a third party's) owns its

@@ -27,6 +27,7 @@ def cbor(v):
         b = v.encode(); return head(3, len(b)) + b
     if isinstance(v, (bytes, bytearray)): return head(2, len(v)) + bytes(v)
     if isinstance(v, list): return head(4, len(v)) + b''.join(cbor(x) for x in v)
+    if isinstance(v, Tag): return head(5, 1) + cbor(v.key) + cbor(v.payload)
     if isinstance(v, Map):
         return head(5, len(v)) + b''.join(cbor(k) + cbor(x) for k, x in v.ordered())
     if isinstance(v, dict):  # int keys, omit None, ascending
@@ -35,6 +36,13 @@ def cbor(v):
     raise TypeError(v)
 
 class Hex(bytes): pass
+
+class Tag:
+    """An enum variant with a payload: an object, or a map, of one entry. The payload is kept even
+    when it is None, which a record leaves out."""
+    def __init__(self, key, payload):
+        self.key = key
+        self.payload = payload
 
 class Map(dict):
     """A map: written in the order of its keys' CBOR encodings, which is the canonical order."""
@@ -54,6 +62,7 @@ def js(v):
     if isinstance(v, int): return str(v)
     if isinstance(v, str): return json.dumps(v, ensure_ascii=False)
     if isinstance(v, list): return '[' + ','.join(js(x) for x in v) + ']'
+    if isinstance(v, Tag): return '{' + json.dumps(v.key) + ':' + js(v.payload) + '}'
     if isinstance(v, Map):
         return '{' + ','.join(js_key(k) + ':' + js(x) for k, x in v.ordered()) + '}'
     if isinstance(v, dict):
@@ -67,7 +76,7 @@ def fe_str(s):
     b = s.encode()
     return len(b), json.dumps(s, ensure_ascii=False)
 
-U256 = (1 << 256) - 1; I256 = -(1 << 255); U128 = (1 << 128) - 1; I128 = -(1 << 127)
+U64 = (1 << 64) - 1; U256 = (1 << 256) - 1; I256 = -(1 << 255); U128 = (1 << 128) - 1; I128 = -(1 << 127)
 ADDR = bytes.fromhex('d8da6bf26964af9d7eed9e03e53415d37aa96045')
 
 cases = {
@@ -125,6 +134,42 @@ cases = {
               2: Map({300: [7], 5: [1, 2]}), 3: Map({9: 1, 3: 2})}),
   'ROSTER_BARE': ({'members': Map(), 'groups': Map(), 'guests': None},
                   {1: Map(), 2: Map(), 3: None}),
+  # An enum variant with no payload is its name, or its ID. One with a payload is an object, or a map,
+  # of one entry: the name, or the ID, and the payload. A tuple variant of one element holds the element.
+  'SHAPE_EMPTY': ('Empty', 0),
+  'SHAPE_POINT': (Tag('Point', 5), Tag(1, 5)),
+  'SHAPE_POINT_MAX': (Tag('Point', U64), Tag(1, U64)),
+  'SHAPE_PAIR': (Tag('Pair', [1, 'a']), Tag(2, [1, 'a'])),
+  'SHAPE_CIRCLE': (Tag('Circle', {'radius': 2, 'label': 'x'}), Tag(3, {1: 2, 2: 'x'})),
+  'SHAPE_CIRCLE_BARE': (Tag('Circle', {'radius': 2, 'label': None}), Tag(3, {1: 2, 2: None})),
+  'CANVAS': ({'main': Tag('Pair', [1, 'a']), 'spare': Tag('Point', 7), 'ring': ['Empty', Tag('Point', 1)],
+              'layers': [Tag('Circle', {'radius': 1, 'label': None})],
+              'named': Map({9: 'Empty', 3: Tag('Point', 2)})},
+             {1: Tag(2, [1, 'a']), 2: Tag(1, 7), 3: [0, Tag(1, 1)],
+              4: [Tag(3, {1: 1, 2: None})], 5: Map({9: 0, 3: Tag(1, 2)})}),
+  'CANVAS_BARE': ({'main': 'Empty', 'spare': None, 'ring': [Tag('Circle', {'radius': 0, 'label': 'y'}), 'Empty'],
+                   'layers': [], 'named': Map()},
+                  {1: 0, 2: None, 3: [Tag(3, {1: 0, 2: 'y'}), 0], 4: [], 5: Map()}),
+  # Variant IDs, then field IDs inside a record variant: the fields come in the order of their IDs.
+  'EVENT_START': ('Start', 7),
+  'EVENT_MOVE': (Tag('Move', {'dy': -3, 'note': 'hi', 'dx': 300}), Tag(3, {2: -3, 4: 'hi', 9: 300})),
+  'EVENT_MOVE_BARE': (Tag('Move', {'dy': 0, 'note': None, 'dx': -1}), Tag(3, {2: 0, 4: None, 9: -1})),
+  'EVENT_DRAW': (Tag('Draw', Tag('Point', 5)), Tag(40, Tag(1, 5))),
+  'EVENT_DRAW_EMPTY': (Tag('Draw', 'Empty'), Tag(40, 0)),
+  'EVENT_PAY': (Tag('Pay', {'amount': 'ff', 'tip': '0'}), Tag(12, {1: 'ff', 2: '0'})),
+  'EVENT_PAY_BARE': (Tag('Pay', {'amount': '1', 'tip': None}), Tag(12, {1: '1', 2: None})),
+  'LAYOUT_ROW': (Tag('Row', {'cells': [{'active': True, 'label': 'a'}, {'active': False, 'label': 'b'}], 'flags': []}),
+                 Tag(0, {1: [{1: True, 2: 'a'}, {1: False, 2: 'b'}], 2: []})),
+  'LAYOUT_CELL': (Tag('Cell', {'active': True, 'label': 'c'}), Tag(1, {1: True, 2: 'c'})),
+  'PARTS_MIXED': (Tag('Mixed', [None, [1, 2], [True, 3], [4]]), Tag(0, [None, [1, 2], [True, 3], [4]])),
+  'PARTS_MIXED_SOME': (Tag('Mixed', [9, [0, 255], [False, 0], []]), Tag(0, [9, [0, 255], [False, 0], []])),
+  'PARTS_MAYBE_NONE': (Tag('Maybe', None), Tag(1, None)),
+  'PARTS_MAYBE_SOME': (Tag('Maybe', 3), Tag(1, 3)),
+  'PARTS_PAIR': (Tag('Pair', [1, 2]), Tag(2, [1, 2])),
+  'TOLERANT_GONE': ('Gone', 0),
+  'TOLERANT_ACCOUNT': (Tag('Account', {'owner': 1, 'balance': 2}), Tag(1, {1: 1, 2: 2})),
+  'TOLERANT_PING': (Tag('Ping', {}), Tag(2, {})),
+  'TOLERANT_PLAIN': (Tag('Plain', 9), Tag(3, 9)),
 }
 for name, (j, c) in cases.items():
     jt = js(j); cb = cbor(c)
