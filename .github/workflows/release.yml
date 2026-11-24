@@ -1,4 +1,5 @@
-# Builds and publishes prebuilt fe_codec_gen binaries on version tags, and dry-runs on dispatch.
+# Builds and publishes prebuilt fe_codec_gen binaries and installer.sh on version tags,
+# and dry-runs all targets on workflow_dispatch.
 name: Release
 
 on:
@@ -83,14 +84,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: linux-x86_64
+          - target: x86_64-unknown-linux-gnu
             os: ubuntu-24.04
-          - target: linux-arm64
+          - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
-          - target: macos-arm64
-            os: macos-15
-          - target: macos-x86_64
-            os: macos-15-intel
+          - target: aarch64-apple-darwin
+            os: macos-latest
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -120,25 +119,38 @@ jobs:
           file dist/fe_codec_gen
           otool -L dist/fe_codec_gen
 
-      - name: Smoke test fe_codec_gen
-        run: |
-          actual="$(./dist/fe_codec_gen --version)"
-          expected="fe_codec_gen ${{ needs.verify.outputs.version }}"
-          if [ "$actual" != "$expected" ]; then
-            echo "expected '$expected', got '$actual'" >&2
-            exit 1
-          fi
-          python3 tests/vanilla.py --generator dist/fe_codec_gen
-
       - name: Package release archive
         run: |
           mkdir -p release
           COPYFILE_DISABLE=1 tar -C dist -czf "release/fe_codec_gen-${{ matrix.target }}.tar.gz" fe_codec_gen
 
+      - name: Smoke test installer and fe_codec_gen
+        run: |
+          ARCHIVE="fe_codec_gen-${{ matrix.target }}.tar.gz"
+          python3 - "$ARCHIVE" <<'PY'
+          import hashlib, pathlib, sys
+          name = sys.argv[1]
+          digest = hashlib.sha256(pathlib.Path("release", name).read_bytes()).hexdigest()
+          pathlib.Path("release/SHA256SUMS").write_text(f"{digest}  {name}\n", encoding="utf-8")
+          PY
+          mkdir -p "$RUNNER_TEMP/home"
+          FE_CODEC_DOWNLOAD_URL="file://$PWD/release" HOME="$RUNNER_TEMP/home" \
+            sh install/installer.sh --no-modify-path
+          GEN="$RUNNER_TEMP/home/.local/bin/fe_codec_gen"
+          actual="$("$GEN" --version)"
+          expected="fe_codec_gen ${{ needs.verify.outputs.version }}"
+          if [ "$actual" != "$expected" ]; then
+            echo "expected '$expected', got '$actual'" >&2
+            exit 1
+          fi
+          python3 tests/vanilla.py --generator "$GEN"
+          rm release/SHA256SUMS
+
       - uses: actions/upload-artifact@v4
         with:
           name: fe_codec_gen-${{ matrix.target }}
           path: release/fe_codec_gen-${{ matrix.target }}.tar.gz
+          if-no-files-found: error
 
   release:
     needs: [verify, build]
@@ -147,15 +159,18 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v5
+
       - uses: actions/download-artifact@v4
         with:
           path: release
           merge-multiple: true
 
-      - name: Generate checksums
+      - name: Add installer and checksums
         run: |
+          cp install/installer.sh release/installer.sh
           cd release
-          sha256sum fe_codec_gen-*.tar.gz | sort -k2 > SHA256SUMS
+          sha256sum fe_codec_gen-*.tar.gz installer.sh | sort -k2 > SHA256SUMS
           cat SHA256SUMS
 
       - name: Write release notes
@@ -177,40 +192,30 @@ jobs:
           fe_version = os.environ["FE_VERSION"]
 
           notes = textwrap.dedent(f"""\
-              Prebuilt `fe_codec_gen` binaries for **Fe Codec {version}** (built with Fe `{fe_version}`).
+              Fe Codec **{version}** (built with Fe `{fe_version}`).
 
               ## Install `fe_codec_gen`
 
-              Choose your target (`linux-x86_64`, `linux-arm64`, `macos-arm64`, `macos-x86_64`):
-
-              ```bash
-              mkdir -p ~/.local/bin
-              curl -fsSL https://github.com/{repo}/releases/download/{tag}/fe_codec_gen-<target>.tar.gz \\
-                | tar -xz -C ~/.local/bin
+              ```sh
+              curl -fsSL https://github.com/{repo}/releases/download/{tag}/installer.sh | sh
               ```
 
-              Verify checksums against `SHA256SUMS` published on this release.
+              Or install the latest release directly via `releases/latest/download/installer.sh`. Checksums are published in `SHA256SUMS`.
 
-              <details>
-              <summary>Build from source instead</summary>
+              Build from source instead:
 
-              ```bash
+              ```sh
               git clone https://github.com/{repo}.git && cd fe-codec && git checkout {tag}
               fe build --backend native tools/generator --out-dir ~/.local/bin
               ```
 
-              </details>
-
               ## Add the ingots to `fe.toml`
-
-              Fe pins Git dependencies by full commit hash. Use `{commit}` for `{tag}`:
 
               ```toml
               [dependencies]
               fe_codec_core = {{ source = "https://github.com/{repo}.git", rev = "{commit}", name = "fe_codec_core" }}
               fe_codec_json = {{ source = "https://github.com/{repo}.git", rev = "{commit}", name = "fe_codec_json" }}
               fe_codec_cbor = {{ source = "https://github.com/{repo}.git", rev = "{commit}", name = "fe_codec_cbor" }}
-              # Optional:
               # fe_codec_eip712 = {{ source = "https://github.com/{repo}.git", rev = "{commit}", name = "fe_codec_eip712" }}
               ```
           """)
@@ -225,9 +230,9 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           TITLE="Fe Codec ${{ needs.verify.outputs.version }}"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" release/fe_codec_gen-*.tar.gz release/SHA256SUMS --clobber
+            gh release upload "$TAG" release/fe_codec_gen-*.tar.gz release/installer.sh release/SHA256SUMS --clobber
             gh release edit "$TAG" --title "$TITLE" --notes-file release/notes.md
           else
-            gh release create "$TAG" release/fe_codec_gen-*.tar.gz release/SHA256SUMS \
+            gh release create "$TAG" release/fe_codec_gen-*.tar.gz release/installer.sh release/SHA256SUMS \
               --title "$TITLE" --notes-file release/notes.md
           fi

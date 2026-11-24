@@ -9,33 +9,23 @@ You need the Fe toolchain, version 26.7.0. Nothing else: the generator is writte
 ## Install the generator
 
 Fe 26.7.0 has no derive macros or compile-time reflection, so `fe_codec_gen` runs as a separate
-tool that generates plain Fe trait implementations beside your models. Download the prebuilt
-binary for your platform (`linux-x86_64`, `linux-arm64`, `macos-arm64`, or `macos-x86_64`) from
-[GitHub Releases](https://github.com/emeieiron/fe-codec/releases) into a directory on your
-`PATH`:
+tool that generates plain Fe trait implementations beside your models. Install the prebuilt
+binary (Linux `x86_64`/`aarch64` or macOS Apple silicon) into `~/.local/bin`:
 
-```bash
-mkdir -p ~/.local/bin
-curl -fsSL https://github.com/emeieiron/fe-codec/releases/download/v0.1.0/fe_codec_gen-<target>.tar.gz \
-  | tar -xz -C ~/.local/bin
+```sh
+curl -fsSL https://github.com/emeieiron/fe-codec/releases/latest/download/installer.sh | sh
 ```
 
-Each release includes `SHA256SUMS` for verification. On macOS, downloading via `curl` runs
-directly; if you download the archive through a browser instead, clear the quarantine attribute
-first (`xattr -d com.apple.quarantine ~/.local/bin/fe_codec_gen`).
-
-The command is `fe_codec_gen`.
+The installer verifies `SHA256SUMS` automatically. Pass `--no-modify-path` (`sh -s -- --no-modify-path`)
+in CI, or configure `FE_CODEC_VERSION` (for example `v0.1.0`) and `FE_CODEC_INSTALL_DIR`.
 
 ### Build from source
 
-If you are on another platform or an unreleased commit, check out the repository at the revision
-you depend on and build the generator with `fe` alone:
+On an unsupported host or unreleased commit, check out the repository at the revision you
+depend on and build the generator with `fe` alone:
 
 ```bash
 git clone https://github.com/emeieiron/fe-codec.git && cd fe-codec && git checkout <commit>
-```
-
-```bash
 fe build --backend native tools/generator --out-dir ~/.local/bin
 ```
 

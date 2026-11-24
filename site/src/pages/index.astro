@@ -103,8 +103,8 @@ const gasMax = Math.max(...gas.map((g) => g.value));
         </div>
       </div>
       <div class="hero-install rise" style="--i: 4">
-        <p class="install-label">Install the generator (linux-x86_64 · linux-arm64 · macos-arm64 · macos-x86_64)</p>
-        <CopyCommand command="curl -fsSL https://github.com/emeieiron/fe-codec/releases/latest/download/fe_codec_gen-<target>.tar.gz | tar -xz -C ~/.local/bin" label="Copy the install command" />
+        <p class="install-label">Install the generator (Linux x86-64/ARM64 · macOS Apple silicon)</p>
+        <CopyCommand command="curl -fsSL https://github.com/emeieiron/fe-codec/releases/latest/download/installer.sh | sh" label="Copy the install command" />
         <dl class="specs">
           <div><dt>Formats</dt><dd>JSON · CBOR · EIP-712 · yours</dd></div>
           <div><dt>Targets</dt><dd>EVM · native · WebAssembly</dd></div>

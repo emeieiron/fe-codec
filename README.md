@@ -23,47 +23,22 @@ ship depends on it.
 
 ## Getting started
 
-### 1. Install `fe_codec_gen`
+Install `fe_codec_gen` (Linux x86-64/ARM64, macOS Apple silicon):
 
-Download the prebuilt binary from the [GitHub Releases](https://github.com/emeieiron/fe-codec/releases)
-page instead of cloning and compiling the generator yourself (`linux-x86_64`, `linux-arm64`,
-`macos-arm64`, or `macos-x86_64`):
-
-```bash
-# Replace <target> with linux-x86_64, linux-arm64, macos-arm64, or macos-x86_64
-mkdir -p ~/.local/bin
-curl -fsSL https://github.com/emeieiron/fe-codec/releases/download/v0.1.0/fe_codec_gen-<target>.tar.gz \
-  | tar -xz -C ~/.local/bin
+```sh
+curl -fsSL https://github.com/emeieiron/fe-codec/releases/latest/download/installer.sh | sh
 ```
 
-Each release includes `SHA256SUMS` to verify downloads. If you are on another platform or an
-unreleased commit, you can still build `fe_codec_gen` from a matching checkout with `fe` alone:
+Or build from source: `fe build --backend native tools/generator --out-dir ~/.local/bin`.
 
-```bash
-fe build --backend native tools/generator --out-dir ~/.local/bin
-```
+**Why a separate generator?** Serialization uses static traits (`Serialize`, `Deserialize`,
+`Schema`, `Describe`, and `Eip712Struct` with `--eip712`) for zero reflection, zero heap
+allocation, and ~13,900 EVM gas versus ~70,900 gas generically. Fe 26.7.0 has no derive macros
+or compile-time reflection, so `fe_codec_gen` parses `#[serializable]` types outside the
+compiler and emits those impls as plain Fe source. Shipping prebuilt binaries keeps consumers
+and CI checks (`--check`) from having to clone and build it.
 
-### Why a separate generator is needed
-
-- **Why code generation is needed:** Every serializable type needs `Serialize`, `Deserialize`,
-  `Schema`, and `Describe` trait implementations (and `Eip712Struct` when using `--eip712`).
-  Generating these traits lets Fe resolve serialization statically via monomorphization—with no
-  runtime reflection, no heap allocation, compact EVM bytecode, and ~13,900 gas for static
-  EIP-712 hashing versus ~70,900 gas through the generic path. Writing and maintaining these
-  implementations by hand across every struct and enum is repetitive and error-prone.
-- **Why it must be a separate tool:** Fe 26.7.0 has no derive/procedural macros, compile-time
-  reflection, or compiler plugins. Although the compiler parses and ignores unknown attributes
-  such as `#[serializable]` and `#[codec_id]`, it cannot expand them into trait implementations
-  during compilation. `fe_codec_gen`—itself written in Fe around the `fe_syntax` declaration
-  parser—runs outside the compiler to emit ordinary Fe source beside your models (or to stdout
-  via `--stdout` for build systems like FeMP). Shipping prebuilt release binaries keeps consumers
-  and CI checks (`fe_codec_gen --check`) from having to clone this repository and build the
-  generator from source on every setup.
-
-### 2. Add the ingots to `fe.toml`
-
-Fe pins Git dependencies by full commit hash. Each GitHub Release page lists the exact commit
-SHA for that tag:
+Add the ingots to `fe.toml`, pinned to the release commit hash (listed on each release page):
 
 ```toml
 [dependencies]
@@ -71,10 +46,8 @@ fe_codec_core = { source = "https://github.com/emeieiron/fe-codec.git", rev = "<
 fe_codec_json = { source = "https://github.com/emeieiron/fe-codec.git", rev = "<commit>", name = "fe_codec_json" }
 ```
 
-### 3. Mark types, generate serializers, and encode/decode
-
-Mark your types `#[serializable]`, generate their serializers beside them (use `--check` in CI
-to catch stale output), and encode or decode with bounded buffers:
+Mark your types `#[serializable]`, generate their serializers (`--check` in CI), and
+encode/decode:
 
 ```fe
 #[serializable]
@@ -86,7 +59,7 @@ pub struct Order {
 }
 ```
 
-```bash
+```sh
 fe_codec_gen --source src/models.fe --out src/serializers.fe
 ```
 
@@ -99,50 +72,14 @@ let back: Order = fe_codec_json::decode(bytes)?
 
 ## Limitations
 
-Several constraints in the Fe 26.7.0 compiler and toolchain shape Fe Codec's design today:
-
-- **No derive macros, compile-time reflection, or compiler plugins.** Because Fe cannot expand
-  `#[serializable]` or `#[eip712]` at compile time, Fe Codec relies on an external CLI
-  (`fe_codec_gen`) and a standalone declaration parser (`fe_syntax`) that must track Fe syntax.
-  Generated code must live in a sibling `.fe` module, which requires every serialized struct
-  field and record-variant field to be `pub`, rules out `where` clauses, generic enums, and
-  generic parameter defaults, and requires a second `--eip712` pass to emit compile-time
-  `core::keccak` `encodeType` constants.
-  *Cleaner solution:* Compiler-integrated `#[derive(Serialize, Deserialize, Eip712)]` (via
-  procedural macros or compile-time type reflection with `const fn` evaluation) expanding impls
-  directly inside the defining module with access to private fields and full compiler type
-  resolution.
-- **No safe uninitialized array construction, and `unsafe` propagates to consumers.** Any `unsafe`
-  inside a dependency requires downstream consumers to opt in, so `fe_codec_core` contains no
-  `unsafe`. Generic `[T; N]` decoding builds `[first; N]` and overwrites elements, which
-  requires `T: Copy` and rejects `[T; 0]`; `List<T, N>` and `Map<K, V, N>` likewise initialize
-  `[Option::None; N]`, requiring `T: Copy` and `V: Copy`. `fe_codec_gen` works around this on
-  direct struct and record-variant fields by unrolling literal-length non-`Copy` arrays up to
-  length 64.
-  *Cleaner solution:* Safe standard-library array initialization (such as `array::try_from_fn`
-  or an encapsulated `MaybeUninit` primitive) or library-encapsulated `unsafe` that does not
-  require opt-in from callers.
-- **No partial generic arguments.** Fe rejects specifying only one argument for functions that
-  take both type and const generic parameters (such as `encode<T, const N>`), forcing callers to
-  supply every generic argument (`fe_codec_json::encode<Order, 192>(order)`) or rely on an
-  annotated binding (`let bytes: BoundedBuffer<192> = ...`).
-  *Cleaner solution:* Partial generic argument lists or inference placeholders (`encode<Order, _>`
-  / `encode<_, 192>`).
-- **No variadic generics.** `fe_codec_core` hand-writes tuple `Serialize`, `Deserialize`, and
-  `Describe` implementations for arities 1–8; larger tuples are unsupported.
-  *Cleaner solution:* Variadic generics or compile-time macro expansion in `core`.
-- **Full-SHA Git pinning and no toolchain-managed codegen dependencies.** `fe.toml` pins Git
-  dependencies by 40-character commit SHA rather than SemVer/tags and cannot declare build or
-  codegen tools, so consumers must manually keep `fe_codec_gen` aligned with the `rev` in
-  `fe.toml`.
-  *Cleaner solution:* Package registry or SemVer/tag resolution in `fe.toml` and
-  toolchain-managed macro/codegen dependencies.
-- **Generator filesystem and platform limits.** `std::fs` has no atomic rename (so `fe_codec_gen`
-  writes in place only after all checks pass), and `fe_codec_gen` currently parses POSIX `/`
-  paths only, limiting prebuilt binaries to Linux and macOS (`x86_64` and `arm64`) rather than
-  native Windows.
-  *Cleaner solution:* Cross-platform path handling and atomic-write primitives in `std::fs` (or
-  eliminating the external CLI once compiler-integrated derives exist).
+| Compiler / toolchain limit | Current workaround | Cleaner solution |
+| --- | --- | --- |
+| No derive/proc macros or compile-time reflection | External `fe_codec_gen` + `fe_syntax` parser, sibling `.fe` files, `pub` fields required, no `where` or generic enums, separate `--eip712` pass | Compiler-integrated `#[derive(...)]` or compile-time reflection + `const fn` inside the defining module |
+| No safe uninitialized array init; `unsafe` propagates to callers | Zero `unsafe` in `core`; `T: Copy` / `V: Copy` on generic `[T; N]`, `List<T, N>`, `Map<K, V, N>`; no generic `[T; 0]`; unrolled field arrays up to 64 | Safe `core` array init (`try_from_fn` / `MaybeUninit`) or library-encapsulated `unsafe` |
+| No partial generic arguments | Name every generic (`encode<Order, 192>(x)`) or annotate the binding | Partial generic arguments or `_` placeholders (`encode<Order, _>`) |
+| No variadic generics | Hand-written tuple impls capped at 1–8 elements | Variadic generics or macro expansion in `core` |
+| Full-SHA Git pinning; no codegen dependencies | Manual 40-char `rev` synced with `fe_codec_gen` | SemVer/registry dependencies and toolchain-managed codegen |
+| Native backend host & `std::fs` gaps | Prebuilt binaries only for Linux x86-64/ARM64 and macOS Apple silicon (no Intel macOS or Windows); in-place writes (no atomic rename) | Full host support + atomic rename in `std::fs` (or no external CLI once derives exist) |
 
 See [Design and guarantees](docs/design.md) for the full design rationale and verification
 scope.
