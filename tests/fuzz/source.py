@@ -395,9 +395,11 @@ class Renderer:
         s.t("}")
         return s
 
-    def noise_item(self, rng, i, spec, flags, here):
-        """An item the generator must skip. It is raw text: its whitespace stays as written."""
+    def noise_item(self, rng, i, spec, flags, here, force=None):
+        """An item the generator must skip. It is raw text: its whitespace stays as written. `force`
+        names the kind to write in place of the random one."""
         kind = rng.choice(["fn", "fn", "fn_str", "const", "trait", "struct", "enum", "inherent", "marker"])
+        kind = force or kind
         n = "noise_%d" % i
         self.stats["unrelated item: " + {"fn_str": "fn", "inherent": "impl block", "marker": "impl block",
                                           "struct": "struct", "enum": "enum", "trait": "trait", "const": "const",
@@ -506,8 +508,13 @@ class Renderer:
                 if m.copy_impl:
                     items.append((self.copy_impl(rng, m), False))
             noise = rng.randint(0, 3)
+            # One seed in five has a `const` as the first unrelated item of the first module, which
+            # random choice reaches too rarely to count on.
+            forced = mi == 0 and self.seed % 5 == 0
+            if forced:
+                noise = max(noise, 1)
             for i in range(noise):
-                raw = self.noise_item(rng, mi * 10 + i, spec, flags, here)
+                raw = self.noise_item(rng, mi * 10 + i, spec, flags, here, "const" if forced and i == 0 else None)
                 pos = rng.randint(0, len(items))
                 src = Src()
                 src.t(raw)

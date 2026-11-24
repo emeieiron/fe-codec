@@ -446,6 +446,7 @@ class Gen:
         slot.skip_unknown = True
         self.map_models(slot)
         self.payload_models()
+        self.rare_models(slot)
         return spec
 
     def map_models(self, slot):
@@ -471,6 +472,37 @@ class Gen:
                                      len(user.fields) + 1, "pub"))
         spec.models.append(user)
 
+
+    def rare_models(self, slot):
+        """Features that random types reach only two or three times in 20 seeds get a record of their
+        own in one seed of four, from a stream apart from the rest, so no other model changes: group 0
+        has an array of a `Copy` record and an Option of a tuple, group 1 lists (capacity zero, nested,
+        of arrays), group 2 generics (an array of Option of a parameter, instantiated with a record and
+        with another generic), group 3 a record with no fields. `slot` is a `Copy` record."""
+        spec, seed = self.spec, self.seed
+        rng = random.Random("rare/%d" % seed)
+        group = seed % 4
+        words = rng.sample(FIELD_WORDS, 6)
+        u8 = Int(False, 8)
+
+        def record(name, types, generics=()):
+            m = Model("%s%d" % (name, len(spec.models)), "record", rng.randrange(spec.modules))
+            m.generics = list(generics)
+            m.fields = [Field(w, t, i + 1, "pub") for i, (w, t) in enumerate(zip(words, types))]
+            spec.models.append(m)
+            return m
+
+        if group == 0:
+            record("Rare", [("arr", ("ref", slot.name, ()), 2), ("opt", ("tup", (BOOL, u8)))])
+        elif group == 1:
+            record("Lists", [("list", u8, 0), ("list", ("list", u8, 2), 2), ("list", ("arr", u8, 2), 2)])
+        elif group == 2:
+            cell = record("Cell", [("arr", ("opt", ("param", "T")), "N")], [(False, "T", False), (True, "N", False)])
+            outer = record("Outer", [("opt", ("param", "T")), ("param", "T")], [(False, "T", False)])
+            inner = ("ref", cell.name, (u8, 2))
+            record("Uses", [("ref", cell.name, (("ref", slot.name, ()), 2)), ("ref", outer.name, (inner,))])
+        else:
+            record("Void", [])
 
     def payload_models(self):
         """Rare enum features come from random types too rarely to count on, so every spec also gets
