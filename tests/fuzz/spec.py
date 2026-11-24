@@ -19,6 +19,10 @@ Types are tuples:
 
 A map's value is a list of (key, value) pairs in the order they are inserted, which is never the
 key order of two or more of them. Keys are Python ints, strs, and bytes (addr and packed).
+
+An enum's value is the name of a variant with no payload, and a `Var` for any other: the payload of
+a tuple variant of one element is that element's value, of several a list of them, and of a record
+variant a dict by field name.
 """
 
 import contextlib
@@ -63,10 +67,37 @@ class Field:
 
 
 class Variant:
-    def __init__(self, name, vid, id_style="dec"):
+    """A variant of an enum. `kind` is 'unit', 'tuple' (with `elems`, 1 or more types) or 'record'
+    (with `fields`, as many as 0; they are `pub`, and `explicit_fields` says whether each carries
+    #[codec_id]; their IDs are separate from the enum's)."""
+
+    def __init__(self, name, vid, id_style="dec", kind="unit", elems=(), fields=(), explicit_fields=False):
         self.name = name
         self.id = vid
         self.id_style = id_style
+        self.kind = kind
+        self.elems = list(elems)
+        self.fields = list(fields)
+        self.explicit_fields = explicit_fields
+
+    def sorted_fields(self):
+        return sorted(self.fields, key=lambda f: f.id)
+
+    def payload_types(self):
+        return self.elems if self.kind == "tuple" else [f.ty for f in self.fields]
+
+
+class Var:
+    """The value of a variant that has a payload (see the module's docstring)."""
+
+    __slots__ = ("name", "payload")
+
+    def __init__(self, name, payload):
+        self.name = name
+        self.payload = payload
+
+    def __repr__(self):
+        return "Var(%r, %r)" % (self.name, self.payload)
 
 
 class Model:
@@ -92,6 +123,14 @@ class Model:
     @property
     def is_generic(self):
         return bool(self.generics)
+
+    @property
+    def has_payload(self):
+        return any(v.kind != "unit" for v in self.variants)
+
+    def payload_types(self):
+        """The types of every element and field of an enum's variants."""
+        return [t for v in self.variants for t in v.payload_types()]
 
     def sorted_fields(self):
         return sorted(self.fields, key=lambda f: f.id)
@@ -199,9 +238,10 @@ def instance_fields(spec, t):
 
 
 def weight(spec, t):
-    """How many type nodes `t` expands to: scalars and enums count 1, arrays count their length
-    times their element, and a record is 1 plus its fields, instance arguments substituted. A const
-    parameter used as a length counts as 3."""
+    """How many type nodes `t` expands to: scalars and enums without payloads count 1, arrays count
+    their length times their element, and a record is 1 plus its fields, instance arguments
+    substituted; an enum with payloads is 1 plus its payload types. A const parameter used as a
+    length counts as 3."""
     k = t[0]
     if k == "opt":
         return 1 + weight(spec, t[1])
@@ -213,7 +253,39 @@ def weight(spec, t):
         return 1 + sum(weight(spec, e) for e in t[1])
     if k == "ref" and spec.model(t[1]).is_record:
         return 1 + sum(weight(spec, ft) for _, ft, _ in instance_fields(spec, t))
+    if k == "ref":
+        return 1 + sum(weight(spec, pt) for pt in spec.model(t[1]).payload_types())
     return 1
+
+
+def depth(spec, t):
+    """How many containers deep a value of type `t` nests in JSON and CBOR, which the default limits
+    cap at 32: a record, array, list, map, tuple and the wrapper of a variant with a payload are
+    one each."""
+    k = t[0]
+    if k == "opt":
+        return depth(spec, t[1])
+    if k in ("arr", "list"):
+        return 1 + depth(spec, t[1])
+    if k == "map":
+        return 1 + depth(spec, t[2])
+    if k == "tup":
+        return 1 + max(depth(spec, e) for e in t[1])
+    if k == "ref":
+        m = spec.model(t[1])
+        if m.is_record:
+            return 1 + max([depth(spec, ft) for _, ft, _ in instance_fields(spec, t)], default=0)
+        best = 0
+        for v in m.variants:
+            if v.kind == "tuple":
+                inner = depth(spec, v.elems[0]) if len(v.elems) == 1 else 1 + max(depth(spec, e) for e in v.elems)
+            elif v.kind == "record":
+                inner = 1 + max([depth(spec, f.ty) for f in v.fields], default=0)
+            else:
+                continue
+            best = max(best, 1 + inner)
+        return best
+    return 0
 
 
 def is_copy(spec, t):
@@ -268,6 +340,9 @@ def closure_models(spec, t, out=None):
                 env = {g[1]: a for g, a in zip(m.generics, w[2])}
                 for f in m.fields:
                     closure_models(spec, subst(f.ty, env), out)
+            else:
+                for pt in m.payload_types():
+                    closure_models(spec, pt, out)
     return out
 
 
@@ -290,6 +365,9 @@ def instances(spec):
         if m.is_record and not m.generics:
             for f in m.fields:
                 see(f.ty)
+        elif not m.is_record:
+            for pt in m.payload_types():
+                see(pt)
     return found
 
 
@@ -364,9 +442,81 @@ def gen_value(spec, rng, t):
     if k == "ref":
         m = spec.model(t[1])
         if not m.is_record:
-            return rng.choice(m.variants).name
+            return gen_variant(spec, rng, rng.choice(m.variants))
         return {name: gen_value(spec, rng, ft) for name, ft, _ in instance_fields(spec, t)}
     raise ValueError(t)
+
+
+def gen_variant(spec, rng, variant):
+    """A value of `variant`: its name, or a `Var`."""
+    if variant.kind == "unit":
+        return variant.name
+    if variant.kind == "tuple":
+        values = [gen_value(spec, rng, e) for e in variant.elems]
+        return Var(variant.name, values[0] if len(values) == 1 else values)
+    return Var(variant.name, {f.name: gen_value(spec, rng, f.ty) for f in variant.fields})
+
+
+def find_variant(m, name):
+    return next(x for x in m.variants if x.name == name)
+
+
+def variant_fields(variant):
+    """The fields of a record variant: [(name, type, id)] in ascending ID order."""
+    return [(f.name, f.ty, f.id) for f in variant.sorted_fields()]
+
+
+def tuple_parts(variant, payload):
+    """[(type, value)] for the elements of a tuple variant's payload."""
+    if len(variant.elems) == 1:
+        return [(variant.elems[0], payload)]
+    return list(zip(variant.elems, payload))
+
+
+def payload_parts(variant, payload):
+    """[(type, value)] for the elements of a tuple variant, or the fields of a record variant in ID
+    order."""
+    if variant.kind == "tuple":
+        return tuple_parts(variant, payload)
+    return [(ft, payload[name]) for name, ft, _ in variant_fields(variant)]
+
+
+def nodes(spec, t, v):
+    """Every (type, value) inside the value `v` of type `t`, `t` itself first. A map's keys are
+    left out, which are never records or enums."""
+    yield t, v
+    k = t[0]
+    if k == "opt":
+        if v is not None:
+            yield from nodes(spec, t[1], v)
+    elif k == "arr" or k == "list":
+        for x in v:
+            yield from nodes(spec, t[1], x)
+    elif k == "map":
+        for _, x in v:
+            yield from nodes(spec, t[2], x)
+    elif k == "tup":
+        for e, x in zip(t[1], v):
+            yield from nodes(spec, e, x)
+    elif k == "ref":
+        m = spec.model(t[1])
+        if m.is_record:
+            for name, ft, _ in instance_fields(spec, t):
+                yield from nodes(spec, ft, v[name])
+        elif isinstance(v, Var):
+            for ft, x in payload_parts(find_variant(m, v.name), v.payload):
+                yield from nodes(spec, ft, x)
+
+
+def payload_variants_in(spec, t, v):
+    """How many variants with a payload the value `v` holds, anywhere."""
+    return sum(1 for nt, nv in nodes(spec, t, v) if nt[0] == "ref" and isinstance(nv, Var))
+
+
+def payload_enum_units_in(spec, t, v):
+    """How many variants with no payload, of enums that have other variants with one, `v` holds."""
+    return sum(1 for nt, nv in nodes(spec, t, v)
+               if nt[0] == "ref" and isinstance(nv, str) and spec.model(nt[1]).has_payload)
 
 
 def key_order(keys):
@@ -412,6 +562,9 @@ def maps_in(spec, t, v):
     elif k == "ref" and spec.model(t[1]).is_record:
         for name, ft, _ in instance_fields(spec, t):
             out.extend(maps_in(spec, ft, v[name]))
+    elif k == "ref" and isinstance(v, Var):
+        for ft, x in payload_parts(find_variant(spec.model(t[1]), v.name), v.payload):
+            out.extend(maps_in(spec, ft, x))
     return out
 
 
@@ -441,7 +594,13 @@ def to_js(spec, t, v):
         return [to_js(spec, e, x) for e, x in zip(t[1], v)]
     m = spec.model(t[1])
     if not m.is_record:
-        return v
+        if not isinstance(v, Var):
+            return v
+        variant = find_variant(m, v.name)
+        if variant.kind == "tuple":
+            parts = [to_js(spec, et, x) for et, x in tuple_parts(variant, v.payload)]
+            return reference.Tag(v.name, parts[0] if len(parts) == 1 else parts)
+        return reference.Tag(v.name, {name: to_js(spec, ft, v.payload[name]) for name, ft, _ in variant_fields(variant)})
     return {name: to_js(spec, ft, v[name]) for name, ft, _ in instance_fields(spec, t)}
 
 
@@ -459,7 +618,13 @@ def to_cbor(spec, t, v):
         return [to_cbor(spec, e, x) for e, x in zip(t[1], v)]
     m = spec.model(t[1])
     if not m.is_record:
-        return next(x.id for x in m.variants if x.name == v)
+        if not isinstance(v, Var):
+            return find_variant(m, v).id
+        variant = find_variant(m, v.name)
+        if variant.kind == "tuple":
+            parts = [to_cbor(spec, et, x) for et, x in tuple_parts(variant, v.payload)]
+            return reference.Tag(variant.id, parts[0] if len(parts) == 1 else parts)
+        return reference.Tag(variant.id, {fid: to_cbor(spec, ft, v.payload[name]) for name, ft, fid in variant_fields(variant)})
     return {fid: to_cbor(spec, ft, v[name]) for name, ft, fid in instance_fields(spec, t)}
 
 
@@ -504,8 +669,9 @@ def junk_cbor(rng, depth=0):
 
 
 def to_cbor_with_unknown(spec, rng, t, v, added):
-    """`to_cbor`, with unknown fields added to every record marked #[codec_skip_unknown]: IDs the
-    record does not use, before, between and after its own. `added` counts them."""
+    """`to_cbor`, with unknown fields added to every record, and every record variant of an enum,
+    marked #[codec_skip_unknown]: IDs the record does not use, before, between and after its own.
+    `added` counts them: `added[0]` all, `added[1]` those in a record variant."""
     k = t[0]
     if k == "opt":
         return None if v is None else to_cbor_with_unknown(spec, rng, t[1], v, added)
@@ -515,20 +681,34 @@ def to_cbor_with_unknown(spec, rng, t, v, added):
         return reference.Map({key: to_cbor_with_unknown(spec, rng, t[2], x, added) for key, x in v})
     if k == "tup":
         return [to_cbor_with_unknown(spec, rng, e, x, added) for e, x in zip(t[1], v)]
-    if k != "ref" or not spec.model(t[1]).is_record:
+    if k != "ref":
         return to_cbor(spec, t, v)
     m = spec.model(t[1])
-    out = {fid: to_cbor_with_unknown(spec, rng, ft, v[name], added) for name, ft, fid in instance_fields(spec, t)}
-    if m.skip_unknown:
-        top = max(out, default=0)
-        # Gaps among the small IDs (the range is cut short, since an ID may be 2 ** 64 - 1), and a
-        # few far above the record's own.
-        free = [i for i in range(1, min(top, 1000) + 3) if i not in out]
-        free += [i for i in sorted({top + 1000, 2 ** 32 + top, 2 ** 64 - 1}) if i not in out and i < 2 ** 64]
-        for i in rng.sample(free, rng.randint(1, min(3, len(free)))):
-            out[i] = junk_cbor(rng)
-            added[0] += 1
-    return out
+
+    def fields(items, values, in_variant):
+        out = {fid: to_cbor_with_unknown(spec, rng, ft, values[name], added) for name, ft, fid in items}
+        if m.skip_unknown:
+            top = max(out, default=0)
+            # Gaps among the small IDs (the range is cut short, since an ID may be 2 ** 64 - 1), and a
+            # few far above the record's own.
+            free = [i for i in range(1, min(top, 1000) + 3) if i not in out]
+            free += [i for i in sorted({top + 1000, 2 ** 32 + top, 2 ** 64 - 1}) if i not in out and i < 2 ** 64]
+            for i in rng.sample(free, rng.randint(1, min(3, len(free)))):
+                out[i] = junk_cbor(rng)
+                added[0] += 1
+                if in_variant:
+                    added[1] += 1
+        return out
+
+    if m.is_record:
+        return fields(instance_fields(spec, t), v, False)
+    if not isinstance(v, Var):
+        return to_cbor(spec, t, v)
+    variant = find_variant(m, v.name)
+    if variant.kind == "tuple":
+        parts = [to_cbor_with_unknown(spec, rng, et, x, added) for et, x in tuple_parts(variant, v.payload)]
+        return reference.Tag(variant.id, parts[0] if len(parts) == 1 else parts)
+    return reference.Tag(variant.id, fields(variant_fields(variant), v.payload, True))
 
 
 def json_bytes(spec, t, v):
@@ -547,8 +727,9 @@ WS = [" ", "\t", "\n", "\r", "  ", " \n\t"]
 
 def noisy_json(spec, rng, t, v, drop=None, counter=None, added=None):
     """Compact-JSON-equivalent text of `v`. `drop` is (occurrence, field name): that field of that
-    record occurrence (numbered in visiting order) is left out. A record marked
-    #[codec_skip_unknown] also gets members it does not know; `added` counts them."""
+    record or record variant occurrence (numbered in visiting order) is left out. A record marked
+    #[codec_skip_unknown], and each record variant of an enum so marked, also gets members it does
+    not know; `added` counts them: `added[0]` all, `added[1]` those in a record variant."""
     counter = counter if counter is not None else [0]
 
     def ws():
@@ -618,24 +799,43 @@ def noisy_json(spec, rng, t, v, drop=None, counter=None, added=None):
             items = [ws() + go(e, x) + ws() for e, x in zip(t[1], v)]
             return "[" + ws() + ",".join(items) + ws() + "]"
         m = spec.model(t[1])
-        if not m.is_record:
+        if m.is_record:
+            return obj(instance_fields(spec, t), v, m.skip_unknown, False)
+        if not isinstance(v, Var):
             return '"' + v + '"'
+        # A variant with a payload: an object of one member.
+        variant = find_variant(m, v.name)
+        if variant.kind == "tuple":
+            parts = [go(et, x) for et, x in tuple_parts(variant, v.payload)]
+            if len(parts) == 1:
+                payload = parts[0]
+            else:
+                payload = "[" + ws() + ",".join(ws() + p + ws() for p in parts) + ws() + "]"
+        else:
+            payload = obj(variant_fields(variant), v.payload, m.skip_unknown, True)
+        return "{" + ws() + '"' + v.name + '"' + ws() + ":" + ws() + payload + ws() + "}"
+
+    def obj(fields, v, skip_unknown, in_variant):
+        """The object of a record's or a record variant's fields: members in any order, an optional
+        field that is `None` left out or `null`."""
         occurrence = counter[0]
         counter[0] += 1
         members = []
-        for name, ft, _ in instance_fields(spec, t):
+        for name, ft, _ in fields:
             if drop is not None and drop[0] == occurrence and drop[1] == name:
                 continue
             if ft[0] == "opt" and v[name] is None and rng.random() < 0.5:
                 continue
             members.append(ws() + '"' + name + '"' + ws() + ":" + ws() + go(ft, v[name]) + ws())
-        if m.skip_unknown and added is not None:
-            known = {name for name, _, _ in instance_fields(spec, t)}
+        if skip_unknown and added is not None:
+            known = {name for name, _, _ in fields}
             for i in range(rng.randint(1, 3)):
                 name = rng.choice(["unknown_%d" % i, "extra", "k" * rng.randint(32, 40)])
                 if name not in known:
                     members.append(ws() + '"' + name + '"' + ws() + ":" + ws() + junk_json(rng) + ws())
                     added[0] += 1
+                    if in_variant:
+                        added[1] += 1
         rng.shuffle(members)
         return "{" + ws() + ",".join(members) + ws() + "}"
 
@@ -643,8 +843,9 @@ def noisy_json(spec, rng, t, v, drop=None, counter=None, added=None):
 
 
 def record_occurrences(spec, t, v, out=None, in_maps=None, under_map=False):
-    """[(occurrence, record type, value)] for every record in `v`, in visiting order. The numbers
-    of the records that lie inside the value of a map are added to the set `in_maps`."""
+    """[(occurrence, fields, value, is_variant)] for every record and record variant in `v`, in
+    visiting order, where `fields` is [(name, type, id)] and `value` the dict of their values. The
+    numbers of the ones that lie inside the value of a map are added to the set `in_maps`."""
     out = [] if out is None else out
     k = t[0]
     if k == "opt":
@@ -659,18 +860,41 @@ def record_occurrences(spec, t, v, out=None, in_maps=None, under_map=False):
     elif k == "tup":
         for e, x in zip(t[1], v):
             record_occurrences(spec, e, x, out, in_maps, under_map)
-    elif k == "ref" and spec.model(t[1]).is_record:
+    elif k == "ref":
+        m = spec.model(t[1])
+        is_variant = not m.is_record
+        if m.is_record:
+            fields, values = instance_fields(spec, t), v
+        elif isinstance(v, Var) and find_variant(m, v.name).kind == "record":
+            fields, values = variant_fields(find_variant(m, v.name)), v.payload
+        elif isinstance(v, Var):
+            for ft, x in tuple_parts(find_variant(m, v.name), v.payload):
+                record_occurrences(spec, ft, x, out, in_maps, under_map)
+            return out
+        else:
+            return out
         if under_map and in_maps is not None:
             in_maps.add(len(out))
-        out.append((len(out), t, v))
-        for name, ft, _ in instance_fields(spec, t):
-            record_occurrences(spec, ft, v[name], out, in_maps, under_map)
+        out.append((len(out), fields, values, is_variant))
+        for name, ft, _ in fields:
+            record_occurrences(spec, ft, values[name], out, in_maps, under_map)
     return out
 
 
 def dropped_value(spec, t, v, occurrence, name):
-    """`v` with field `name` of the record occurrence set to None (an optional field)."""
+    """`v` with field `name` of the record or record variant occurrence set to None (an optional
+    field)."""
     count = [0]
+
+    def fields_of(fields, values):
+        mine = count[0]
+        count[0] += 1
+        out = {}
+        for fname, ft, _ in fields:
+            out[fname] = go(ft, values[fname])
+        if mine == occurrence:
+            out[name] = None
+        return out
 
     def go(t, v):
         k = t[0]
@@ -682,15 +906,16 @@ def dropped_value(spec, t, v, occurrence, name):
             return [(key, go(t[2], x)) for key, x in v]
         if k == "tup":
             return [go(e, x) for e, x in zip(t[1], v)]
-        if k == "ref" and spec.model(t[1]).is_record:
-            mine = count[0]
-            count[0] += 1
-            out = {}
-            for fname, ft, _ in instance_fields(spec, t):
-                out[fname] = go(ft, v[fname])
-            if mine == occurrence:
-                out[name] = None
-            return out
+        if k == "ref":
+            m = spec.model(t[1])
+            if m.is_record:
+                return fields_of(instance_fields(spec, t), v)
+            if isinstance(v, Var):
+                variant = find_variant(m, v.name)
+                if variant.kind == "record":
+                    return Var(v.name, fields_of(variant_fields(variant), v.payload))
+                parts = [go(et, x) for et, x in tuple_parts(variant, v.payload)]
+                return Var(v.name, parts[0] if len(parts) == 1 else parts)
         return v
 
     return go(t, v)
@@ -768,6 +993,6 @@ def eligible_for_eip712(spec, m):
                     if w[0] == "packed" and not 1 <= w[1] <= 32:
                         return False
         else:
-            if any(x.id > 255 for x in c.variants):
+            if c.has_payload or any(x.id > 255 for x in c.variants):
                 return False
     return structs <= 8  # the generic path holds 8 struct types per message

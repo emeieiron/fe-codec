@@ -295,16 +295,24 @@ class Renderer:
         oneline = (not m.explicit and rng.random() < 0.2) or not fields
         if oneline and fields:
             self.stats["one-line struct"] += 1
+        self.members(s, rng, style, fields, m.explicit, oneline, m.name, "    ")
+        s.g(" " if oneline else "\n")
+        s.t("}")
+        return s
+
+    def members(self, s, rng, style, fields, explicit, oneline, key, indent):
+        """The fields of a struct or of a record variant, each with its `#[codec_id]` if `explicit`.
+        What a field's own text looks like depends on `key` and its name, not on where it is
+        declared."""
         for i, f in enumerate(fields):
-            # What a field's own text looks like must not depend on where the field is declared.
-            frng = random.Random("%s/%s/%s" % (self.seed, m.name, f.name))
+            frng = random.Random("%s/%s/%s" % (self.seed, key, f.name))
             if oneline:
                 s.g(" ")
             else:
-                s.g(self.member_gap(rng, doc_ok=True))
-            if m.explicit:
+                s.g(self.member_gap(rng, doc_ok=True, indent=indent))
+            if explicit:
                 self.codec_id_attr(s, f.id, f.id_style, frng, style)
-                s.g(rng.choice(["\n    ", "\n    ", "\n\n    "]) if not oneline else "\n", "fattr")
+                s.g(rng.choice(["\n" + indent, "\n" + indent, "\n\n" + indent]) if not oneline else "\n", "fattr")
             self.vis(s, f.vis, rng)
             s.g(" ", "h")
             s.t(f.name)
@@ -314,13 +322,18 @@ class Renderer:
             if i + 1 < len(fields) or rng.random() < 0.6:
                 s.g(self.tight_or_space(rng, 0.03))
                 s.t(",")
-        s.g(" " if oneline else "\n")
-        s.t("}")
-        return s
 
     def enum(self, rng, m, style):
         s = Src()
-        s.t("#[serializable]")
+        attrs = ["#[serializable]"] + (["#[codec_skip_unknown]"] if m.skip_unknown else [])
+        if len(attrs) > 1 and rng.random() < 0.3:
+            rng.shuffle(attrs)
+        if len(attrs) > 1:
+            self.stats["several attributes on one item"] += 1
+        for i, a in enumerate(attrs):
+            if i:
+                s.g(rng.choice(["\n", "\n", "\n// attribute comment\n", "\n\n"]), "nl")
+            s.t(a)
         s.g(rng.choice(["\n", "\n", "\n// plain comment\n"]), "nl")
         self.vis(s, m.vis, rng)
         s.g(" ")
@@ -339,6 +352,27 @@ class Renderer:
                 self.codec_id_attr(s, v.id, v.id_style, rng, style)
                 s.g("\n    ", "fattr")
             s.t(v.name)
+            if v.kind == "tuple":
+                s.t("(")
+                s.g(rng.choice(["", " "]))
+                for j, e in enumerate(v.elems):
+                    if j:
+                        s.t(",")
+                        s.g(" " if rng.random() < 0.85 else "")
+                    self.emit_type(s, e, rng, style)
+                s.g(rng.choice(["", " "]))
+                s.t(")")
+            elif v.kind == "record":
+                s.g(" ")
+                s.t("{")
+                fields = list(v.fields)
+                perm = self.perm.get(m.name + "." + v.name)
+                if perm:
+                    fields = [fields[k] for k in perm]
+                inner = oneline or not fields or (not v.explicit_fields and rng.random() < 0.2)
+                self.members(s, rng, style, fields, v.explicit_fields, inner, m.name + "." + v.name, "        ")
+                s.g(" " if inner else "\n    ")
+                s.t("}")
             if i + 1 < len(m.variants) or rng.random() < 0.6:
                 s.g(self.tight_or_space(rng, 0.03))
                 s.t(",")
@@ -398,9 +432,7 @@ class Renderer:
         names = set()
         foreign = {}
         for m in models_here:
-            types = []
-            if m.is_record:
-                types = [f.ty for f in m.fields]
+            types = [f.ty for f in m.fields] if m.is_record else m.payload_types()
             for t in types:
                 for w in walk(t):
                     if w[0] == "text":
@@ -498,11 +530,17 @@ def finalize(src, crlf=False, fill=None):
 
 
 def permutation(spec, rng):
-    """A random order of the fields of every explicitly numbered record."""
+    """A random order of the fields of every explicitly numbered record and record variant."""
     perm = {}
     for m in spec.models:
         if m.is_record and m.explicit and len(m.fields) > 1:
             order = list(range(len(m.fields)))
             rng.shuffle(order)
             perm[m.name] = order
+        elif not m.is_record:
+            for v in m.variants:
+                if v.explicit_fields and len(v.fields) > 1:
+                    order = list(range(len(v.fields)))
+                    rng.shuffle(order)
+                    perm[m.name + "." + v.name] = order
     return perm

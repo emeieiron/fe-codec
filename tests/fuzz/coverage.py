@@ -31,6 +31,19 @@ REQUIRED = (
        "map: entries inserted out of key order", "map: empty value", "map: full to capacity",
        "map: of a record that skips unknown fields", "map: field left out inside a map value",
        "test: compact rejects maps", "test: maps have no EIP-712 form",
+       "type: enum with payloads", "enum: unit variant beside payload variants", "enum: tuple variant of one element",
+       "enum: tuple variant of several elements", "enum: record variant", "enum: record variant without fields",
+       "enum: record variant with an optional field", "enum: only tuple variants", "enum: only record variants",
+       "enum: payload enum impl Copy", "enum: payload enum as a struct field", "enum: payload enum in Option",
+       "enum: payload enum in an array", "enum: payload enum in a list", "enum: payload enum as a map value",
+       "enum: payload enum in a tuple", "enum: payload enum inside a variant's payload",
+       "enum: optional field left out of a record variant", "ids: on variants of an enum with payloads",
+       "ids: on the fields of a record variant", "skip: marked enum", "skip: unknown JSON members in a record variant",
+       "skip: unknown CBOR fields in a record variant", "test: required field missing from a record variant",
+       "test: optional field dropped from a record variant", "test: payload variant written bare is rejected",
+       "test: unit variant written as a wrapper is rejected", "test: wrapper of two entries is rejected",
+       "test: wrapper of no entry is rejected", "test: compact rejects payload variants",
+       "test: compact cannot read payload enums", "test: payload enums have no EIP-712 form",
        "ids: explicit decimal", "ids: explicit hex", "ids: explicit with underscores", "ids: on enum variants",
        "ids: sparse", "ids: out of order", "ids: wider than 32 bits",
        "eip712: root", "eip712: struct reached from a root", "eip712: array of structs", "eip712: nested arrays",
@@ -77,6 +90,8 @@ def count(spec, renderer_stats, extra):
                 c["ids: on enum variants"] += 1
                 for v in m.variants:
                     c["ids: explicit " + _style(v.id_style)] += 1
+            if m.has_payload:
+                payload_enum(spec, m, c)
             continue
         if m.explicit:
             ids = [f.id for f in m.fields]
@@ -91,6 +106,8 @@ def count(spec, renderer_stats, extra):
         for f in m.fields:
             if f.vis != "pub":
                 c["source: pub(ingot) field"] += 1
+            if is_payload_enum(spec, f.ty):
+                c["enum: payload enum as a struct field"] += 1
             kinds(spec, m, f.ty, c, top=True)
             for w in walk(f.ty):
                 if w[0] == "ref" and spec.model(w[1]).module != m.module:
@@ -108,6 +125,48 @@ def count(spec, renderer_stats, extra):
                 elif m.is_record:
                     c["generic: instantiated with a local record"] += 1
     return c
+
+
+def is_payload_enum(spec, t):
+    return t[0] == "ref" and not spec.model(t[1]).is_record and spec.model(t[1]).has_payload
+
+
+def payload_enum(spec, m, c):
+    """What an enum that has variants with a payload exercises."""
+    c["type: enum with payloads"] += 1
+    shapes = {v.kind for v in m.variants}
+    if "unit" in shapes:
+        c["enum: unit variant beside payload variants"] += 1
+    if shapes == {"tuple"}:
+        c["enum: only tuple variants"] += 1
+    if shapes == {"record"}:
+        c["enum: only record variants"] += 1
+    if m.copy_impl:
+        c["enum: payload enum impl Copy"] += 1
+    if m.explicit:
+        c["ids: on variants of an enum with payloads"] += 1
+    if m.skip_unknown and "record" in shapes:
+        c["skip: marked enum"] += 1
+    for v in m.variants:
+        if v.kind == "tuple":
+            c["enum: tuple variant of one element" if len(v.elems) == 1 else "enum: tuple variant of several elements"] += 1
+        if v.kind == "record":
+            c["enum: record variant"] += 1
+            if not v.fields:
+                c["enum: record variant without fields"] += 1
+            if any(f.ty[0] == "opt" for f in v.fields):
+                c["enum: record variant with an optional field"] += 1
+            if v.explicit_fields:
+                c["ids: on the fields of a record variant"] += 1
+                for f in v.fields:
+                    c["ids: explicit " + _style(f.id_style)] += 1
+        for t in v.payload_types():
+            if any(is_payload_enum(spec, w) for w in walk(t)):
+                c["enum: payload enum inside a variant's payload"] += 1
+            kinds(spec, m, t, c)
+            for w in walk(t):
+                if w[0] == "ref" and spec.model(w[1]).module != m.module:
+                    c["source: reference across modules"] += 1
 
 
 def _style(s):
@@ -140,6 +199,8 @@ def kinds(spec, model, t, c, top=False):
             c["list: Option of list"] += 1
         if t[1][0] == "map":
             c["map: Option of map"] += 1
+        if is_payload_enum(spec, t[1]):
+            c["enum: payload enum in Option"] += 1
         kinds(spec, model, t[1], c)
     elif k == "arr":
         c["type: [T; N]"] += 1
@@ -160,6 +221,8 @@ def kinds(spec, model, t, c, top=False):
             c["list: array of lists"] += 1
         if e[0] == "map":
             c["map: array of maps"] += 1
+        if is_payload_enum(spec, e):
+            c["enum: payload enum in an array"] += 1
         if e[0] == "ref":
             em = spec.model(e[1])
             if em.is_record:
@@ -190,6 +253,8 @@ def kinds(spec, model, t, c, top=False):
             c["list: of a generic parameter"] += 1
         if e[0] == "map":
             c["map: list of maps"] += 1
+        if is_payload_enum(spec, e):
+            c["enum: payload enum in a list"] += 1
         kinds(spec, model, e, c)
     elif k == "map":
         c["type: Map<K, V, N>"] += 1
@@ -216,6 +281,8 @@ def kinds(spec, model, t, c, top=False):
             c["map: nested"] += 1
         if e[0] == "param":
             c["map: of a generic parameter"] += 1
+        if is_payload_enum(spec, e):
+            c["enum: payload enum as a map value"] += 1
         kinds(spec, model, e, c)
     elif k == "tup":
         c["type: tuple"] += 1
@@ -224,6 +291,8 @@ def kinds(spec, model, t, c, top=False):
         if len(t[1]) == 8:
             c["tuple: eight elements"] += 1
         for e in t[1]:
+            if is_payload_enum(spec, e):
+                c["enum: payload enum in a tuple"] += 1
             if e[0] == "map":
                 c["map: tuple holding a map"] += 1
             if e[0] == "tup":

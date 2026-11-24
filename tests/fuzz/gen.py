@@ -1,6 +1,8 @@
 """Random model specs (see spec.py for the type language)."""
 
-from .spec import (ADDR, BOOL, Field, Int, Model, Spec, Variant, eligible_for_eip712,
+import random
+
+from .spec import (ADDR, BOOL, Field, Int, Model, Spec, Variant, depth, eligible_for_eip712,
                    instances, is_copy, type_param_needs_copy, weight)
 
 # The most type nodes a non-generic record may expand to. Records without tuples stay under about
@@ -10,6 +12,12 @@ from .spec import (ADDR, BOOL, Field, Int, Model, Spec, Variant, eligible_for_ei
 # records of 6 records of 4 integers does). That limit is not specific to tuples, so the generator
 # stays inside what it already produces for records, and still exercises every tuple feature.
 MAX_RECORD_WEIGHT = 200
+
+# The most type nodes the payloads of one enum may expand to, and the most containers deep a model
+# a field or payload may name can nest (the default limit is 32, and a variant with a payload is
+# one container more than the payload).
+MAX_ENUM_WEIGHT = 60
+MAX_REFERENCED_DEPTH = 8
 
 RECORD_WORDS = ["Account", "Order", "Ledger", "Packet", "Header", "Entry", "Quote", "Trade", "Vault",
                 "Claim", "Ticket", "Config", "Window", "Record", "Slot", "Frame", "Token", "Event"]
@@ -32,6 +40,7 @@ def long_name(rng, base):
 class Gen:
     def __init__(self, rng, seed=0):
         self.rng = rng
+        self.erng = random.Random("enums/%d" % seed)  # the payloads of enums, apart from the rest
         self.seed = seed
         self.spec = Spec()
 
@@ -62,6 +71,8 @@ class Gen:
             if plain and not m.plain:
                 continue
             if copy_only and not m.copy_impl:
+                continue
+            if depth(self.spec, ("ref", m.name, ())) > MAX_REFERENCED_DEPTH:
                 continue
             out.append(m)
         return out
@@ -248,6 +259,54 @@ class Gen:
         m.copy_path = rng.choice(["Copy", "Copy", "core::marker::Copy"])
         return m
 
+    def to_payload(self, m):
+        """Gives the variants of the unit-only enum `m` tuple and record payloads (all drawn from a
+        stream of their own, so the models around it come out as they would without payloads): each
+        becomes a unit, tuple or record variant, with at least one that is not unit. Variant IDs stay;
+        field IDs of a record variant are explicit in some. The payloads are `Copy` if `m` is."""
+        saved, self.rng = self.rng, self.erng
+        try:
+            rng = self.rng
+            pool = rng.choice([("unit", "tuple", "record")] * 3 + [("tuple",), ("record",), ("unit", "tuple"),
+                                                                  ("unit", "record"), ("tuple", "record")])
+            kinds = [rng.choice(pool) for _ in m.variants]
+            if all(k == "unit" for k in kinds):
+                kinds[rng.randrange(len(kinds))] = rng.choice([k for k in pool if k != "unit"])
+            generics = [x for x in self.spec.models if x.generics]
+            for v, kind in zip(m.variants, kinds):
+                v.kind = kind
+                if kind == "tuple":
+                    v.elems = [self.gen_type(0, False, m.copy_impl, False, [], [], generics)
+                               for _ in range(rng.choice([1, 1, 2, 3, 4]))]
+                elif kind == "record":
+                    count = rng.choice([0, 1, 2, 2, 3, 4]) if rng.random() < 0.9 else 0
+                    v.explicit_fields = count > 0 and rng.random() < 0.4
+                    fids = self.make_ids(count, 1, None) if v.explicit_fields else list(range(1, count + 1))
+                    for fname, fid in zip(rng.sample(FIELD_WORDS, count), fids):
+                        v.fields.append(Field(long_name(rng, fname),
+                                              self.gen_type(0, True, m.copy_impl, False, [], [], generics),
+                                              fid, "pub", self.id_style()))
+            # The payloads stay within what the generated decoders of a record of that weight manage.
+            slots = []
+            for v in m.variants:
+                slots.extend((v.elems, i) for i in range(len(v.elems)))
+                slots.extend((f, None) for f in v.fields)
+
+            def slot_type(slot):
+                holder, i = slot
+                return holder[i] if i is not None else holder.ty
+
+            while sum(weight(self.spec, slot_type(sl)) for sl in slots) > MAX_ENUM_WEIGHT:
+                holder, i = max(slots, key=lambda sl: weight(self.spec, slot_type(sl)))
+                if i is not None:
+                    holder[i] = self.scalar()
+                else:
+                    holder.ty = self.scalar()
+            if m.copy_impl and not all(is_copy(self.spec, t) for t in m.payload_types()):
+                raise AssertionError("a Copy enum was given a payload that is not")
+        finally:
+            self.rng = saved
+
     def record(self, name, module, plain, generic):
         rng = self.rng
         m = Model(name, "record", module)
@@ -344,6 +403,8 @@ class Gen:
                 name = name + "x" * (31 - len(name))
             if kind == "enum":
                 m = self.enum(name, module, plain)
+                if not plain and self.erng.random() < 0.7:
+                    self.to_payload(m)
             elif kind == "generic":
                 m = self.record(name, module, False, True)
             else:
@@ -379,8 +440,12 @@ class Gen:
         for m in spec.models:
             if m.is_record:
                 m.skip_unknown = self.rng.random() < 0.4
+        for m in spec.models:
+            if not m.is_record and any(v.kind == "record" for v in m.variants):
+                m.skip_unknown = self.erng.random() < 0.4
         slot.skip_unknown = True
         self.map_models(slot)
+        self.payload_models()
         return spec
 
     def map_models(self, slot):
@@ -407,6 +472,81 @@ class Gen:
         spec.models.append(user)
 
 
+    def payload_models(self):
+        """Rare enum features come from random types too rarely to count on, so every spec also gets
+        enums of every kind of variant (`Anchor`, which is `Copy`; `Solo`, with variants of one
+        kind; `Wrap`, which holds `Anchor`s in each place a payload can be) and a record holding
+        `PAYLOAD_PER_SPEC` places a payload enum can be, taken from `PAYLOAD_MENU` in turn, as for
+        maps. What varies with the seed: explicit variant IDs, explicit field IDs on a record variant,
+        and whether the enum skips unknown fields."""
+        rng, spec, seed = self.rng, self.spec, self.seed
+        n = len(spec.models)
+
+        def variant(name, kind, elems=(), fields=()):
+            return Variant(name, 0, "dec", kind, elems, [Field(f, t, 0, "pub") for f, t in fields])
+
+        def finish(m, ids, skip):
+            """Sets the IDs of the variants, and of the fields of each record variant."""
+            m.copy_impl = True
+            m.skip_unknown = skip
+            m.explicit = ids
+            order = self.make_ids(len(m.variants), 0, None) if ids else list(range(len(m.variants)))
+            style = self.id_style()
+            for v, vid in zip(m.variants, order):
+                v.id = vid
+                v.id_style = style if rng.random() < 0.6 else self.id_style()
+                v.explicit_fields = v.kind == "record" and len(v.fields) > 1 and (seed + vid) % 3 == 0
+                fids = (self.make_ids(len(v.fields), 1, None) if v.explicit_fields
+                        else list(range(1, len(v.fields) + 1)))
+                for f, fid in zip(v.fields, fids):
+                    f.id = fid
+                    f.id_style = self.id_style()
+            return m
+
+        names = rng.sample(VARIANT_WORDS, 12)
+        anchor = Model("Anchor%d" % n, "enum", rng.randrange(spec.modules))
+        anchor.variants = [variant(names[0], "unit"), variant(names[1], "tuple", [Int(False, 16)]),
+                           variant(names[2], "tuple", [Int(False, 8), ("text", 4)]),
+                           variant(names[3], "record", fields=[("alpha", Int(False, 8)), ("beta", ("opt", ("text", 4)))])]
+        finish(anchor, seed % 2 == 0, seed % 2 == 1)
+        solo = Model("Solo%d" % (n + 1), "enum", rng.randrange(spec.modules))
+        if seed % 2 == 0:  # only tuple variants
+            solo.variants = [variant(names[4], "tuple", [Int(True, 32)]),
+                             variant(names[5], "tuple", [BOOL, ("opt", Int(False, 8))])]
+        else:  # only record variants
+            solo.variants = [variant(names[4], "record", fields=[("gamma", Int(False, 8))]),
+                             variant(names[5], "record", fields=[("delta", ("opt", Int(False, 16))), ("rank", BOOL)]),
+                             variant(names[6], "record")]
+        finish(solo, seed % 3 == 1, seed % 4 == 1)
+        a = ("ref", anchor.name, ())
+        wrap = Model("Wrap%d" % (n + 2), "enum", rng.randrange(spec.modules))
+        wrap.variants = [variant(names[7], "unit"), variant(names[8], "tuple", [a]),
+                         variant(names[9], "tuple", [a, BOOL]),
+                         variant(names[10], "record", fields=[("first", a), ("many", ("list", a, 2)),
+                                                             ("maybe", ("opt", a))])]
+        finish(wrap, seed % 4 >= 2, seed % 2 == 0)
+        spec.models.extend([anchor, solo, wrap])
+        house = Model("Housed%d" % (n + 3), "record", rng.randrange(spec.modules))
+        first = (seed * PAYLOAD_PER_SPEC) % len(PAYLOAD_MENU)
+        names = rng.sample(FIELD_WORDS, PAYLOAD_PER_SPEC)
+        for i, name in enumerate(names):
+            house.fields.append(Field(name, PAYLOAD_MENU[(first + i) % len(PAYLOAD_MENU)](anchor.name, wrap.name,
+                                                                                         solo.name), i + 1, "pub"))
+        spec.models.append(house)
+        if seed % 3 == 0:
+            # Nested arrays and an array of structs in an EIP-712 root, which random types reach too
+            # rarely to count on.
+            leaf = Model("Leaf%d" % (n + 4), "record", rng.randrange(spec.modules))
+            leaf.plain = True
+            leaf.fields = [Field("a", Int(False, 8), 1, "pub"), Field("b", BOOL, 2, "pub")]
+            grid = Model("Grid%d" % (n + 5), "record", rng.randrange(spec.modules))
+            grid.plain = True
+            grid.fields = [Field("cells", ("arr", ("arr", Int(False, 8), 2), 2), 1, "pub"),
+                           Field("leaves", ("arr", ("ref", leaf.name, ()), 2), 2, "pub")]
+            grid.eip712 = True
+            spec.models.extend([leaf, grid])
+
+
 # Forms of map that reach rare cases, as functions of the name of a `Copy` record: a key of each
 # kind, a capacity of 0, and maps inside other types.
 def _int_key(bits):
@@ -430,6 +570,31 @@ MAP_MENU = (
        lambda slot: ("tup", (("map", Int(False, 8), BOOL, 2), BOOL))]
 )
 MAP_PER_SPEC = 5
+
+
+# Places a payload enum can be, as functions of the names of two `Copy` payload enums (`Anchor` and
+# `Wrap`, which holds `Anchor`s) and of one that has variants of one kind.
+def _enum(i):
+    return lambda anchor, wrap, solo: ("ref", (anchor, wrap, solo)[i], ())
+
+
+PAYLOAD_MENU = [
+    _enum(0), _enum(1), _enum(2),
+    lambda anchor, wrap, solo: ("opt", ("ref", anchor, ())),
+    lambda anchor, wrap, solo: ("opt", ("ref", wrap, ())),
+    lambda anchor, wrap, solo: ("arr", ("ref", anchor, ()), 2),
+    lambda anchor, wrap, solo: ("arr", ("ref", wrap, ()), 2),
+    lambda anchor, wrap, solo: ("list", ("ref", anchor, ()), 3),
+    lambda anchor, wrap, solo: ("list", ("ref", solo, ()), 2),
+    lambda anchor, wrap, solo: ("map", Int(False, 8), ("ref", anchor, ()), 2),
+    lambda anchor, wrap, solo: ("map", ADDR, ("ref", wrap, ()), 2),
+    lambda anchor, wrap, solo: ("tup", (("ref", anchor, ()), BOOL)),
+    lambda anchor, wrap, solo: ("tup", (("ref", solo, ()),)),
+    lambda anchor, wrap, solo: ("list", ("opt", ("ref", anchor, ())), 2),
+    lambda anchor, wrap, solo: ("opt", ("list", ("ref", anchor, ()), 2)),
+    lambda anchor, wrap, solo: ("arr", ("tup", (("ref", solo, ()), Int(False, 8))), 2),
+]
+PAYLOAD_PER_SPEC = 5
 
 
 def make_spec(rng, seed=0):
