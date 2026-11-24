@@ -1,0 +1,6 @@
+#[serializable]
+pub struct Item {
+    pub map: Map<u8, Child, 2>
+}
+pub struct Child { pub id: u8 }
+impl Copy for Child {}

@@ -254,6 +254,21 @@ pub fn list_element(_ file: ref File, _ ty: usize) -> Option<usize> {
     arg_ty(file, ty, 0)
 }
 
+/// The key and value type nodes of `Map<K, V, N>`, recognized by its last path segment.
+pub fn map_parts(_ file: ref File, _ ty: usize) -> Option<(usize, usize)> {
+    match ty_kind(file, ty) {
+        TyKind::Path => {},
+        _ => return Option::None,
+    }
+    if last_segment(ty_name(file, ty)) != "Map" || arg_run(file, ty).len < 2 {
+        return Option::None
+    }
+    match (arg_ty(file, ty, 0), arg_ty(file, ty, 1)) {
+        (Option::Some(key), Option::Some(value)) => Option::Some((key, value)),
+        _ => Option::None,
+    }
+}
+
 fn is_option(_ name: ref MemBuffer) -> bool {
     name == "Option" || name == "core::Option" || name == "core::option::Option"
 }
@@ -306,8 +321,8 @@ fn mark_copy(_ file: ref File, _ generics: mut MemVec<Generic>, _ name: ref MemB
 }
 
 /// Records that decoding builds arrays of every type parameter inside `ty` through `Option`,
-/// `List`, nested arrays and tuples, as `Option<T>`, `List<T, 2>`, `[T; 2]` and `(T, u8)` need
-/// `T: Copy` when they are array elements.
+/// `List`, `Map`, nested arrays and tuples, as `Option<T>`, `List<T, 2>`, `Map<K, T, 2>`,
+/// `[T; 2]` and `(T, u8)` need `T: Copy` when they are array elements.
 fn mark_copy_params(_ file: ref File, _ generics: mut MemVec<Generic>, _ ty: usize) {
     match ty_kind(file, ty) {
         TyKind::Path => {
@@ -322,6 +337,13 @@ fn mark_copy_params(_ file: ref File, _ generics: mut MemVec<Generic>, _ ty: usi
             }
             match list_element(file, ty) {
                 Option::Some(inner) => mark_copy_params(file, mut generics, inner),
+                Option::None => {},
+            }
+            match map_parts(file, ty) {
+                Option::Some((key, value)) => {
+                    mark_copy_params(file, mut generics, key)
+                    mark_copy_params(file, mut generics, value)
+                },
                 Option::None => {},
             }
         },
@@ -618,6 +640,11 @@ const COPY_YES: u8 = 0
 const COPY_NO: u8 = 1
 const COPY_UNKNOWN: u8 = 2
 
+// What stores an element or value that must be `Copy`.
+const STORE_ARRAY: u8 = 0
+const STORE_LIST: u8 = 1
+const STORE_MAP: u8 = 2
+
 impl Program {
     /// Parses the sources, which must parse without errors.
     pub fn parse(_ texts: ref MemVec<MemBuffer>) -> Result<Diagnostic, Program> {
@@ -843,7 +870,7 @@ impl Program {
                                 Option::None => {},
                             }
                             if !unroll {
-                                self.array_element(source, element, false, mut generics, site)?
+                                self.array_element(source, element, STORE_ARRAY, mut generics, site)?
                             } else {
                                 unrolled = true
                                 unrolled_element = element
@@ -1112,6 +1139,18 @@ impl Program {
                     }
                     i += 1
                 }
+                match map_parts(file, ty) {
+                    Option::Some((key, _)) => {
+                        if self.never_a_key(source, key) {
+                            return fail(
+                                source,
+                                site,
+                                format!("map keys must be unsigned integers, Text<N>, Address or PackedBytes<N>"),
+                            )
+                        }
+                    },
+                    Option::None => {},
+                }
                 Result::Ok(())
             },
             TyKind::Array => {
@@ -1147,6 +1186,29 @@ impl Program {
         }
     }
 
+    /// Whether `ty`, a map's key type, is one the generator recognizes as never a `MapKey`:
+    /// a signed integer, `bool`, `BoundedBuffer`, `Option`, a list, a map, an array, a tuple, or
+    /// a struct or enum declared in the sources. Anything else, such as a type parameter or a
+    /// type the generator cannot see, is left to the compiler.
+    fn never_a_key(self, _ source: usize, _ ty: usize) -> bool {
+        let file = ref self.files[source]
+        match ty_kind(file, ty) {
+            TyKind::Path => {
+                let name = ty_name(file, ty)
+                let last = last_segment(name)
+                if last == "bool" || last == "i8" || last == "i16" || last == "i32" || last == "i64"
+                    || last == "i128" || last == "i256" || last == "BoundedBuffer" || last == "List"
+                    || last == "Map" || is_option(name) {
+                    return true
+                }
+                self.local(file, name).is_some()
+            },
+            TyKind::Array => true,
+            TyKind::Tuple => true,
+            TyKind::Other => false,
+        }
+    }
+
     fn copyness(self, _ source: usize, _ ty: usize, _ generics: ref MemVec<Generic>) -> u8 {
         let file = ref self.files[source]
         match ty_kind(file, ty) {
@@ -1161,6 +1223,23 @@ impl Program {
                 if last == "List" {
                     return match list_element(file, ty) {
                         Option::Some(inner) => self.copyness(source, inner, generics),
+                        Option::None => COPY_UNKNOWN,
+                    }
+                }
+                // A map is `Copy` when its keys and values are.
+                if last == "Map" {
+                    return match map_parts(file, ty) {
+                        Option::Some((key, value)) => {
+                            let first = self.copyness(source, key, generics)
+                            let second = self.copyness(source, value, generics)
+                            if first == COPY_NO || second == COPY_NO {
+                                COPY_NO
+                            } else if first == COPY_UNKNOWN || second == COPY_UNKNOWN {
+                                COPY_UNKNOWN
+                            } else {
+                                COPY_YES
+                            }
+                        },
                         Option::None => COPY_UNKNOWN,
                     }
                 }
@@ -1208,13 +1287,13 @@ impl Program {
         }
     }
 
-    /// Type parameters an array or, when `list`, a list of `element` makes `Copy`, and an
-    /// error for a local non-`Copy` element.
+    /// Type parameters an array, list or map (`store`) of `element` makes `Copy`, and an error
+    /// for a local non-`Copy` element or value.
     fn array_element(
         self,
         _ source: usize,
         _ element: usize,
-        _ list: bool,
+        _ store: u8,
         _ generics: mut MemVec<Generic>,
         _ site: usize,
     ) -> Result<Diagnostic, ()> {
@@ -1234,11 +1313,18 @@ impl Program {
             mark_copy_params(file, mut generics, element)
         }
         if copyness == COPY_NO {
-            if list {
+            if store == STORE_LIST {
                 return fail(
                     source,
                     site,
                     format!("a list stores copies of its elements; implement Copy for the element type"),
+                )
+            }
+            if store == STORE_MAP {
+                return fail(
+                    source,
+                    site,
+                    format!("a map stores copies of its values; implement Copy for the value type"),
                 )
             }
             return fail(
@@ -1250,7 +1336,7 @@ impl Program {
         Result::Ok(())
     }
 
-    /// Checks every array and list inside `ty`, which the trait impls decode.
+    /// Checks every array, list and map inside `ty`, which the trait impls decode.
     fn nested_arrays(
         self,
         _ source: usize,
@@ -1262,7 +1348,16 @@ impl Program {
         match ty_kind(file, ty) {
             TyKind::Path => {
                 match list_element(file, ty) {
-                    Option::Some(element) => self.array_element(source, element, true, mut generics, site)?,
+                    Option::Some(element) => self.array_element(source, element, STORE_LIST, mut generics, site)?,
+                    Option::None => {},
+                }
+                match map_parts(file, ty) {
+                    Option::Some((key, value)) => {
+                        // Keys are `Copy` where they can be keys at all; a parameter key
+                        // needs the bound, as an array element does.
+                        mark_copy_params(file, mut generics, key)
+                        self.array_element(source, value, STORE_MAP, mut generics, site)?
+                    },
                     Option::None => {},
                 }
                 var i: usize = 0
@@ -1277,7 +1372,7 @@ impl Program {
             },
             TyKind::Array => {
                 let element = array_elem(file, ty)
-                self.array_element(source, element, false, mut generics, site)?
+                self.array_element(source, element, STORE_ARRAY, mut generics, site)?
                 self.nested_arrays(source, element, mut generics, site)
             },
             TyKind::Tuple => {

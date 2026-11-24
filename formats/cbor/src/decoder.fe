@@ -35,6 +35,16 @@ enum KeyOrder {
     Descending,
 }
 
+/// An array or map being read. A map also remembers where the key it is reading starts and
+/// the byte range of the key before it, to check that the keys ascend.
+pub struct Sequence { frame: Frame, key: usize, previous: usize, previous_end: usize }
+
+impl Sequence {
+    fn new(_ frame: own Frame) -> Self {
+        Self { frame, key: 0, previous: 0, previous_end: 0 }
+    }
+}
+
 pub struct CborDecoder<const N: usize> { input: ByteReader<N>, structure: Structure }
 
 impl<const N: usize> CborDecoder<N> {
@@ -167,6 +177,27 @@ impl<const N: usize> CborDecoder<N> {
         }
     }
 
+    /// Checks that the key at `key` to `key_end` sorts strictly after the one before it, at
+    /// `previous` to `previous_end`, which exists unless this is the first entry. A repeated
+    /// key is `DuplicateField` and one out of order `NonCanonical`, both at the key.
+    fn check_key_order(
+        self,
+        _ first: bool,
+        _ previous: usize,
+        _ previous_end: usize,
+        _ key: usize,
+        _ key_end: usize,
+    ) -> CodecResult<()> {
+        if first {
+            return Result::Ok(())
+        }
+        match self.compare_keys(previous, previous_end, key, key_end) {
+            KeyOrder::Ascending => Result::Ok(()),
+            KeyOrder::Equal => Result::Err(CodecError::at(kind: ErrorKind::DuplicateField, offset: key)),
+            KeyOrder::Descending => Result::Err(CodecError::at(kind: ErrorKind::NonCanonical, offset: key)),
+        }
+    }
+
     /// A map whose entries are skipped. Keys are items of any kind and must ascend in the
     /// bytes they are encoded as, as the keys of a record do.
     fn skip_map(mut self) -> CodecResult<()> {
@@ -179,21 +210,7 @@ impl<const N: usize> CborDecoder<N> {
             frame.take(key)?
             self.skip_value()?
             let key_end = self.offset()
-            if frame.taken() > 1 {
-                match self.compare_keys(previous, previous_end, key, key_end) {
-                    KeyOrder::Ascending => {},
-                    KeyOrder::Equal => {
-                        return Result::Err(
-                            CodecError::at(kind: ErrorKind::DuplicateField, offset: key),
-                        )
-                    },
-                    KeyOrder::Descending => {
-                        return Result::Err(
-                            CodecError::at(kind: ErrorKind::NonCanonical, offset: key),
-                        )
-                    },
-                }
-            }
+            self.check_key_order(frame.taken() == 1, previous, previous_end, key, key_end)?
             previous = key
             previous_end = key_end
             self.structure.member(key_end)?
@@ -218,7 +235,7 @@ impl<const N: usize> CborDecoder<N> {
 
 impl<const N: usize> Decoder for CborDecoder<N> {
     type Record = Frame
-    type Sequence = Frame
+    type Sequence = Sequence
 
     fn offset(self) -> usize {
         self.input.offset()
@@ -368,7 +385,9 @@ impl<const N: usize> Decoder for CborDecoder<N> {
         if major == 4 {
             var frame = self.begin(4)?
             while frame.remaining() != 0 {
-                self.element(mut frame)?
+                let at = self.offset()
+                self.structure.member(at)?
+                frame.take(at)?
                 self.skip_value()?
             }
             return self.end(frame)
@@ -455,44 +474,81 @@ impl<const N: usize> Decoder for CborDecoder<N> {
         self.end(record)
     }
 
-    fn begin_sequence(mut self, _ length: usize) -> CodecResult<Frame> {
+    fn begin_sequence(mut self, _ length: usize) -> CodecResult<Sequence> {
         let offset = self.offset()
         let frame = self.begin(4)?
         if frame.remaining() != length {
             return Result::Err(CodecError::at(kind: ErrorKind::InvalidLength, offset))
         }
-        Result::Ok(frame)
+        Result::Ok(Sequence::new(frame))
     }
 
-    fn element(mut self, _ sequence: mut Frame) -> CodecResult<()> {
+    fn element(mut self, _ sequence: mut Sequence) -> CodecResult<()> {
         let offset = self.offset()
         self.structure.member(offset)?
-        sequence.take(offset)
+        sequence.frame.take(offset)
     }
 
-    fn end_sequence(mut self, _ sequence: own Frame) -> CodecResult<()> {
-        self.end(sequence)
+    fn end_sequence(mut self, _ sequence: own Sequence) -> CodecResult<()> {
+        self.end(sequence.frame)
     }
 
     /// The array head gives the length, so an array longer than `capacity` is
     /// `CapacityExceeded` at the head, before any element is read. `Limits.max_items` is
     /// checked first.
-    fn begin_list(mut self, _ capacity: usize) -> CodecResult<Frame> {
+    fn begin_list(mut self, _ capacity: usize) -> CodecResult<Sequence> {
         let offset = self.offset()
         let frame = self.begin(4)?
         if frame.remaining() > capacity {
             return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset))
         }
-        Result::Ok(frame)
+        Result::Ok(Sequence::new(frame))
     }
 
-    fn next_element(mut self, _ sequence: mut Frame) -> CodecResult<bool> {
-        if sequence.remaining() == 0 {
+    fn next_element(mut self, _ sequence: mut Sequence) -> CodecResult<bool> {
+        if sequence.frame.remaining() == 0 {
             return Result::Ok(false)
         }
         let offset = self.offset()
         self.structure.member(offset)?
-        sequence.take(offset)?
+        sequence.frame.take(offset)?
         Result::Ok(true)
+    }
+
+    /// A definite-length map. As for a list, one with more entries than `capacity` is
+    /// `CapacityExceeded` at the head, after `Limits.max_items`.
+    fn begin_map(mut self, _ capacity: usize) -> CodecResult<Sequence> {
+        let offset = self.offset()
+        let frame = self.begin(5)?
+        if frame.remaining() > capacity {
+            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset))
+        }
+        Result::Ok(Sequence::new(frame))
+    }
+
+    fn next_key(mut self, _ map: mut Sequence) -> CodecResult<bool> {
+        if map.frame.remaining() == 0 {
+            return Result::Ok(false)
+        }
+        let offset = self.offset()
+        self.structure.member(offset)?
+        map.frame.take(offset)?
+        map.key = offset
+        Result::Ok(true)
+    }
+
+    /// The key has just been read, so its bytes are known: they must sort strictly after the
+    /// previous key's, as RFC 8949 section 4.2.1 orders them. A repeat is `DuplicateField` and
+    /// a key out of order `NonCanonical`, both at the key.
+    fn map_value(mut self, _ map: mut Sequence) -> CodecResult<()> {
+        let key_end = self.offset()
+        self.check_key_order(map.frame.taken() == 1, map.previous, map.previous_end, map.key, key_end)?
+        map.previous = map.key
+        map.previous_end = key_end
+        self.structure.member(key_end)
+    }
+
+    fn end_map(mut self, _ map: own Sequence) -> CodecResult<()> {
+        self.end(map.frame)
     }
 }

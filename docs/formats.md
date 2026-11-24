@@ -12,7 +12,7 @@ only that encoding (JSON also accepts insignificant variations listed below).
   keys (JSON, CBOR). Decoders accept the field missing or present as `null`.
 - **Decoders reject** unknown fields (unless the record is marked `#[codec_skip_unknown]`; see
   [below](#ignoring-unknown-fields)), duplicate fields, missing required fields, trailing
-  data after the root value, sequences of the wrong length, lists longer than their capacity,
+  data after the root value, sequences of the wrong length, lists and maps longer than their capacity, repeated map keys,
   and integers outside the field's type.
 - **Limits** cap nesting depth and entries per container. `Limits::standard()` allows 32
   nested containers and 256 entries. Buffers have a fixed capacity `N`, and the encoder
@@ -38,6 +38,7 @@ Output is compact UTF-8 with no whitespace. [RFC 8259](https://www.rfc-editor.or
 | Record | An object keyed by field name |
 | Array `[T; N]` | An array of exactly `N` values |
 | List `List<T, N>` | An array of 0 to `N` values |
+| Map `Map<K, V, N>` | An object of 0 to `N` members, in key order; see [Maps](#maps) |
 | Tuple `(T0, ..., Tn)` | An array of its elements in order, of exactly its length |
 
 Decoding also accepts whitespace between tokens, members in any order, `\u` escapes
@@ -65,6 +66,7 @@ Deterministic encoding as specified by
 | Record | A definite-length map keyed by field ID, keys ascending |
 | Array `[T; N]` | A definite-length array of exactly `N` items |
 | List `List<T, N>` | A definite-length array of 0 to `N` items |
+| Map `Map<K, V, N>` | A definite-length map of 0 to `N` entries whose keys are the keys' own encodings, ascending |
 | Tuple `(T0, ..., Tn)` | A definite-length array of its elements in order, of exactly its length |
 
 Fields of 64 bits or fewer accept only major types 0 and 1, so a bignum there is a
@@ -93,6 +95,30 @@ with `CapacityExceeded`:
 `Limits.max_items` applies to the elements of a list as to any container, and is checked
 first: with `max_items` below `N`, a list of `max_items + 1` elements is `CollectionLimit`
 in every format. A list is one level of `Limits.max_depth`.
+
+## Maps
+
+A `Map<K, V, N>` writes its entries in the order of `MapKey::before`, which is the order of the
+keys' deterministic CBOR encodings (RFC 8949 §4.2.1), so a map never shows how it was built.
+A decoder reads up to `N` entries and rejects more with `CapacityExceeded`; `Limits.max_items`
+is checked first, and a map is one level of `Limits.max_depth`.
+
+- **JSON** writes an object. A key is always a string: `Text` as itself, an unsigned integer as
+  its canonical decimal in quotes (`"42"`: no sign, no leading zeros, no spaces), and `Address`
+  and `PackedBytes` as `0x` hex. A key that is anything else, such as an unquoted number, is
+  `TypeMismatch`; a key whose digits are not canonical is `InvalidSyntax`, or
+  `IntegerOutOfRange` when it is negative or too large. Members may come in any order, as for
+  a record, and the map sorts them. A key that appears twice is `DuplicateField` at the second.
+  An extra entry is `CapacityExceeded` at its key. A trailing comma is `InvalidSyntax`.
+- **CBOR** writes a definite-length map. Keys are the keys' normal encodings and must strictly
+  ascend in bytewise order of those encodings: a key before its predecessor is `NonCanonical`,
+  and a repeat is `DuplicateField`, both at the key. The decoder compares the encoded bytes
+  as they stand in the input, as it does for the keys of a map it skips. A head counting more
+  than `N` entries is `CapacityExceeded` at the head, before any entry is read. An
+  indefinite-length or non-shortest head is `NonCanonical`, as for any map.
+- **Compact** has no maps: the example keeps the `Unsupported` defaults, because its decoder
+  sees the bytes of a key and not its type, and cannot enforce the order.
+- **EIP-712** has no map type; see [its notes](eip712.md).
 
 ## Schema evolution
 

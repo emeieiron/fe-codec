@@ -1,0 +1,35 @@
+use fe_codec_core::{List, Map, MapKey, Text}
+use core::bytes::PackedBytes
+use std::evm::Address
+
+#[serializable]
+pub struct Leg { pub from: u8, pub to: u8 }
+impl Copy for Leg {}
+#[serializable]
+pub struct Plain { pub id: u8 }
+
+#[serializable]
+pub struct Book {
+    pub by_id: Map<u8, u32, 8>,
+    pub by_small: Map<u16, Text<8>, 4>,
+    pub by_word: Map<u32, bool, 4>,
+    pub by_long: Map<u64, Leg, 4>,
+    pub by_wide: Map<u128, Option<u8>, 4>,
+    pub by_huge: Map<u256, (u8, Leg), 4>,
+    pub by_name: Map<Text<8>, List<u8, 2>, 4>,
+    pub by_owner: Map<Address, u64, 4>,
+    pub by_hash: Map<PackedBytes<4>, [u8; 2], 4>,
+    pub maybe: Option<Map<u8, Leg, 2>>,
+    pub maps: List<Map<u8, u8, 2>, 2>,
+    pub nested: Map<u8, Map<u8, u8, 2>, 2>,
+    pub fixed: [Map<u8, u8, 2>; 2],
+    pub tuple: (Map<u8, u8, 2>, bool),
+    pub path: fe_codec_core::Map<u8, u8, 2>,
+    pub inside: (Plain, Map<u8, Leg, 2>),
+}
+
+#[serializable]
+pub struct Table<K: MapKey, V, const N: usize> { pub rows: Map<K, V, N> }
+
+#[serializable]
+pub struct Wrapped<V> { pub rows: Option<Map<u8, V, 3>>, pub pairs: Map<u16, (V, u8), 2> }

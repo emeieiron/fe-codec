@@ -29,15 +29,17 @@ const MAX_WIDE_UNSIGNED: u256 = 0xffffffffffffffffffffffffffffffffffffffffffffff
 const MAX_WIDE_SIGNED: u256 = 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 
 pub struct Record { seen: usize }
-/// An array being read. A list has no expected length: `expected` is its capacity, and it
-/// ends where the array does.
+/// An array or object being read. A list or map has no expected length: `expected` is its
+/// capacity, and it ends where the array or object does.
 pub struct Sequence { expected: usize, seen: usize, list: bool }
 
-pub struct JsonDecoder<const N: usize> { input: ByteReader<N>, structure: Structure }
+/// `key` is set while a map key is read, which must be a string: text, an unsigned integer in
+/// quotes, or hex bytes.
+pub struct JsonDecoder<const N: usize> { input: ByteReader<N>, structure: Structure, key: bool }
 
 impl<const N: usize> JsonDecoder<N> {
     pub fn new(_ input: own BoundedBuffer<N>, _ limits: Limits) -> Self {
-        Self { input: ByteReader<N>::new(input), structure: Structure::new(limits) }
+        Self { input: ByteReader<N>::new(input), structure: Structure::new(limits), key: false }
     }
 
     pub fn finish(mut self) -> CodecResult<()> {
@@ -55,6 +57,23 @@ impl<const N: usize> JsonDecoder<N> {
 
     fn byte(mut self) -> CodecResult<u8> {
         self.input.read().map_err(CodecError::from_io)
+    }
+
+    /// Opens a value position for a kind of value that cannot be a map key: in key position
+    /// it is a `TypeMismatch` at the value.
+    fn value(mut self, _ offset: usize) -> CodecResult<()> {
+        if self.key {
+            return Result::Err(CodecError::at(kind: ErrorKind::TypeMismatch, offset))
+        }
+        self.structure.value(offset)
+    }
+
+    /// The opening quote of an unsigned integer in key position, if that is where it is.
+    fn key_quote(mut self) -> CodecResult<()> {
+        if self.key {
+            self.expect(b'"', ErrorKind::TypeMismatch)?
+        }
+        Result::Ok(())
     }
 
     fn peek(self) -> CodecResult<u8> {
@@ -118,7 +137,10 @@ impl<const N: usize> JsonDecoder<N> {
     }
 
     /// Rejects a fraction or exponent and checks what follows the digits.
-    fn integer_end(self) -> CodecResult<()> {
+    fn integer_end(mut self) -> CodecResult<()> {
+        if self.key {
+            return self.expect(b'"', ErrorKind::InvalidSyntax)
+        }
         if let Option::Some(byte) = self.input.peek() {
             if byte == b'.' || byte == b'e' || byte == b'E' {
                 return Result::Err(self.error(ErrorKind::Unsupported))
@@ -267,6 +289,9 @@ impl<const N: usize> JsonDecoder<N> {
     fn begin(mut self, _ marker: u8) -> CodecResult<()> {
         self.whitespace()?
         let offset = self.offset()
+        if self.key {
+            return Result::Err(CodecError::at(kind: ErrorKind::TypeMismatch, offset))
+        }
         self.structure.begin(offset)?
         self.expect(marker, ErrorKind::TypeMismatch)
     }
@@ -415,7 +440,7 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
     fn read_bool(mut self) -> CodecResult<bool> {
         self.whitespace()?
         let offset = self.offset()
-        self.structure.value(offset)?
+        self.value(offset)?
         match self.peek()? {
             b't' => {
                 self.word<4>("true")?
@@ -433,6 +458,7 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
         self.whitespace()?
         let offset = self.offset()
         self.structure.value(offset)?
+        self.key_quote()?
         let (negative, value) = self.integer()?
         if negative {
             return Result::Err(CodecError::at(kind: ErrorKind::IntegerOutOfRange, offset))
@@ -443,7 +469,7 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
     fn read_signed(mut self, _ bits: u16) -> CodecResult<i64> {
         self.whitespace()?
         let offset = self.offset()
-        self.structure.value(offset)?
+        self.value(offset)?
         let (negative, magnitude) = self.integer()?
         if magnitude > MAX_SIGNED + (negative as u64) {
             return Result::Err(CodecError::at(kind: ErrorKind::IntegerOutOfRange, offset))
@@ -461,6 +487,7 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
         self.whitespace()?
         let offset = self.offset()
         self.structure.value(offset)?
+        self.key_quote()?
         let (negative, value) = self.wide_integer()?
         if negative {
             return Result::Err(CodecError::at(kind: ErrorKind::IntegerOutOfRange, offset))
@@ -471,7 +498,7 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
     fn read_wide_signed(mut self, _ bits: u16) -> CodecResult<i256> {
         self.whitespace()?
         let offset = self.offset()
-        self.structure.value(offset)?
+        self.value(offset)?
         let (negative, magnitude) = self.wide_integer()?
         let limit = if negative { MAX_WIDE_SIGNED + 1 } else { MAX_WIDE_SIGNED }
         if magnitude > limit {
@@ -533,6 +560,9 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
 
     fn read_some(mut self) -> CodecResult<bool> {
         self.whitespace()?
+        if self.key {
+            return Result::Err(self.error(ErrorKind::TypeMismatch))
+        }
         if self.input.peek() == Option::Some(b'n') {
             let offset = self.offset()
             self.structure.value(offset)?
@@ -545,7 +575,7 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
     fn read_variant<V: Schema>(mut self) -> CodecResult<usize> {
         self.whitespace()?
         let offset = self.offset()
-        self.structure.value(offset)?
+        self.value(offset)?
         let name = self.member_name(ErrorKind::UnknownVariant, offset)?
         var index: usize = 0
         while let Option::Some(variant) = V::variant(index) {
@@ -562,6 +592,9 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
     fn skip_value(mut self) -> CodecResult<()> {
         self.whitespace()?
         let offset = self.offset()
+        if self.key {
+            return Result::Err(CodecError::at(kind: ErrorKind::TypeMismatch, offset))
+        }
         let first = self.peek()?
         if first == b'{' {
             return self.skip_object()
@@ -694,6 +727,46 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
         self.structure.member(offset)?
         sequence.seen += 1
         Result::Ok(true)
+    }
+
+    /// An object. A key is a string; see `JsonDecoder`.
+    fn begin_map(mut self, _ capacity: usize) -> CodecResult<Sequence> {
+        self.begin(b'{')?
+        Result::Ok(Sequence { expected: capacity, seen: 0, list: true })
+    }
+
+    /// An entry past the capacity is `CapacityExceeded` where its key starts. `Limits.max_items`
+    /// is checked first. Entries may come in any order.
+    fn next_key(mut self, _ map: mut Sequence) -> CodecResult<bool> {
+        self.whitespace()?
+        if self.peek()? == b'}' {
+            return Result::Ok(false)
+        }
+        self.separator(map.seen)?
+        // A comma must be followed by an entry.
+        if self.peek()? == b'}' {
+            return Result::Err(self.error(ErrorKind::InvalidSyntax))
+        }
+        let offset = self.offset()
+        if map.seen == map.expected {
+            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset))
+        }
+        self.structure.member(offset)?
+        map.seen += 1
+        self.key = true
+        Result::Ok(true)
+    }
+
+    fn map_value(mut self, _ map: mut Sequence) -> CodecResult<()> {
+        self.key = false
+        self.whitespace()?
+        self.expect(b':', ErrorKind::InvalidSyntax)?
+        let offset = self.offset()
+        self.structure.member(offset)
+    }
+
+    fn end_map(mut self, _ map: own Sequence) -> CodecResult<()> {
+        self.end(b'}', ErrorKind::InvalidSyntax)
     }
 }
 

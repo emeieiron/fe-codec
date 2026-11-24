@@ -44,6 +44,7 @@ Your encoder and decoder implement the data model:
 | `begin_record`, `field`, `end_record` | `begin_record`, `next_field`, `end_record` | Records, described by `Schema::field` |
 | `begin_sequence`, `element`, `end_sequence` | `begin_sequence`, `element`, `end_sequence` | Fixed-length arrays, and tuples, which are sequences of their arity |
 | `begin_list` | `begin_list`, `next_element` | `List<T, N>`, a sequence whose length is part of the value; see below |
+| `begin_map`, `map_key`, `map_value`, `end_map` | `begin_map`, `next_key`, `map_value`, `end_map` | `Map<K, V, N>`; see below |
 
 Choose `OMIT_NONE`: `true` if your format identifies fields by a key and can leave out
 `None` fields, `false` if fields are positional.
@@ -69,6 +70,21 @@ at it. Both decoder methods default to `Unsupported`. A decoder must fail with
 if it learns the length first, at the start of the list. Check `Limits.max_items` before
 the capacity so that every format reports the same error, as the first-party ones do.
 
+A map is written with `begin_map(length)`, then for each entry `map_key`, the key's own
+`serialize`, `map_value`, the value's, and `end_map`. The state is the same `Sequence` type
+the format uses for sequences. Entries arrive in `MapKey` order, which is the bytewise order
+of a deterministic CBOR map, so such a format writes them as they come. The decoder reads one
+with `begin_map(capacity)`, then `next_key`, which returns true when another entry follows,
+leaving the decoder at its key; the key's own `deserialize`; `map_value`, called once the key
+has been read, which is where a format that orders its keys by their bytes checks the order and
+repeats of the key it just read (CBOR does, and reports `NonCanonical` or `DuplicateField` at
+the key); the value's `deserialize`; and finally `end_map`. A format that does not order its
+maps accepts any order: the `Map` deserializer inserts each entry and fails with
+`DuplicateField` at a repeated key. A format that writes keys as strings, as JSON does, must
+decide what a key may be, and reject the rest. Every map method defaults to `Unsupported`, as
+for lists, and so does the compact example's, since its decoder cannot tell a key's order
+without its type. As for lists, check `Limits.max_items` before the capacity.
+
 ## Helpers from core
 
 - `ByteWriter<N>` and `ByteReader<N>` write and read bounded buffers.
@@ -87,7 +103,7 @@ the capacity so that every format reports the same error, as the first-party one
 A format that reads types rather than values, as EIP-712 does, implements `Describer`. Its
 `begin_tuple` and `end_tuple` default to `Unsupported`, so a format with no tuple type needs
 no code to reject them, and so do `begin_list` and `end_list` for a format with no dynamic
-arrays; EIP-712 writes lists as `T[]`.
+arrays; EIP-712 writes lists as `T[]`. `begin_map` and `end_map` default the same way, and EIP-712, which has no map type, rejects them naming the field.
 
 ## Rules a format must follow
 

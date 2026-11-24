@@ -23,11 +23,13 @@ use fe_codec_core::{
 }
 use fe_codec_io::{BoundedBuffer, ByteWriter}
 
-pub struct JsonEncoder<const N: usize> { output: ByteWriter<N>, structure: Structure }
+/// `key` is set while a map key is written, which must be a string: text, an unsigned integer
+/// in quotes, or hex bytes.
+pub struct JsonEncoder<const N: usize> { output: ByteWriter<N>, structure: Structure, key: bool }
 
 impl<const N: usize> JsonEncoder<N> {
     pub fn new(_ limits: Limits) -> Self {
-        Self { output: ByteWriter<N>::new(), structure: Structure::new(limits) }
+        Self { output: ByteWriter<N>::new(), structure: Structure::new(limits), key: false }
     }
 
     pub fn finish(own self) -> CodecResult<BoundedBuffer<N>> {
@@ -41,6 +43,23 @@ impl<const N: usize> JsonEncoder<N> {
 
     fn byte(mut self, _ byte: u8) -> CodecResult<()> {
         self.output.write(byte).map_err(CodecError::from_io)
+    }
+
+    /// Opens a value position for a kind of value that cannot be a map key, which is
+    /// `Unsupported` in key position.
+    fn value(mut self, _ offset: usize) -> CodecResult<()> {
+        if self.key {
+            return Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset))
+        }
+        self.structure.value(offset)
+    }
+
+    /// The quote around an unsigned integer in key position.
+    fn key_quote(mut self) -> CodecResult<()> {
+        if self.key {
+            self.byte(b'"')?
+        }
+        Result::Ok(())
     }
 
     fn bytes<const M: usize>(mut self, _ bytes: [u8; M]) -> CodecResult<()> {
@@ -132,6 +151,9 @@ impl<const N: usize> JsonEncoder<N> {
 
     fn begin(mut self, _ marker: u8, _ count: usize) -> CodecResult<Frame> {
         let offset = self.offset()
+        if self.key {
+            return Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset))
+        }
         self.structure.check_items(count, offset)?
         self.structure.begin(offset)?
         self.byte(marker)?
@@ -166,7 +188,7 @@ impl<const N: usize> Encoder for JsonEncoder<N> {
 
     fn write_bool(mut self, _ value: bool) -> CodecResult<()> {
         let offset = self.offset()
-        self.structure.value(offset)?
+        self.value(offset)?
         if value {
             self.bytes<4>("true")
         } else {
@@ -178,12 +200,14 @@ impl<const N: usize> Encoder for JsonEncoder<N> {
         let offset = self.offset()
         self.structure.value(offset)?
         checked_unsigned(value, bits, offset)?
-        self.decimal(value)
+        self.key_quote()?
+        self.decimal(value)?
+        self.key_quote()
     }
 
     fn write_signed(mut self, _ value: i64, _ bits: u16) -> CodecResult<()> {
         let offset = self.offset()
-        self.structure.value(offset)?
+        self.value(offset)?
         checked_signed(value, bits, offset)?
         if value < 0 {
             self.byte(b'-')?
@@ -198,12 +222,14 @@ impl<const N: usize> Encoder for JsonEncoder<N> {
         let offset = self.offset()
         self.structure.value(offset)?
         checked_wide_unsigned(value, bits, offset)?
-        self.wide_decimal(value)
+        self.key_quote()?
+        self.wide_decimal(value)?
+        self.key_quote()
     }
 
     fn write_wide_signed(mut self, _ value: i256, _ bits: u16) -> CodecResult<()> {
         let offset = self.offset()
-        self.structure.value(offset)?
+        self.value(offset)?
         checked_wide_signed(value, bits, offset)?
         if value < 0 {
             self.byte(b'-')?
@@ -245,17 +271,20 @@ impl<const N: usize> Encoder for JsonEncoder<N> {
 
     fn write_none(mut self) -> CodecResult<()> {
         let offset = self.offset()
-        self.structure.value(offset)?
+        self.value(offset)?
         self.bytes<4>("null")
     }
 
     fn write_some(mut self) -> CodecResult<()> {
+        if self.key {
+            return Result::Err(self.error(ErrorKind::Unsupported))
+        }
         Result::Ok(())
     }
 
     fn write_variant<V: Schema>(mut self, _ index: usize) -> CodecResult<()> {
         let offset = self.offset()
-        self.structure.value(offset)?
+        self.value(offset)?
         match V::variant(index) {
             Option::Some(variant) => self.name(variant.name),
             Option::None => Result::Err(self.error(ErrorKind::InvalidState)),
@@ -298,6 +327,31 @@ impl<const N: usize> Encoder for JsonEncoder<N> {
 
     fn end_sequence(mut self, _ sequence: own Frame) -> CodecResult<()> {
         self.end(b']', sequence)
+    }
+
+    /// An object whose members are the entries, in the map's order.
+    fn begin_map(mut self, _ length: usize) -> CodecResult<Frame> {
+        self.begin(b'{', length)
+    }
+
+    fn map_key(mut self, _ map: mut Frame) -> CodecResult<()> {
+        let offset = self.offset()
+        let first = map.taken() == 0
+        map.take(offset)?
+        self.separate(first, offset)?
+        self.key = true
+        Result::Ok(())
+    }
+
+    fn map_value(mut self, _ map: mut Frame) -> CodecResult<()> {
+        self.key = false
+        let offset = self.offset()
+        self.structure.member(offset)?
+        self.byte(b':')
+    }
+
+    fn end_map(mut self, _ map: own Frame) -> CodecResult<()> {
+        self.end(b'}', map)
     }
 }
 

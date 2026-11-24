@@ -1,5 +1,5 @@
 use core::bytes::PackedBytes
-use fe_codec_core::{BoundedBuffer, List, Text}
+use fe_codec_core::{BoundedBuffer, List, Map, MapKey, Text}
 use std::evm::Address
 use ingot::codecs::{HexAmount, HexWord, RecipientPair}
 use ingot::custom::Celsius
@@ -102,6 +102,24 @@ pub struct Routes {
 /// A generic record with a list: decoding the list makes `T` need `Copy`.
 #[serializable]
 pub struct Bag<T, const N: usize> { pub items: List<T, N> }
+
+/// A map holds 0 to `N` entries with unique keys, in the keys' canonical order: an object in
+/// JSON and a map in CBOR.
+#[serializable]
+pub struct Treasury { pub balances: Map<Address, u64, 3>, pub labels: Map<Text<8>, u8, 3> }
+
+/// Maps of records and of lists, and an optional map.
+#[serializable]
+pub struct Roster {
+    pub members: Map<u8, Member, 3>,
+    pub groups: Map<u16, List<u8, 2>, 2>,
+    pub guests: Option<Map<u8, u8, 2>>,
+}
+
+/// A generic record with a map: decoding the map makes `V` need `Copy`, and the key must be a
+/// `MapKey`.
+#[serializable]
+pub struct Atlas<K: MapKey, V, const N: usize> { pub entries: Map<K, V, N> }
 
 /// A field whose type has a handwritten serializer in another module.
 #[serializable]

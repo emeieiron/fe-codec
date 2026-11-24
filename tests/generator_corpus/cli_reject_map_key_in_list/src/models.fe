@@ -1,0 +1,4 @@
+#[serializable]
+pub struct Item {
+    pub map: List<Map<i8, u8, 2>, 2>
+}

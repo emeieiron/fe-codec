@@ -42,6 +42,9 @@ path = "unknown_fields_tests"
 [modules.list_tests]
 path = "list_tests"
 
+[modules.map_tests]
+path = "map_tests"
+
 [modules.shared.generate.serializers]
 command = [
     "../../../tools/fe_codec_gen",

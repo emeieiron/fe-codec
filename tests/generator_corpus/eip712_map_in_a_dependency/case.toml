@@ -1,0 +1,3 @@
+sources = ["src/models.fe"]
+modes = ["eip712"]
+expect_stderr = "src/models.fe:6:5: error: field 'a': EIP-712 has no map types\n"

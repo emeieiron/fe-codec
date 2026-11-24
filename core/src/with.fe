@@ -7,7 +7,7 @@ use ingot::serializer::{Decoder, Encoder}
 ///
 /// Name the implementing type with `#[codec_with = Path]` on a `#[serializable]` field, or
 /// call it by hand. It is usually an empty struct. `serialize` follows the contract of
-/// `Serialize`: exactly one value call on the encoder, or one record or sequence opened and
+/// `Serialize`: exactly one value call on the encoder, or one record, sequence or map opened and
 /// closed. `deserialize` reads what `serialize` wrote and rejects every other encoding.
 /// `describe` states the shape `serialize` writes; formats that hash or print types call it.
 /// Its default fails with `Unsupported`, so a codec only needs it for such formats.

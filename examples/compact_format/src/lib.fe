@@ -11,6 +11,11 @@
 //! - Sequences, which carry arrays and tuples, have no header, because their length is part of
 //!   the type. A list, whose length is part of the value, writes it as a ULEB128 number before
 //!   its elements, through `Encoder::begin_list` and `Decoder::begin_list`.
+//! - Maps are not supported: the format keeps the `Encoder` and `Decoder` defaults, which fail
+//!   with `Unsupported`. A decoder sees only the bytes of a key, not its type, so it could not
+//!   enforce `MapKey`'s canonical order: the ULEB128 length that starts a `Text` key does not
+//!   sort bytewise past 127. See `formats/cbor`, which orders keys by their bytes, for a format
+//!   that does.
 //! - Nothing marks where a value ends, so it keeps `Decoder::skip_value`'s default, which fails
 //!   with `Unsupported`, and `#[codec_skip_unknown]` has no effect: fields are read by position.
 

@@ -41,7 +41,11 @@ The generator rejects only what the compiler cannot catch:
 - a local type used by a model but not marked `#[serializable]`;
 - an array whose elements would need `Copy` to be decoded;
 - a list whose elements are not `Copy`, as a list stores copies of them;
-- an empty array inside another type, including inside a list or tuple, which core cannot
+- a map whose values are not `Copy`, for the same reason;
+- a map key that can never be a `MapKey`: a signed integer, `bool`, `BoundedBuffer`, `Option`,
+  an array, a tuple, a list, a map, or a struct or enum in the sources (a key that is a type
+  parameter is left to the compiler, so give it the bound `MapKey`);
+- an empty array inside another type, including inside a list, map or tuple, which core cannot
   decode;
 - the unit type `()`, which has no wire form;
 - duplicate or missing `#[codec_id]`s, a zero field ID, and IDs that aren't 64-bit integer

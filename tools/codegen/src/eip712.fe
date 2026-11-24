@@ -213,6 +213,8 @@ fn eip712_type(
                 Result::Err(format!("PackedBytes<N> is bytesN in EIP-712, so N must be a literal from 1 to 32"))
             } else if last == "Option" {
                 Result::Err(format!("EIP-712 has no optional types"))
+            } else if last == "Map" {
+                Result::Err(format!("EIP-712 has no map types"))
             } else {
                 Result::Err(format!(
                     "the generator cannot see type '",

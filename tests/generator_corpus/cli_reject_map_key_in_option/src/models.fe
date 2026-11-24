@@ -1,0 +1,4 @@
+#[serializable]
+pub struct Item {
+    pub map: Option<Map<bool, u8, 2>>
+}

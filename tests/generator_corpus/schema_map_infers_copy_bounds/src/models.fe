@@ -1,0 +1,6 @@
+use fe_codec_core::{Map, MapKey}
+
+#[serializable]
+pub struct Bag<K: MapKey, V, const N: usize> {
+    pub items: Map<K, V, N>,
+}

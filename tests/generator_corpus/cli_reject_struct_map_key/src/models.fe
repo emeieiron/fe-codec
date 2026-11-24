@@ -1,0 +1,8 @@
+#[serializable]
+pub struct Item {
+    pub map: Map<Child, u8, 2>
+}
+#[serializable]
+pub struct Child { pub id: u8 }
+#[serializable]
+pub enum Level { Low, High }

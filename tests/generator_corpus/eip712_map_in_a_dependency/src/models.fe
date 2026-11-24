@@ -1,0 +1,7 @@
+#[serializable]
+#[eip712]
+pub struct Outer { pub inner: Inner }
+#[serializable]
+pub struct Inner {
+    pub a: Map<u8, u8, 2>
+}

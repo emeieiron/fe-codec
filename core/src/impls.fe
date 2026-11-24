@@ -4,6 +4,7 @@ use core::num::IntDowncast
 use fe_codec_io::BoundedBuffer
 use ingot::error::{CodecError, CodecResult, ErrorKind}
 use ingot::list::List
+use ingot::map::{Map, MapKey}
 use ingot::serializer::{Decoder, Deserialize, Encoder, Serialize}
 use ingot::text::Text
 use std::evm::Address
@@ -326,6 +327,62 @@ impl<T: Deserialize + Copy, const N: usize> Deserialize for List<T, N> {
         }
         decoder.end_sequence(sequence)?
         Result::Ok(list)
+    }
+}
+
+/// A map is its entries in key order. Decoding reads entries in the order the format gives
+/// them, which is any order for formats that do not order their maps, and inserts each, so a
+/// repeated key is `DuplicateField` at the key, and one past the capacity is
+/// `CapacityExceeded` at the key.
+impl<K: MapKey, V: Serialize, const N: usize> Serialize for Map<K, V, N> {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        var map = encoder.begin_map(self.len())?
+        var index: usize = 0
+        while index < self.len() {
+            encoder.map_key(mut map)?
+            match self.keys[index] {
+                Option::Some(ref key) => key.serialize(mut encoder)?,
+                // Every slot below the length is filled, so no map reaches this.
+                Option::None => {
+                    return Result::Err(
+                        CodecError::at(kind: ErrorKind::InvalidState, offset: encoder.offset()),
+                    )
+                },
+            }
+            encoder.map_value(mut map)?
+            match self.values[index] {
+                Option::Some(ref value) => value.serialize(mut encoder)?,
+                Option::None => {
+                    return Result::Err(
+                        CodecError::at(kind: ErrorKind::InvalidState, offset: encoder.offset()),
+                    )
+                },
+            }
+            index += 1
+        }
+        encoder.end_map(map)
+    }
+}
+
+impl<K: MapKey, V: Deserialize + Copy, const N: usize> Deserialize for Map<K, V, N> {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        var state = decoder.begin_map(N)?
+        var map = Map<K, V, N>::new()
+        while decoder.next_key(mut state)? {
+            let at = decoder.offset()
+            // A decoder enforces the capacity itself; this guards one that does not.
+            if map.len() == N {
+                return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: at))
+            }
+            let key = K::deserialize(mut decoder)?
+            decoder.map_value(mut state)?
+            let value = V::deserialize(mut decoder)?
+            if map.insert(key, value)?.is_some() {
+                return Result::Err(CodecError::at(kind: ErrorKind::DuplicateField, offset: at))
+            }
+        }
+        decoder.end_map(state)?
+        Result::Ok(map)
     }
 }
 

@@ -10,7 +10,7 @@ contracts, native programs and WebAssembly, with fixed-capacity buffers and expl
 
 | Ingot / tool | Role |
 | --- | --- |
-| `fe_codec_core` | `Serialize`/`Deserialize`, the `Encoder`/`Decoder` data model, `Format`, schemas, errors, limits, `Text<N>`, `List<T, N>`, byte I/O |
+| `fe_codec_core` | `Serialize`/`Deserialize`, the `Encoder`/`Decoder` data model, `Format`, schemas, errors, limits, `Text<N>`, `List<T, N>`, `Map<K, V, N>`, byte I/O |
 | `fe_codec_json` | Compact JSON |
 | `fe_codec_cbor` | Deterministic CBOR (RFC 8949 §4.2.1) |
 | `fe_codec_eip712` | EIP-712 struct hashes, signing digests and wallet requests |

@@ -1,0 +1,285 @@
+use core::bytes::PackedBytes
+use core::marker::Copy
+use core::ops::Eq
+use ingot::describe::Describe
+use ingot::error::{CodecError, CodecResult, ErrorKind}
+use ingot::serializer::{Deserialize, Serialize}
+use ingot::text::Text
+use std::evm::Address
+
+/// A type that can be the key of a `Map`.
+///
+/// `before` is the canonical key order, and `same` is equality. Formats whose maps have an
+/// order of their own, such as CBOR's bytewise order of encoded keys (RFC 8949 section
+/// 4.2.1), agree with `before`, so a map is written in its own order and equal maps always
+/// give identical bytes. The impls are for the unsigned integers, `Text<N>`, `Address` and
+/// `PackedBytes<N>`. Signed integers, `bool` and records are not keys: in CBOR's canonical
+/// order a negative integer's encoding sorts after the non-negative ones, against numeric
+/// order, and JSON object keys must be strings.
+pub trait MapKey: Copy + Serialize + Deserialize + Describe {
+    /// Whether `self` sorts strictly before `other`.
+    fn before(self, _ other: Self) -> bool
+    /// Whether `self` and `other` are the same key.
+    fn same(self, _ other: Self) -> bool
+}
+
+impl MapKey for u8 {
+    fn before(self, _ other: Self) -> bool {
+        self < other
+    }
+
+    fn same(self, _ other: Self) -> bool {
+        self == other
+    }
+}
+
+impl MapKey for u16 {
+    fn before(self, _ other: Self) -> bool {
+        self < other
+    }
+
+    fn same(self, _ other: Self) -> bool {
+        self == other
+    }
+}
+
+impl MapKey for u32 {
+    fn before(self, _ other: Self) -> bool {
+        self < other
+    }
+
+    fn same(self, _ other: Self) -> bool {
+        self == other
+    }
+}
+
+impl MapKey for u64 {
+    fn before(self, _ other: Self) -> bool {
+        self < other
+    }
+
+    fn same(self, _ other: Self) -> bool {
+        self == other
+    }
+}
+
+impl MapKey for u128 {
+    fn before(self, _ other: Self) -> bool {
+        self < other
+    }
+
+    fn same(self, _ other: Self) -> bool {
+        self == other
+    }
+}
+
+impl MapKey for u256 {
+    fn before(self, _ other: Self) -> bool {
+        self < other
+    }
+
+    fn same(self, _ other: Self) -> bool {
+        self == other
+    }
+}
+
+/// Shorter text first, then bytewise: the order of the texts' deterministic CBOR encodings,
+/// whose head grows with the length.
+impl<const N: usize> MapKey for Text<N> {
+    fn before(self, _ other: Self) -> bool {
+        if self.len() != other.len() {
+            return self.len() < other.len()
+        }
+        var index: usize = 0
+        while index < self.len() {
+            let a = self.byte_at(index).unwrap()
+            let b = other.byte_at(index).unwrap()
+            if a != b {
+                return a < b
+            }
+            index += 1
+        }
+        false
+    }
+
+    fn same(self, _ other: Self) -> bool {
+        self.equals(other)
+    }
+}
+
+/// Bytewise, which is numeric order of the 20 bytes read as one number.
+impl MapKey for Address {
+    fn before(self, _ other: Self) -> bool {
+        self.word() < other.word()
+    }
+
+    fn same(self, _ other: Self) -> bool {
+        self.word() == other.word()
+    }
+}
+
+/// Bytewise. The words hold the bytes most significant first, padded with zeros after the
+/// last byte, so comparing them in order compares the bytes in order.
+impl<const N: usize> MapKey for PackedBytes<N> {
+    fn before(self, _ other: Self) -> bool {
+        var index: usize = 0
+        while index < (N + 31) / 32 {
+            if self.word(index) != other.word(index) {
+                return self.word(index) < other.word(index)
+            }
+            index += 1
+        }
+        false
+    }
+
+    fn same(self, _ other: Self) -> bool {
+        self == other
+    }
+}
+
+/// Up to `N` entries with unique keys, kept in the canonical order of the keys. The capacity
+/// is part of the type, so a map needs no heap.
+///
+/// Keys and values must be `Copy`, as `List` elements must: the storage is `N` slots that
+/// start as `None` and are filled by copying values in. Entries are sorted by `MapKey::before`
+/// however they were inserted, so insertion order never shows on the wire, and two maps with
+/// the same entries are equal and encode alike.
+///
+/// Encoders write a map as its entries in key order; decoders read any number of entries up
+/// to `N`, reject a repeated key with `DuplicateField`, and a longer map with
+/// `CapacityExceeded`.
+pub struct Map<K, V, const N: usize> {
+    pub(ingot) keys: [Option<K>; N],
+    pub(ingot) values: [Option<V>; N],
+    length: usize,
+}
+impl<K: Copy, V: Copy, const N: usize> Copy for Map<K, V, N> {}
+
+impl<K, V, const N: usize> Map<K, V, N> {
+    /// The number of entries.
+    pub fn len(self) -> usize {
+        self.length
+    }
+
+    pub fn capacity(self) -> usize {
+        N
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.length == 0
+    }
+}
+
+impl<K: MapKey, V: Copy, const N: usize> Map<K, V, N> {
+    /// An empty map.
+    pub fn new() -> Self {
+        Self { keys: [Option::None; N], values: [Option::None; N], length: 0 }
+    }
+
+    /// The index of the first entry whose key is not before `key`: where `key` is, or would
+    /// be inserted.
+    fn search(self, _ key: K) -> usize {
+        var index: usize = 0
+        while index < self.length {
+            if !self.keys[index].unwrap().before(key) {
+                return index
+            }
+            index += 1
+        }
+        self.length
+    }
+
+    /// Sets the value of `key`, and returns the value it replaced. Fails with
+    /// `CapacityExceeded` at offset `N` when the map is full and `key` is new; the map is then
+    /// unchanged.
+    pub fn insert(mut self, _ key: K, _ value: V) -> CodecResult<Option<V>> {
+        let at = self.search(key)
+        if at < self.length && self.keys[at].unwrap().same(key) {
+            let old = self.values[at]
+            self.values[at] = Option::Some(value)
+            return Result::Ok(old)
+        }
+        if self.length == N {
+            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: N))
+        }
+        var index = self.length
+        while index > at {
+            self.keys[index] = self.keys[index - 1]
+            self.values[index] = self.values[index - 1]
+            index -= 1
+        }
+        self.keys[at] = Option::Some(key)
+        self.values[at] = Option::Some(value)
+        self.length += 1
+        Result::Ok(Option::None)
+    }
+
+    /// The value of `key`, if the map has it.
+    pub fn get(self, _ key: K) -> Option<V> {
+        let at = self.search(key)
+        if at < self.length && self.keys[at].unwrap().same(key) {
+            return self.values[at]
+        }
+        Option::None
+    }
+
+    pub fn contains(self, _ key: K) -> bool {
+        self.get(key).is_some()
+    }
+
+    /// Removes `key` and returns its value, if the map had it.
+    pub fn remove(mut self, _ key: K) -> Option<V> {
+        let at = self.search(key)
+        if at >= self.length || !self.keys[at].unwrap().same(key) {
+            return Option::None
+        }
+        let old = self.values[at]
+        var index = at
+        while index + 1 < self.length {
+            self.keys[index] = self.keys[index + 1]
+            self.values[index] = self.values[index + 1]
+            index += 1
+        }
+        self.keys[self.length - 1] = Option::None
+        self.values[self.length - 1] = Option::None
+        self.length -= 1
+        old
+    }
+
+    /// The key of entry `index` in key order, or `None` at or past the length.
+    pub fn key_at(self, _ index: usize) -> Option<K> {
+        if index >= self.length {
+            return Option::None
+        }
+        self.keys[index]
+    }
+
+    /// The value of entry `index` in key order, or `None` at or past the length.
+    pub fn value_at(self, _ index: usize) -> Option<V> {
+        if index >= self.length {
+            return Option::None
+        }
+        self.values[index]
+    }
+}
+
+/// Maps are equal when they hold the same keys with equal values. Slots past the length are
+/// not compared.
+impl<K: MapKey, V: Copy + Eq, const N: usize> Eq for Map<K, V, N> {
+    fn eq(self, _ other: Map<K, V, N>) -> bool {
+        if self.length != other.length {
+            return false
+        }
+        var index: usize = 0
+        while index < self.length {
+            if !self.keys[index].unwrap().same(other.keys[index].unwrap()) {
+                return false
+            }
+            if self.values[index] != other.values[index] {
+                return false
+            }
+            index += 1
+        }
+        true
+    }
+}

@@ -381,6 +381,15 @@ impl Describer for TypeTable {
         Result::Err(self.reject())
     }
 
+    /// EIP-712 has no map types, so a map is rejected, naming the field that holds it.
+    fn begin_map(mut self, _ capacity: usize) -> CodecResult<()> {
+        Result::Err(self.reject())
+    }
+
+    fn end_map(mut self, _ capacity: usize) -> CodecResult<()> {
+        Result::Err(self.reject())
+    }
+
     fn begin_sequence(mut self, _ length: usize) -> CodecResult<()> {
         if self.depth == 0 {
             return Result::Err(unsupported())

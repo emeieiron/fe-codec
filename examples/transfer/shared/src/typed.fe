@@ -4,7 +4,7 @@
 //! EIP-712 cannot express are left unmarked, and the generic path rejects them at runtime.
 
 use core::bytes::PackedBytes
-use fe_codec_core::{BoundedBuffer, List, Text}
+use fe_codec_core::{BoundedBuffer, List, Map, Text}
 use std::evm::Address
 
 /// The EIP's own example: `Person(string name,address wallet)`.
@@ -119,6 +119,10 @@ pub struct Conflict { pub small: Holder<u8>, pub large: Holder<u16> }
 /// EIP-712 has no optional types, so a list of optional values has no type either.
 #[serializable]
 pub struct Sparse { pub slots: List<Option<u8>, 2> }
+
+/// EIP-712 has no maps, so a struct holding one has no type.
+#[serializable]
+pub struct Registry { pub owners: Map<u8, u8, 2> }
 
 /// EIP-712 has no tuples, as a field or as an array element.
 #[serializable]

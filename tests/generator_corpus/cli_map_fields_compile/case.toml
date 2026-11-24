@@ -1,0 +1,3 @@
+sources = ["src/models.fe"]
+modes = ["serializers"]
+flows = ["out", "check"]

@@ -1,0 +1,8 @@
+#[serializable]
+pub struct Item {
+    pub map: Map<BoundedBuffer<4>, u8, 2>
+}
+#[serializable]
+pub struct Child { pub id: u8 }
+#[serializable]
+pub enum Level { Low, High }

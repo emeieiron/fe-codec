@@ -11,6 +11,8 @@ use ingot::{
     FieldCodec,
     Frame,
     List,
+    Map,
+    MapKey,
     Schema,
     Serialize,
     Text,
@@ -131,8 +133,9 @@ fn errors_keep_the_innermost_field() {
 
 /// Records the calls a description makes: 1 for `bool`, the width of an integer, 100 + the arity
 /// for `begin_tuple`, 200 + the arity for `end_tuple`, 300 for `begin_option`, 400 for
-/// `end_option`, 500 + the capacity for `text`, 600 + the capacity for `begin_list` and
-/// 700 + the capacity for `end_list`. Other calls are not made.
+/// `end_option`, 500 + the capacity for `text`, 600 + the capacity for `begin_list`,
+/// 700 + the capacity for `end_list`, 800 + the capacity for `begin_map` and 900 + the
+/// capacity for `end_map`. Other calls are not made.
 struct Trace { events: [usize; 16], len: usize }
 
 impl Trace {
@@ -198,6 +201,14 @@ impl Describer for Trace {
 
     fn end_list(mut self, _ capacity: usize) -> CodecResult<()> {
         self.push(700 + capacity)
+    }
+
+    fn begin_map(mut self, _ capacity: usize) -> CodecResult<()> {
+        self.push(800 + capacity)
+    }
+
+    fn end_map(mut self, _ capacity: usize) -> CodecResult<()> {
+        self.push(900 + capacity)
     }
 
     fn begin_tuple(mut self, _ length: usize) -> CodecResult<()> {
@@ -703,4 +714,426 @@ fn decoders_reject_lists_unless_they_opt_in() {
     var sequence = Frame::new(0)
     fails_with(decoder.next_element(mut sequence), ErrorKind::Unsupported, 6)
     fails_with(List<u8, 4>::deserialize(mut decoder), ErrorKind::Unsupported, 6)
+}
+
+#[test]
+fn maps_keep_entries_in_key_order() {
+    var map = Map<u8, u16, 4>::new()
+    assert!(map.is_empty() && map.len() == 0 && map.capacity() == 4)
+    assert!(map.insert(30, 3).unwrap().is_none())
+    assert!(map.insert(10, 1).unwrap().is_none())
+    assert!(map.insert(20, 2).unwrap().is_none())
+    assert!(map.len() == 3 && !map.is_empty())
+    assert!(map.key_at(0) == Option::Some(10) && map.value_at(0) == Option::Some(1))
+    assert!(map.key_at(1) == Option::Some(20) && map.value_at(1) == Option::Some(2))
+    assert!(map.key_at(2) == Option::Some(30) && map.value_at(2) == Option::Some(3))
+    assert!(map.key_at(3).is_none() && map.value_at(3).is_none())
+    assert!(map.get(20) == Option::Some(2) && map.get(25).is_none() && map.get(5).is_none())
+    assert!(map.contains(30) && !map.contains(31))
+}
+
+#[test]
+fn maps_replace_and_remove_entries() {
+    var map = Map<u8, u16, 3>::new()
+    assert!(map.insert(2, 20).is_ok() && map.insert(1, 10).is_ok() && map.insert(3, 30).is_ok())
+    // A repeated key replaces the value, returns the old one, and works on a full map.
+    assert!(map.insert(2, 21).unwrap() == Option::Some(20))
+    assert!(map.len() == 3 && map.get(2) == Option::Some(21))
+    assert!(map.remove(1) == Option::Some(10))
+    assert!(map.len() == 2 && map.get(1).is_none())
+    assert!(map.key_at(0) == Option::Some(2) && map.key_at(1) == Option::Some(3) && map.key_at(2).is_none())
+    assert!(map.remove(1).is_none() && map.remove(9).is_none())
+    assert!(map.remove(3) == Option::Some(30) && map.remove(2) == Option::Some(21))
+    assert!(map.is_empty() && map.get(2).is_none())
+    // A removed slot can be filled again.
+    assert!(map.insert(7, 70).is_ok() && map.get(7) == Option::Some(70))
+}
+
+#[test]
+fn maps_reject_a_new_key_when_full() {
+    var map = Map<u8, u8, 2>::new()
+    assert!(map.insert(2, 2).is_ok() && map.insert(1, 1).is_ok())
+    fails_with(map.insert(3, 3), ErrorKind::CapacityExceeded, 2)
+    assert!(map.len() == 2 && map.get(3).is_none() && map.get(1) == Option::Some(1))
+    fails_with(Map<u8, u8, 0>::new().insert(1, 1), ErrorKind::CapacityExceeded, 0)
+    assert!(Map<u8, u8, 0>::new().is_empty())
+}
+
+#[test]
+fn maps_compare_by_their_entries_not_their_insertion_order() {
+    var a = Map<u8, u8, 4>::new()
+    var b = Map<u8, u8, 4>::new()
+    assert!(a.insert(1, 10).is_ok() && a.insert(2, 20).is_ok() && a.insert(3, 30).is_ok())
+    assert!(b.insert(3, 30).is_ok() && b.insert(1, 10).is_ok() && b.insert(2, 20).is_ok())
+    assert!(a == b)
+    assert!(b.insert(2, 21).is_ok())
+    assert!(a != b)
+    assert!(b.insert(2, 20).is_ok() && b.remove(3).is_some())
+    assert!(a != b)
+    // Slots left behind by a removal are not compared.
+    assert!(a.remove(3).is_some() && a == b)
+    assert!(Map<u8, u8, 4>::new() == Map<u8, u8, 4>::new())
+}
+
+#[test]
+fn maps_are_copied_by_value() {
+    var original = Map<u8, u8, 3>::new()
+    assert!(original.insert(1, 1).is_ok())
+    var copy = original
+    assert!(copy.insert(2, 2).is_ok())
+    assert!(original.len() == 1 && copy.len() == 2)
+}
+
+/// `low` sorts strictly before `high`, and neither key is the other.
+fn ascending<K: MapKey>(_ low: K, _ high: K) -> bool {
+    low.before(high) && !high.before(low) && !low.before(low) && !high.before(high)
+        && low.same(low) && !low.same(high) && !high.same(low)
+}
+
+#[test]
+fn unsigned_keys_are_in_numeric_order() {
+    assert!(ascending<u8>(1, 2) && ascending<u8>(0, 255))
+    assert!(ascending<u16>(255, 256))
+    assert!(ascending<u32>(65535, 65536))
+    assert!(ascending<u64>(0xffffffff, 0x100000000))
+    assert!(ascending<u128>(0xffffffffffffffff, 0x10000000000000000))
+    assert!(ascending<u256>(0xffffffffffffffffffffffffffffffff, 0x100000000000000000000000000000000))
+    assert!(ascending<u256>(0, 0x8000000000000000000000000000000000000000000000000000000000000000))
+}
+
+#[test]
+fn text_keys_sort_by_length_then_bytes() {
+    let a = Text<8>::from_array("a").unwrap()
+    let b = Text<8>::from_array("b").unwrap()
+    let aa = Text<8>::from_array("aa").unwrap()
+    let empty = Text<8>::from_array([0; 0]).unwrap()
+    assert!(empty.before(a) && a.before(b) && b.before(aa) && !aa.before(b))
+    assert!(!a.before(a) && a.same(a) && !a.same(b) && !empty.same(a))
+    // A multibyte character sorts by its bytes, after the shorter ASCII text.
+    let accent = Text<8>::from_array([0xc3, 0xa9]).unwrap()
+    assert!(b.before(accent) && aa.before(accent))
+    // Text of different capacities in one map is a type error, so only equal ones compare.
+    var map = Map<Text<8>, u8, 4>::new()
+    assert!(map.insert(aa, 1).is_ok() && map.insert(b, 2).is_ok() && map.insert(empty, 3).is_ok())
+    assert!(map.key_at(0).unwrap().same(empty) && map.key_at(1).unwrap().same(b) && map.key_at(2).unwrap().same(aa))
+}
+
+#[test]
+fn address_and_byte_keys_sort_bytewise() {
+    let low = std::evm::Address::new(1)
+    let high = std::evm::Address::new(0x0100000000000000000000000000000000000000)
+    assert!(low.before(high) && !high.before(low) && low.same(low) && !low.same(high))
+    let x = core::bytes::PackedBytes<3>::from_array([1, 2, 3])
+    let y = core::bytes::PackedBytes<3>::from_array([1, 3, 0])
+    assert!(x.before(y) && !y.before(x) && !x.before(x) && x.same(x) && !x.same(y))
+    // Keys of more than one word compare word by word.
+    var first: [u8; 40] = [0; 40]
+    var second: [u8; 40] = [0; 40]
+    second[39] = 1
+    let long_x = core::bytes::PackedBytes<40>::from_array(first)
+    let long_y = core::bytes::PackedBytes<40>::from_array(second)
+    assert!(long_x.before(long_y) && !long_y.before(long_x))
+    first[31] = 1
+    let long_z = core::bytes::PackedBytes<40>::from_array(first)
+    assert!(long_y.before(long_z) && !long_z.before(long_y))
+}
+
+#[test]
+fn maps_describe_their_key_and_value_types_between_map_calls() {
+    var flat = Trace::new()
+    assert!(<Map<u8, bool, 5> as Describe>::describe(mut flat).is_ok())
+    assert!(flat.len == 4 && flat.events[0] == 805 && flat.events[1] == 8 && flat.events[2] == 1 && flat.events[3] == 905)
+
+    var nested = Trace::new()
+    assert!(<Map<u16, List<u8, 2>, 3> as Describe>::describe(mut nested).is_ok())
+    let expected: [usize; 6] = [803, 16, 602, 8, 702, 903]
+    var index: usize = 0
+    while index < 6 {
+        assert!(nested.events[index] == expected[index])
+        index += 1
+    }
+    assert!(nested.len == 6)
+}
+
+#[test]
+fn describers_reject_maps_unless_they_opt_in() {
+    var plain = NoTuples {}
+    assert!(kind(plain.begin_map(2)) == 16)
+    assert!(kind(plain.end_map(2)) == 16)
+    assert!(kind(<Map<u8, u8, 2> as Describe>::describe(mut plain)) == 16)
+}
+
+/// Records the calls a map is written with: 1000 + the length for `begin_map`, 1 for
+/// `map_key`, 2 for `map_value`, 3 for `end_map`, and 100 + the value for an unsigned.
+struct Recording { events: [usize; 16], len: usize }
+
+impl Recording {
+    fn push(mut self, _ event: usize) -> CodecResult<()> {
+        self.events[self.len] = event
+        self.len += 1
+        Result::Ok(())
+    }
+}
+
+impl Encoder for Recording {
+    const OMIT_NONE: bool = false
+    type Record = Frame
+    type Sequence = Frame
+
+    fn offset(self) -> usize {
+        self.len
+    }
+
+    fn write_bool(mut self, _ value: bool) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_unsigned(mut self, _ value: u64, _ bits: u16) -> CodecResult<()> {
+        let small: usize = value.downcast_unchecked()
+        self.push(100 + small)
+    }
+
+    fn write_signed(mut self, _ value: i64, _ bits: u16) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_wide_unsigned(mut self, _ value: u256, _ bits: u16) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_wide_signed(mut self, _ value: i256, _ bits: u16) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_text<const N: usize>(mut self, _ value: Text<N>) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_bytes<const N: usize>(mut self, _ value: BoundedBuffer<N>) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_fixed_bytes<const N: usize>(mut self, _ value: core::bytes::PackedBytes<N>) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_address(mut self, _ value: std::evm::Address) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_none(mut self) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_some(mut self) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_variant<V: Schema>(mut self, _ index: usize) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn begin_record<R: Schema>(mut self, _ present: usize) -> CodecResult<Frame> {
+        Result::Ok(Frame::new(present))
+    }
+
+    fn field<R: Schema>(mut self, _ record: mut Frame, _ position: usize) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn end_record(mut self, _ record: own Frame) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn begin_sequence(mut self, _ length: usize) -> CodecResult<Frame> {
+        Result::Ok(Frame::new(length))
+    }
+
+    fn element(mut self, _ sequence: mut Frame) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn end_sequence(mut self, _ sequence: own Frame) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn begin_map(mut self, _ length: usize) -> CodecResult<Frame> {
+        self.push(1000 + length)?
+        Result::Ok(Frame::new(length))
+    }
+
+    fn map_key(mut self, _ map: mut Frame) -> CodecResult<()> {
+        self.push(1)
+    }
+
+    fn map_value(mut self, _ map: mut Frame) -> CodecResult<()> {
+        self.push(2)
+    }
+
+    fn end_map(mut self, _ map: own Frame) -> CodecResult<()> {
+        self.push(3)
+    }
+}
+
+#[test]
+fn maps_are_written_key_then_value_in_key_order() {
+    var map = Map<u8, u8, 4>::new()
+    assert!(map.insert(9, 90).is_ok() && map.insert(4, 40).is_ok())
+    var encoder = Recording { events: [0; 16], len: 0 }
+    assert!(map.serialize(mut encoder).is_ok())
+    let expected: [usize; 11] = [1002, 1, 104, 2, 140, 1, 109, 2, 190, 3, 0]
+    var index: usize = 0
+    while index < 10 {
+        assert!(encoder.events[index] == expected[index])
+        index += 1
+    }
+    assert!(encoder.len == 10)
+    var empty = Recording { events: [0; 16], len: 0 }
+    assert!(Map<u8, u8, 4>::new().serialize(mut empty).is_ok())
+    assert!(empty.len == 2 && empty.events[0] == 1000 && empty.events[1] == 3)
+}
+
+#[test]
+fn encoders_reject_maps_unless_they_opt_in() {
+    var encoder = Counting { sequence_length: 99 }
+    let mut_map = Map<u8, u8, 2>::new()
+    fails_with(mut_map.serialize(mut encoder), ErrorKind::Unsupported, 0)
+    assert!(encoder.sequence_length == 99)
+}
+
+/// A decoder that hands out scripted unsigned values, and says there are `entries` map entries
+/// without checking order, repeats or capacity.
+struct Script { values: [u64; 8], at: usize, entries: usize, taken: usize }
+
+impl Decoder for Script {
+    type Record = Frame
+    type Sequence = Frame
+
+    fn offset(self) -> usize {
+        self.at
+    }
+
+    fn read_bool(mut self) -> CodecResult<bool> {
+        Result::Ok(false)
+    }
+
+    fn read_unsigned(mut self, _ bits: u16) -> CodecResult<u64> {
+        let value = self.values[self.at]
+        self.at += 1
+        Result::Ok(value)
+    }
+
+    fn read_signed(mut self, _ bits: u16) -> CodecResult<i64> {
+        Result::Ok(0)
+    }
+
+    fn read_wide_unsigned(mut self, _ bits: u16) -> CodecResult<u256> {
+        Result::Ok(0)
+    }
+
+    fn read_wide_signed(mut self, _ bits: u16) -> CodecResult<i256> {
+        Result::Ok(0)
+    }
+
+    fn read_text<const N: usize>(mut self) -> CodecResult<Text<N>> {
+        Text<N>::from_array([0; 0])
+    }
+
+    fn read_bytes<const N: usize>(mut self) -> CodecResult<BoundedBuffer<N>> {
+        Result::Ok(BoundedBuffer<N>::empty())
+    }
+
+    fn read_fixed_bytes<const N: usize>(mut self) -> CodecResult<core::bytes::PackedBytes<N>> {
+        Result::Ok(core::bytes::PackedBytes<N>::from_array([0; N]))
+    }
+
+    fn read_address(mut self) -> CodecResult<std::evm::Address> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: self.at))
+    }
+
+    fn read_some(mut self) -> CodecResult<bool> {
+        Result::Ok(false)
+    }
+
+    fn read_variant<V: Schema>(mut self) -> CodecResult<usize> {
+        Result::Ok(0)
+    }
+
+    fn begin_record<R: Schema>(mut self) -> CodecResult<Frame> {
+        Result::Ok(Frame::new(0))
+    }
+
+    fn next_field<R: Schema>(mut self, _ record: mut Frame) -> CodecResult<Option<ingot::FieldKey>> {
+        Result::Ok(Option::None)
+    }
+
+    fn end_record(mut self, _ record: own Frame) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn begin_sequence(mut self, _ length: usize) -> CodecResult<Frame> {
+        Result::Ok(Frame::new(length))
+    }
+
+    fn element(mut self, _ sequence: mut Frame) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn end_sequence(mut self, _ sequence: own Frame) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn begin_map(mut self, _ capacity: usize) -> CodecResult<Frame> {
+        Result::Ok(Frame::new(0))
+    }
+
+    fn next_key(mut self, _ map: mut Frame) -> CodecResult<bool> {
+        if self.taken == self.entries {
+            return Result::Ok(false)
+        }
+        self.taken += 1
+        Result::Ok(true)
+    }
+
+    fn map_value(mut self, _ map: mut Frame) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn end_map(mut self, _ map: own Frame) -> CodecResult<()> {
+        Result::Ok(())
+    }
+}
+
+#[test]
+fn maps_read_entries_in_any_order_and_sort_them() {
+    var decoder = Script { values: [3, 30, 1, 10, 2, 20, 0, 0], at: 0, entries: 3, taken: 0 }
+    let map = Map<u8, u8, 4>::deserialize(mut decoder).unwrap()
+    assert!(map.len() == 3)
+    assert!(map.key_at(0) == Option::Some(1) && map.value_at(0) == Option::Some(10))
+    assert!(map.key_at(1) == Option::Some(2) && map.key_at(2) == Option::Some(3))
+    var none = Script { values: [0; 8], at: 0, entries: 0, taken: 0 }
+    assert!(Map<u8, u8, 4>::deserialize(mut none).unwrap().is_empty())
+}
+
+#[test]
+fn maps_reject_repeated_keys_and_extra_entries_themselves() {
+    // The repeated key is reported where it starts, after the first entry's two values.
+    var repeated = Script { values: [3, 30, 3, 31, 0, 0, 0, 0], at: 0, entries: 2, taken: 0 }
+    fails_with(Map<u8, u8, 4>::deserialize(mut repeated), ErrorKind::DuplicateField, 2)
+    var late = Script { values: [1, 10, 2, 20, 1, 11, 0, 0], at: 0, entries: 3, taken: 0 }
+    fails_with(Map<u8, u8, 4>::deserialize(mut late), ErrorKind::DuplicateField, 4)
+    var crowded = Script { values: [1, 10, 2, 20, 0, 0, 0, 0], at: 0, entries: 2, taken: 0 }
+    fails_with(Map<u8, u8, 1>::deserialize(mut crowded), ErrorKind::CapacityExceeded, 2)
+    var wide = Script { values: [300, 1, 0, 0, 0, 0, 0, 0], at: 0, entries: 1, taken: 0 }
+    fails_with(Map<u8, u8, 1>::deserialize(mut wide), ErrorKind::IntegerOutOfRange, 1)
+}
+
+#[test]
+fn decoders_reject_maps_unless_they_opt_in() {
+    var decoder = NoLists { at: 6 }
+    fails_with(decoder.begin_map(4), ErrorKind::Unsupported, 6)
+    var state = Frame::new(0)
+    fails_with(decoder.next_key(mut state), ErrorKind::Unsupported, 6)
+    fails_with(decoder.map_value(mut state), ErrorKind::Unsupported, 6)
+    fails_with(Map<u8, u8, 4>::deserialize(mut decoder), ErrorKind::Unsupported, 6)
 }

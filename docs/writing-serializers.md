@@ -48,7 +48,7 @@ impl Deserialize for Celsius {
 ```
 
 `examples/vanilla/src/temperature.fe` has the complete version. A serializer makes exactly
-one value call, or opens one record or sequence and closes it. Every format rejects a
+one value call, or opens one record, sequence or map and closes it. Every format rejects a
 serializer that writes nothing or writes twice (`InvalidState`).
 
 ## Choosing a serializer for one field
@@ -103,7 +103,7 @@ pub struct Payment {
 `examples/transfer/shared/src/codecs.fe` has the complete version, with a second codec that
 writes a record as a sequence.
 
-- `serialize` follows the contract of `Serialize`: one value call, or one record or sequence
+- `serialize` follows the contract of `Serialize`: one value call, or one record, sequence or map
   opened and closed. `value` is passed by reference, so the type need not be `Copy`.
 - `describe` is only for formats that read types, such as EIP-712. It states the shape
   `serialize` writes. The default fails with `Unsupported`.

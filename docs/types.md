@@ -11,12 +11,13 @@
 | `Option<T>` | Anywhere, except `Option<Option<T>>`, which cannot round-trip |
 | `[T; N]` | As a field, any length of `Copy` elements, or up to 64 of other elements. Elsewhere, such as inside an `Option`, decoding needs `T: Copy` and `N > 0` |
 | `List<T, N>` | 0 to `N` elements, each of a `Copy` type; `Copy` itself when `T` is. A field or nested, with any supported element type |
+| `Map<K, V, N>` | 0 to `N` entries with unique keys; `K` is an unsigned integer, `Text<N>`, `Address` or `PackedBytes<N>`, and `V` a `Copy` type; `Copy` itself when both are. A field or nested, with any supported value type |
 | `(T0, ..., T7)` | Tuples of 1 to 8 supported types, anywhere a type can appear. `()` has no wire form and is rejected |
 | `#[serializable]` structs | Named fields of up to 31-byte names; type and const generic parameters |
 | `#[serializable]` enums | Unit variants of up to 31-byte names |
 | Your own types | With handwritten impls; see [writing serializers](writing-serializers.md) |
 
-Not supported yet: enums with payloads and maps.
+Not supported yet: enums with payloads.
 
 ## Lists
 
@@ -40,6 +41,40 @@ let same = List<u32, 8>::from_array([7, 9])?   // or from an array of up to 8 el
 
 `len`, `capacity`, `is_empty` and `get(index)` read a list, and lists of equal elements are
 `==`. [Wire profiles](formats.md#lists) say how each format writes one.
+
+## Maps
+
+`Map<K, V, N>` holds up to `N` entries with unique keys. Like a list it has a capacity fixed at
+compile time and stores copies, so `V` must be `Copy`; the generator rejects a local value type
+that is not, and adds the bound to a type parameter. Entries are kept sorted by key, so the
+order they were inserted in never shows: equal maps are `==` and encode to the same bytes in
+every format.
+
+The key type implements `MapKey`, which fixes the order. The impls are for the unsigned
+integers, `Text<N>` (shorter first, then bytewise), `Address` and `PackedBytes<N>` (bytewise).
+They are the keys whose order in a deterministic CBOR map is the order of the values, and
+whose JSON form is a string. Signed integers, `bool`, records and the other types are not
+keys: CBOR's canonical order puts a negative integer after every non-negative one, against
+numeric order. The generator rejects a key type it knows is none of these; a type parameter
+used as a key is left to the compiler, so declare it `K: MapKey` on the struct.
+
+```fe
+#[serializable]
+pub struct Book {
+    pub balances: Map<Address, u64, 8>,
+}
+
+var balances = Map<Address, u64, 8>::new()
+balances.insert(owner, 5)?          // returns the value it replaced; CapacityExceeded when full
+let five = balances.get(owner)      // Option<u64>
+let gone = balances.remove(owner)   // Option<u64>
+```
+
+`len`, `capacity`, `is_empty`, `contains` and `get(key)` read a map, and `key_at(index)` and
+`value_at(index)` visit its entries in key order. Maps with the same entries are `==` when the
+values are. Decoding rejects a key that appears twice with `DuplicateField` at the key, and
+more than `N` entries with `CapacityExceeded`. [Wire profiles](formats.md#maps) say how each
+format writes one.
 
 ## Choosing a serializer per field
 

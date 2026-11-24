@@ -2,6 +2,7 @@ use core::bytes::PackedBytes
 use fe_codec_io::BoundedBuffer
 use ingot::error::{CodecError, CodecResult, ErrorKind}
 use ingot::list::List
+use ingot::map::{Map, MapKey}
 use ingot::schema::Schema
 use ingot::text::Text
 use std::evm::Address
@@ -18,7 +19,8 @@ pub trait Describe {
 
 /// The type vocabulary a description is written in, mirroring the `Encoder` data model.
 ///
-/// An option, sequence or list opens, describes its one inner type, and closes. A tuple opens,
+/// An option, sequence or list opens, describes its one inner type, and closes. A map opens,
+/// describes its key type and then its value type, and closes. A tuple opens,
 /// describes each element type in order, and closes. A record opens,
 /// then for each field in position order calls `field` and describes the field's type,
 /// then closes.
@@ -40,6 +42,14 @@ pub trait Describer {
         Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
     }
     fn end_list(mut self, _ capacity: usize) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+    /// A map opens with its capacity, describes its key type and then its value type, and
+    /// closes with the same capacity. A format with no map type keeps this default.
+    fn begin_map(mut self, _ capacity: usize) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+    fn end_map(mut self, _ capacity: usize) -> CodecResult<()> {
         Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
     }
     /// A tuple opens with its arity, describes each element type in order, and closes with the
@@ -179,6 +189,15 @@ impl<T: Describe, const N: usize> Describe for List<T, N> {
         describer.begin_list(N)?
         T::describe(mut describer)?
         describer.end_list(N)
+    }
+}
+
+impl<K: MapKey, T: Describe, const N: usize> Describe for Map<K, T, N> {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.begin_map(N)?
+        K::describe(mut describer)?
+        T::describe(mut describer)?
+        describer.end_map(N)
     }
 }
 

@@ -238,4 +238,25 @@ impl<const N: usize> Encoder for CborEncoder<N> {
     fn end_sequence(mut self, _ sequence: own Frame) -> CodecResult<()> {
         self.end(sequence)
     }
+
+    /// A definite-length map. The keys are written as they arrive, which is the canonical
+    /// order: `MapKey::before` is the bytewise order of the keys' encodings.
+    fn begin_map(mut self, _ length: usize) -> CodecResult<Frame> {
+        self.begin(5, length)
+    }
+
+    fn map_key(mut self, _ map: mut Frame) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.member(offset)?
+        map.take(offset)
+    }
+
+    fn map_value(mut self, _ map: mut Frame) -> CodecResult<()> {
+        let offset = self.offset()
+        self.structure.member(offset)
+    }
+
+    fn end_map(mut self, _ map: own Frame) -> CodecResult<()> {
+        self.end(map)
+    }
 }

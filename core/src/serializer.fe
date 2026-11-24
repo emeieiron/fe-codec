@@ -10,7 +10,7 @@ use std::evm::Address
 ///
 /// `fe_codec_gen` implements this for `#[serializable]` records and unit enums. Write it by
 /// hand to give a type its own representation: a serializer makes exactly one value call on
-/// the encoder, or opens one record or sequence and closes it again.
+/// the encoder, or opens one record, sequence or map and closes it again.
 pub trait Serialize {
     fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()>
 }
@@ -34,7 +34,7 @@ pub trait Format {
 /// Values: `bool`; unsigned and signed integers, passed as `u64`/`i64` with a width of 8, 16,
 /// 32 or 64 bits, or as `u256`/`i256` with a width of 128 or 256 bits; UTF-8 text; byte
 /// strings of a bounded length; byte strings of an exact length; EVM addresses; optional
-/// values; unit enum variants; records; and sequences, which are fixed-length or lists.
+/// values; unit enum variants; records; sequences, which are fixed-length or lists; and maps.
 ///
 /// A record visits its fields in ascending ID order. When `OMIT_NONE` is true, the format
 /// identifies fields by key and a serializer leaves `None` fields out; otherwise it visits
@@ -46,6 +46,12 @@ pub trait Format {
 /// that writes the same bytes for both keeps the default, which calls `begin_sequence`; one
 /// that must tell a list from a fixed-length sequence, such as `examples/compact_format`,
 /// which writes a length for lists only, overrides it.
+///
+/// A map is opened with its number of entries by `begin_map`, which returns the same
+/// `Sequence` state as a sequence. Each entry calls `map_key`, then the key's own `serialize`,
+/// then `map_value`, then the value's, and `end_map` closes the map. The entries arrive in the
+/// canonical order of `MapKey`, so a format whose maps are ordered by the encoded keys writes
+/// them as they come. A format with no maps keeps the defaults, which fail with `Unsupported`.
 ///
 /// Encoders report errors with the offset of the output byte being written.
 pub trait Encoder {
@@ -84,6 +90,29 @@ pub trait Encoder {
     }
     fn element(mut self, _ sequence: mut Self::Sequence) -> CodecResult<()>
     fn end_sequence(mut self, _ sequence: own Self::Sequence) -> CodecResult<()>
+    /// Opens a map of `length` entries.
+    fn begin_map(mut self, _ length: usize) -> CodecResult<Self::Sequence> {
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.offset()),
+        )
+    }
+    /// Announces the key of the next entry, which the serializer writes next.
+    fn map_key(mut self, _ map: mut Self::Sequence) -> CodecResult<()> {
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.offset()),
+        )
+    }
+    /// Announces the value of the entry whose key was just written.
+    fn map_value(mut self, _ map: mut Self::Sequence) -> CodecResult<()> {
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.offset()),
+        )
+    }
+    fn end_map(mut self, _ map: own Self::Sequence) -> CodecResult<()> {
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.offset()),
+        )
+    }
 }
 
 /// The data model a format reads. Calls mirror `Encoder`.
@@ -100,6 +129,16 @@ pub trait Encoder {
 /// `CapacityExceeded` when the list holds more than `capacity` elements: at the extra
 /// element, or, in a format that counts first, at the start of the list. A format with no
 /// lists keeps the defaults, which fail with `Unsupported`.
+///
+/// A map is read with `begin_map`, which takes the most entries the type holds, then for each
+/// entry `next_key`, the key's own `deserialize`, `map_value` and the value's, and then
+/// `end_map`. `next_key` returns true when another entry follows, with the decoder positioned
+/// at its key. A decoder fails with `CapacityExceeded` when the map holds more than `capacity`
+/// entries, as for lists. A format whose maps are ordered, as CBOR's are, rejects keys out of
+/// order or repeated when `map_value` is called, which is where the key has been read; other
+/// formats accept any order, and the `Map` deserializer rejects a repeated key with
+/// `DuplicateField` at the key. A format with no maps keeps the defaults, which fail with
+/// `Unsupported`.
 pub trait Decoder {
     type Record
     type Sequence
@@ -142,6 +181,30 @@ pub trait Decoder {
     /// Whether another element of a list follows. When it does, the decoder is positioned at
     /// it; when it does not, `end_sequence` closes the list.
     fn next_element(mut self, _ sequence: mut Self::Sequence) -> CodecResult<bool> {
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.offset()),
+        )
+    }
+    /// Opens a map of at most `capacity` entries.
+    fn begin_map(mut self, _ capacity: usize) -> CodecResult<Self::Sequence> {
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.offset()),
+        )
+    }
+    /// Whether another entry of a map follows. When it does, the decoder is positioned at its
+    /// key; when it does not, `end_map` closes the map.
+    fn next_key(mut self, _ map: mut Self::Sequence) -> CodecResult<bool> {
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.offset()),
+        )
+    }
+    /// Moves from a key just read to its value.
+    fn map_value(mut self, _ map: mut Self::Sequence) -> CodecResult<()> {
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.offset()),
+        )
+    }
+    fn end_map(mut self, _ map: own Self::Sequence) -> CodecResult<()> {
         Result::Err(
             CodecError::at(kind: ErrorKind::Unsupported, offset: self.offset()),
         )

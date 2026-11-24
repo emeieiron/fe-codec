@@ -1,0 +1,6 @@
+#[serializable]
+pub struct Item {
+    pub map: Map<u8, List<Child, 2>, 2>
+}
+#[serializable]
+pub struct Child { pub id: u8 }
