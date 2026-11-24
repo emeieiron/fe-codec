@@ -1,0 +1,233 @@
+# Builds and publishes prebuilt fe_codec_gen binaries on version tags, and dry-runs on dispatch.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FE_VERSION: v26.7.0
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      commit: ${{ steps.meta.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check version consistency
+        id: meta
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import subprocess
+          import tomllib
+
+          ref = os.environ["GITHUB_REF"]
+          ref_name = os.environ["GITHUB_REF_NAME"]
+
+          if ref.startswith("refs/tags/v"):
+              version = ref_name.removeprefix("v")
+          elif ref.startswith("refs/tags/"):
+              raise SystemExit(f"expected tag starting with 'v', got {ref_name!r}")
+          else:
+              gen = tomllib.loads(pathlib.Path("tools/generator/fe.toml").read_text("utf-8"))
+              version = gen["ingot"]["version"]
+
+          if not version:
+              raise SystemExit("empty version")
+
+          ws = tomllib.loads(pathlib.Path("fe.toml").read_text("utf-8"))
+          ws_version = ws["workspace"]["version"]
+          if ws_version != version:
+              raise SystemExit(f"fe.toml: expected version {version!r}, got {ws_version!r}")
+
+          ingots = [
+              "io/fe.toml",
+              "core/fe.toml",
+              "formats/json/fe.toml",
+              "formats/cbor/fe.toml",
+              "formats/eip712/fe.toml",
+              "tools/syntax/fe.toml",
+              "tools/codegen/fe.toml",
+              "tools/generator/fe.toml",
+              "tools/syntax-dump/fe.toml",
+          ]
+          for path in ingots:
+              data = tomllib.loads(pathlib.Path(path).read_text("utf-8"))
+              got = data["ingot"]["version"]
+              if got != version:
+                  raise SystemExit(f"{path}: expected version {version!r}, got {got!r}")
+
+          cli_text = pathlib.Path("tools/generator/src/cli.fe").read_text("utf-8")
+          needle = f'format!("fe_codec_gen {version}\\n")'
+          if needle not in cli_text:
+              raise SystemExit(f"tools/generator/src/cli.fe: expected {needle}")
+
+          commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"version={version}\n")
+              out.write(f"commit={commit}\n")
+          print(f"Verified version {version} at {commit}")
+          PY
+
+  build:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            os: ubuntu-24.04
+          - target: linux-arm64
+            os: ubuntu-24.04-arm
+          - target: macos-arm64
+            os: macos-15
+          - target: macos-x86_64
+            os: macos-15-intel
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Fe
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/argotorg/fe/master/feup/feup.sh \
+            | bash -s -- --version "$FE_VERSION" --no-modify-path
+          echo "$HOME/.fe/bin" >> "$GITHUB_PATH"
+
+      - name: Build fe_codec_gen
+        run: |
+          fe build --backend native tools/generator --out-dir dist
+          chmod +x dist/fe_codec_gen
+
+      - name: Inspect binary linkages (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          file dist/fe_codec_gen
+          ldd dist/fe_codec_gen
+
+      - name: Inspect binary linkages (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          file dist/fe_codec_gen
+          otool -L dist/fe_codec_gen
+
+      - name: Smoke test fe_codec_gen
+        run: |
+          actual="$(./dist/fe_codec_gen --version)"
+          expected="fe_codec_gen ${{ needs.verify.outputs.version }}"
+          if [ "$actual" != "$expected" ]; then
+            echo "expected '$expected', got '$actual'" >&2
+            exit 1
+          fi
+          python3 tests/vanilla.py --generator dist/fe_codec_gen
+
+      - name: Package release archive
+        run: |
+          mkdir -p release
+          COPYFILE_DISABLE=1 tar -C dist -czf "release/fe_codec_gen-${{ matrix.target }}.tar.gz" fe_codec_gen
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fe_codec_gen-${{ matrix.target }}
+          path: release/fe_codec_gen-${{ matrix.target }}.tar.gz
+
+  release:
+    needs: [verify, build]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum fe_codec_gen-*.tar.gz | sort -k2 > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Write release notes
+        env:
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          COMMIT: ${{ needs.verify.outputs.commit }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import textwrap
+
+          tag = os.environ["TAG"]
+          version = os.environ["VERSION"]
+          commit = os.environ["COMMIT"]
+          repo = os.environ["REPO"]
+          fe_version = os.environ["FE_VERSION"]
+
+          notes = textwrap.dedent(f"""\
+              Prebuilt `fe_codec_gen` binaries for **Fe Codec {version}** (built with Fe `{fe_version}`).
+
+              ## Install `fe_codec_gen`
+
+              Choose your target (`linux-x86_64`, `linux-arm64`, `macos-arm64`, `macos-x86_64`):
+
+              ```bash
+              mkdir -p ~/.local/bin
+              curl -fsSL https://github.com/{repo}/releases/download/{tag}/fe_codec_gen-<target>.tar.gz \\
+                | tar -xz -C ~/.local/bin
+              ```
+
+              Verify checksums against `SHA256SUMS` published on this release.
+
+              <details>
+              <summary>Build from source instead</summary>
+
+              ```bash
+              git clone https://github.com/{repo}.git && cd fe-codec && git checkout {tag}
+              fe build --backend native tools/generator --out-dir ~/.local/bin
+              ```
+
+              </details>
+
+              ## Add the ingots to `fe.toml`
+
+              Fe pins Git dependencies by full commit hash. Use `{commit}` for `{tag}`:
+
+              ```toml
+              [dependencies]
+              fe_codec_core = {{ source = "https://github.com/{repo}.git", rev = "{commit}", name = "fe_codec_core" }}
+              fe_codec_json = {{ source = "https://github.com/{repo}.git", rev = "{commit}", name = "fe_codec_json" }}
+              fe_codec_cbor = {{ source = "https://github.com/{repo}.git", rev = "{commit}", name = "fe_codec_cbor" }}
+              # Optional:
+              # fe_codec_eip712 = {{ source = "https://github.com/{repo}.git", rev = "{commit}", name = "fe_codec_eip712" }}
+              ```
+          """)
+          pathlib.Path("release/notes.md").write_text(notes, encoding="utf-8")
+          PY
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          TITLE="Fe Codec ${{ needs.verify.outputs.version }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/fe_codec_gen-*.tar.gz release/SHA256SUMS --clobber
+            gh release edit "$TAG" --title "$TITLE" --notes-file release/notes.md
+          else
+            gh release create "$TAG" release/fe_codec_gen-*.tar.gz release/SHA256SUMS \
+              --title "$TITLE" --notes-file release/notes.md
+          fi

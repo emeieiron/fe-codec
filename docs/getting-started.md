@@ -8,8 +8,28 @@ You need the Fe toolchain, version 26.7.0. Nothing else: the generator is writte
 
 ## Install the generator
 
-Check out the repository at the revision you depend on, and build the generator into a
-directory on your `PATH`:
+Fe 26.7.0 has no derive macros or compile-time reflection, so `fe_codec_gen` runs as a separate
+tool that generates plain Fe trait implementations beside your models. Download the prebuilt
+binary for your platform (`linux-x86_64`, `linux-arm64`, `macos-arm64`, or `macos-x86_64`) from
+[GitHub Releases](https://github.com/emeieiron/fe-codec/releases) into a directory on your
+`PATH`:
+
+```bash
+mkdir -p ~/.local/bin
+curl -fsSL https://github.com/emeieiron/fe-codec/releases/download/v0.1.0/fe_codec_gen-<target>.tar.gz \
+  | tar -xz -C ~/.local/bin
+```
+
+Each release includes `SHA256SUMS` for verification. On macOS, downloading via `curl` runs
+directly; if you download the archive through a browser instead, clear the quarantine attribute
+first (`xattr -d com.apple.quarantine ~/.local/bin/fe_codec_gen`).
+
+The command is `fe_codec_gen`.
+
+### Build from source
+
+If you are on another platform or an unreleased commit, check out the repository at the revision
+you depend on and build the generator with `fe` alone:
 
 ```bash
 git clone https://github.com/emeieiron/fe-codec.git && cd fe-codec && git checkout <commit>
@@ -19,12 +39,11 @@ git clone https://github.com/emeieiron/fe-codec.git && cd fe-codec && git checko
 fe build --backend native tools/generator --out-dir ~/.local/bin
 ```
 
-The command is `fe_codec_gen`.
-
 ## Add the ingots
 
-Add the runtime ingots to your `fe.toml`, pinned to the same commit; Fe pins a Git dependency
-by its full commit hash. One Git source supplies several ingots by name:
+Add the runtime ingots to your `fe.toml`, pinned to the matching release commit; Fe pins a Git
+dependency by its full commit hash (listed on each GitHub Release page). One Git source supplies
+several ingots by name:
 
 ```toml
 [dependencies]
