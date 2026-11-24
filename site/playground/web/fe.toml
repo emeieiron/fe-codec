@@ -5,7 +5,7 @@ target = "wasm"
 
 [dependencies]
 fe_codec_codegen = "../../../tools/codegen"
-fe_codec_core = "../../../core"
-fe_codec_json = "../../../formats/json"
-fe_codec_cbor = "../../../formats/cbor"
-fe_codec_eip712 = "../../../formats/eip712"
+fe_codec_core = "../../../ingots/core"
+fe_codec_json = "../../../ingots/json"
+fe_codec_cbor = "../../../ingots/cbor"
+fe_codec_eip712 = "../../../ingots/eip712"

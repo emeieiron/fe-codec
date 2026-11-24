@@ -4,5 +4,5 @@ version = "0.1.0"
 
 [dependencies]
 codec_transfer = "../shared"
-fe_codec_core = "../../../core"
-fe_codec_eip712 = "../../../formats/eip712"
+fe_codec_core = "../../../ingots/core"
+fe_codec_eip712 = "../../../ingots/eip712"

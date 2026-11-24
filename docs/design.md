@@ -36,7 +36,7 @@ native backends.
 
 | Fe capability | Used for |
 | --- | --- |
-| Traits implemented on primitives, `Option<T>`, `[T; N]`, `List<T, N>`, `Map<K, V, N>` and tuples from any ingot that owns the trait | The built-in impls in `core/src/impls.fe` |
+| Traits implemented on primitives, `Option<T>`, `[T; N]`, `List<T, N>`, `Map<K, V, N>` and tuples from any ingot that owns the trait | The built-in impls in `ingots/core/src/impls.fe` |
 | Associated consts, generic and const-generic trait methods | `Encoder::OMIT_NONE`, `Format::encode<T, N>` |
 | Partial generic arguments, the rest inferred | `f<A>(x)` for `f<A, const N>` |
 | Inference from an annotated binding through `?` | `let bytes: BoundedBuffer<128> = fe_codec_json::encode(order)?` |
@@ -87,9 +87,9 @@ programs:
 
 | Claim | Where |
 | --- | --- |
-| A 1-, 2-, 3- or 4-byte sequence completes one UTF-8 character exactly when RFC 3629 §4 allows it, and the validator returns to its start state | `core/src/verification.fe` |
-| Bytes that cannot start a character are rejected immediately | `core/src/verification.fe` |
-| The CBOR encoder's head for any 64-bit argument is accepted by the decoder, and is the only head of any width the decoder accepts | `formats/cbor/src/verification.fe` |
+| A 1-, 2-, 3- or 4-byte sequence completes one UTF-8 character exactly when RFC 3629 §4 allows it, and the validator returns to its start state | `ingots/core/src/verification.fe` |
+| Bytes that cannot start a character are rejected immediately | `ingots/core/src/verification.fe` |
+| The CBOR encoder's head for any 64-bit argument is accepted by the decoder, and is the only head of any width the decoder accepts | `ingots/cbor/src/verification.fe` |
 | The 8–64-bit range checks accept exactly the values of their width | `examples/transfer/shared/src/props.fe` |
 
 The UTF-8 claims cover one character. Text of any length follows by induction, because the
@@ -109,8 +109,11 @@ counts per run):
 | The targets agree on every decode outcome, kind and offset for those inputs | 256 |
 | The targets agree on the encoded bytes of wide values | 256 |
 
-`femp prove` reports the round-trip and no-panic properties as not supported: its model does
-not yet cover the `mut` borrows the encoder and decoder traits use. They are tested, not proved.
+`femp prove` (FeMP 0.1.0) reports the other 15 properties, including every round-trip and
+no-panic property, as not supported, because its model does not yet cover constructs the codec
+relies on: function values such as `map_err(CodecError::from_io)` (10 properties), arrays sized
+by a `const fn`, such as `BoundedBuffer`'s `[u256; word_count(N)]` (2), byte string constants
+(2) and `*u8` values (1). They are tested, not proved.
 
 **Example-tested** by `femp test` on all three targets and `fe test` on two:
 

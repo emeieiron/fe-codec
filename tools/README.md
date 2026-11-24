@@ -48,7 +48,7 @@ after a toolchain upgrade checks the parser against the new compiler.
 
 ## Fe as used here
 
-Read real code before guessing syntax: `core/`, `formats/` and `formats/eip712/` in this repo,
+Read real code before guessing syntax: `ingots/` in this repo,
 the toolchain's `src/ingots/{core,std}/src`, its language notes in `src/docs/language/`, and
 native examples in `src/crates/fe/tests/fixtures/native/*.fe`.
 

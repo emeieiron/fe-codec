@@ -32,7 +32,7 @@ jobs:
       - name: Runtime ingots
         run: |
           for ingot in io core; do
-            (cd "$ingot" && fe test && fe test --backend native && fe test --backend wasm)
+            (cd "ingots/$ingot" && fe test && fe test --backend native && fe test --backend wasm)
           done
 
       - name: Parser

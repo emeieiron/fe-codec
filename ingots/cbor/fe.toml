@@ -3,5 +3,5 @@ name = "fe_codec_cbor"
 version = "0.1.0"
 
 [dependencies]
-fe_codec_core = "../../core"
-fe_codec_io = "../../io"
+fe_codec_core = "../core"
+fe_codec_io = "../io"

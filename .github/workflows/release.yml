@@ -50,11 +50,11 @@ jobs:
               raise SystemExit(f"fe.toml: expected version {version!r}, got {ws_version!r}")
 
           ingots = [
-              "io/fe.toml",
-              "core/fe.toml",
-              "formats/json/fe.toml",
-              "formats/cbor/fe.toml",
-              "formats/eip712/fe.toml",
+              "ingots/io/fe.toml",
+              "ingots/core/fe.toml",
+              "ingots/json/fe.toml",
+              "ingots/cbor/fe.toml",
+              "ingots/eip712/fe.toml",
               "tools/syntax/fe.toml",
               "tools/codegen/fe.toml",
               "tools/generator/fe.toml",

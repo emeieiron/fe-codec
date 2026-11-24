@@ -14,7 +14,7 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
-INGOTS = ("io", "core", "formats/json", "formats/cbor")
+INGOTS = ("ingots/io", "ingots/core", "ingots/json", "ingots/cbor")
 BACKENDS = ("sonatina", "native")
 
 

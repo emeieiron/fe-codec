@@ -70,10 +70,10 @@ name = "generator_fuzz"
 version = "0.1.0"
 
 [dependencies]
-fe_codec_core = "{r}/core"
-fe_codec_json = "{r}/formats/json"
-fe_codec_cbor = "{r}/formats/cbor"
-fe_codec_eip712 = "{r}/formats/eip712"
+fe_codec_core = "{r}/ingots/core"
+fe_codec_json = "{r}/ingots/json"
+fe_codec_cbor = "{r}/ingots/cbor"
+fe_codec_eip712 = "{r}/ingots/eip712"
 codec_compact = "{r}/examples/compact_format"
 """
 

@@ -5,4 +5,4 @@ target = "wasm"
 
 [dependencies]
 codec_transfer = "../shared"
-fe_codec_core = "../../../core"
+fe_codec_core = "../../../ingots/core"

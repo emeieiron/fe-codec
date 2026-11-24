@@ -356,8 +356,8 @@ def compile_problem(case: Case, mode: str, modules: dict) -> str | None:
         relative = os.path.relpath(ROOT, os.path.realpath(directory))
         (directory / "fe.toml").write_text(
             '[ingot]\nname = "generated_case"\nversion = "0.1.0"\n\n[dependencies]\n'
-            f'fe_codec_core = "{relative}/core"\n'
-            f'fe_codec_eip712 = "{relative}/formats/eip712"\n',
+            f'fe_codec_core = "{relative}/ingots/core"\n'
+            f'fe_codec_eip712 = "{relative}/ingots/eip712"\n',
             encoding="utf-8",
         )
         status, output = run_fe_check(directory)

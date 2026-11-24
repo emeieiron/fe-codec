@@ -22,7 +22,7 @@ def fixture_release(root):
     repo = root / "release"
     repo.mkdir()
     shutil.copy(ROOT / "fe.toml", repo)
-    for name in ("core", "formats", "io", "tools"):
+    for name in ("ingots", "tools"):
         shutil.copytree(ROOT / name, repo / name, ignore=shutil.ignore_patterns("out", "build"))
     run(["git", "init", "-q"], repo)
     run(["git", "add", "."], repo)

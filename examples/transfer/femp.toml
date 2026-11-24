@@ -6,19 +6,19 @@ version = "0.1.0"
 fe = "26.7.0"
 
 [modules.io]
-path = "../../io"
+path = "../../ingots/io"
 
 [modules.core]
-path = "../../core"
+path = "../../ingots/core"
 
 [modules.json]
-path = "../../formats/json"
+path = "../../ingots/json"
 
 [modules.cbor]
-path = "../../formats/cbor"
+path = "../../ingots/cbor"
 
 [modules.eip712]
-path = "../../formats/eip712"
+path = "../../ingots/eip712"
 
 [modules.compact]
 path = "../compact_format"
