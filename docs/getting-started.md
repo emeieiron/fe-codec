@@ -94,8 +94,9 @@ fn round_trip(_ order: Order) -> CodecResult<Order> {
 }
 ```
 
-Without annotations, name both generic arguments: `fe_codec_json::encode<Order, 192>(order)`.
-Fe does not accept just one of them.
+Without annotations, pass the generic arguments yourself. Fe infers any you write as `_` or
+leave off the end, so `fe_codec_json::encode<_, 192>(order)` names only the capacity and
+`fe_codec_json::decode<Order>(bytes)` takes it from `bytes`.
 
 Switching formats doesn't touch the serializer. Change the ingot, or write code that is
 generic over `Format`:

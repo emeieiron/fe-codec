@@ -1,6 +1,6 @@
 # Runs the checks that need only fe, Python and Node. The FeMP checks (femp test, prop and
-# prove, and tests/consumer.py) and the generator fuzz test (tests/generator_fuzz.py), which
-# exhausts a hosted runner, run locally; see README.md.
+# prove, and tests/consumer.py) run in femp.yml. The generator fuzz test
+# (tests/generator_fuzz.py) exhausts a hosted runner, so it runs locally; see README.md.
 name: Tests
 
 on:

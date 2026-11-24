@@ -77,7 +77,10 @@ native backends.
 
 ## Guarantees
 
-Three kinds of evidence back these invariants, and they are not interchangeable.
+Three kinds of evidence back these invariants, and they are not interchangeable. The
+[FeMP workflow](https://github.com/emeieiron/fe-codec/actions/workflows/femp.yml) runs
+`femp prove`, `femp prop --seed 0x2a` and `femp test` on every push to `main` that touches the
+code, and each run's summary shows the reports.
 
 **Proved** by `femp prove` for every input, separately for the EVM, native and WebAssembly
 programs:

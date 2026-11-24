@@ -1,0 +1,100 @@
+# Runs the FeMP checks behind docs/design.md's guarantees: the example tests on every target,
+# the property tests with the documented seed, the proofs, and a clean downstream consumer.
+# Each job writes its report to the run summary; the JSON reports are kept as artifacts.
+name: FeMP checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - core/**
+      - io/**
+      - formats/**
+      - tools/**
+      - examples/**
+      - tests/consumer.py
+      - fe.toml
+      - .github/workflows/femp.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: femp-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FE_VERSION: v26.7.0
+  FEMP_VERSION: v0.1.0
+
+jobs:
+  femp:
+    name: ${{ matrix.name }}
+    # FeMP's bundled Z3 needs glibc 2.39, as on Ubuntu 24.04.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: femp test
+            command: femp test -t evm -t native -t wasm
+          - name: femp prop
+            command: femp prop -t evm -t native -t wasm --seed 0x2a --json
+          - name: femp prove
+            command: femp prove --json
+          - name: consumer
+            command: python3 tests/consumer.py --generator target/fe/fe_codec_gen
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Install FeMP
+        run: |
+          curl -fsSL "https://github.com/emeieiron/femp/releases/download/$FEMP_VERSION/installer.sh" \
+            | sh -s -- --yes --no-modify-path
+          echo "$HOME/.femp/bin" >> "$GITHUB_PATH"
+
+      - name: Install Fe and build the generator
+        if: matrix.name == 'consumer'
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/argotorg/fe/master/feup/feup.sh \
+            | bash -s -- --version "$FE_VERSION" --no-modify-path
+          echo "$HOME/.fe/bin" >> "$GITHUB_PATH"
+          FE="$HOME/.fe/bin/fe" tools/fe_codec_gen --version
+
+      - run: femp doctor
+
+      - name: ${{ matrix.name }}
+        shell: bash
+        working-directory: ${{ matrix.name == 'consumer' && '.' || 'examples/transfer' }}
+        run: ${{ matrix.command }} 2>&1 | tee "$RUNNER_TEMP/report.txt"
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### \`${{ matrix.command }}\`"
+            echo
+            echo "Fe Codec \`${GITHUB_SHA::12}\`, FeMP $FEMP_VERSION, outcome: **${{ job.status }}**"
+            echo
+            echo '```text'
+            cat "$RUNNER_TEMP/report.txt" 2>/dev/null || echo "(no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the reports
+        if: always() && (matrix.name == 'femp prop' || matrix.name == 'femp prove')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name == 'femp prop' && 'prop' || 'prove' }}-report
+          path: |
+            ${{ runner.temp }}/report.txt
+            examples/transfer/build/prop/report.json
+            examples/transfer/build/prove/report.json
+            examples/transfer/regressions/
+          if-no-files-found: ignore

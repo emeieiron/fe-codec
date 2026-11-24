@@ -1,5 +1,8 @@
 # Fe Codec
 
+[![Tests](https://github.com/emeieiron/fe-codec/actions/workflows/tests.yml/badge.svg)](https://github.com/emeieiron/fe-codec/actions/workflows/tests.yml)
+[![FeMP checks](https://github.com/emeieiron/fe-codec/actions/workflows/femp.yml/badge.svg)](https://github.com/emeieiron/fe-codec/actions/workflows/femp.yml)
+
 Fe Codec is a type-safe, extensible serialization framework for Fe. Describe a type once: a
 generator written in Fe writes its serializers, and the same code encodes it as JSON,
 deterministic CBOR or a format you write, and hashes it as EIP-712 typed data, in smart
@@ -76,7 +79,6 @@ let back: Order = fe_codec_json::decode(bytes)?
 | --- | --- | --- |
 | No derive/proc macros or compile-time reflection | External `fe_codec_gen` + `fe_syntax` parser, sibling `.fe` files, `pub` fields required, no `where` or generic enums, separate `--eip712` pass | Compiler-integrated `#[derive(...)]` or compile-time reflection + `const fn` inside the defining module |
 | No safe uninitialized array init; `unsafe` propagates to callers | Zero `unsafe` in `core`; `T: Copy` / `V: Copy` on generic `[T; N]`, `List<T, N>`, `Map<K, V, N>`; no generic `[T; 0]`; unrolled field arrays up to 64 | Safe `core` array init (`try_from_fn` / `MaybeUninit`) or library-encapsulated `unsafe` |
-| No partial generic arguments | Name every generic (`encode<Order, 192>(x)`) or annotate the binding | Partial generic arguments or `_` placeholders (`encode<Order, _>`) |
 | No variadic generics | Hand-written tuple impls capped at 1–8 elements | Variadic generics or macro expansion in `core` |
 | Full-SHA Git pinning; no codegen dependencies | Manual 40-char `rev` synced with `fe_codec_gen` | SemVer/registry dependencies and toolchain-managed codegen |
 | Native backend host & `std::fs` gaps | Prebuilt binaries only for Linux x86-64/ARM64 and macOS Apple silicon (no Intel macOS or Windows); in-place writes (no atomic rename) | Full host support + atomic rename in `std::fs` (or no external CLI once derives exist) |
@@ -109,15 +111,20 @@ site/                    the documentation site and its playground (Astro)
 
 The [tests workflow](.github/workflows/tests.yml) runs the checks that need only `fe`, Python
 and Node on every push. [tools/README.md](tools/README.md) describes the generator's suites.
-The FeMP checks and the generator fuzz test run locally:
+The [FeMP workflow](.github/workflows/femp.yml) runs the FeMP checks on every push to `main`
+that touches the code: the tests on every target, the property tests with seed `0x2a`, the
+proofs, and a clean consumer project. Each run's summary shows the reports. To run them
+locally:
 
 ```bash
-cd examples/transfer && femp test -t evm -t native -t wasm && femp prop -t evm -t native -t wasm && femp prove
+cd examples/transfer && femp test -t evm -t native -t wasm && femp prop -t evm -t native -t wasm --seed 0x2a && femp prove
 ```
 
 ```bash
 python3 tests/consumer.py
 ```
+
+The generator fuzz test exhausts a hosted runner, so it runs only locally:
 
 ```bash
 python3 tests/generator_fuzz.py
