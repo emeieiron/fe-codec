@@ -31,7 +31,13 @@ use ingot::types::TypeTable
 pub struct HashFrame { start: usize, entries: Frame }
 
 /// Hashes one value into a stack of words. `top` is the stack's length in bytes.
-pub struct Eip712Encoder { table: TypeTable, stack: MemBuffer, capacity: usize, top: usize, structure: Structure }
+pub struct Eip712Encoder {
+    table: TypeTable,
+    stack: MemBuffer,
+    capacity: usize,
+    top: usize,
+    structure: Structure,
+}
 
 impl Eip712Encoder {
     /// An encoder over `table`, which must be finished, with `capacity` bytes of stack.
@@ -49,14 +55,18 @@ impl Eip712Encoder {
     pub fn finish(self) -> CodecResult<u256> {
         self.structure.finish(self.top)?
         if self.top != 32 {
-            return Result::Err(CodecError::at(kind: ErrorKind::InvalidState, offset: self.top))
+            return Result::Err(
+                CodecError::at(kind: ErrorKind::InvalidState, offset: self.top),
+            )
         }
         Result::Ok(self.stack.read_word(0))
     }
 
     fn push(mut self, _ word: u256) -> CodecResult<()> {
         if self.top + 32 > self.capacity {
-            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: self.top))
+            return Result::Err(
+                CodecError::at(kind: ErrorKind::CapacityExceeded, offset: self.top),
+            )
         }
         self.stack.write_word(offset: self.top, value: word)
         self.top += 32
@@ -75,7 +85,9 @@ impl Eip712Encoder {
         // The bytes are staged above the stack, then replaced by their hash.
         let room = if words == 0 { 32 } else { words * 32 }
         if self.top + room > self.capacity {
-            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: self.top))
+            return Result::Err(
+                CodecError::at(kind: ErrorKind::CapacityExceeded, offset: self.top),
+            )
         }
         var index: usize = 0
         while index < words {
@@ -147,7 +159,9 @@ impl Encoder for Eip712Encoder {
     /// `bytesN`, padded with zeros at the end.
     fn write_fixed_bytes<const M: usize>(mut self, _ value: PackedBytes<M>) -> CodecResult<()> {
         if M == 0 || M > 32 {
-            return Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: self.top))
+            return Result::Err(
+                CodecError::at(kind: ErrorKind::Unsupported, offset: self.top),
+            )
         }
         self.value_word(value.word(0))
     }
@@ -157,11 +171,15 @@ impl Encoder for Eip712Encoder {
     }
 
     fn write_none(mut self) -> CodecResult<()> {
-        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: self.top))
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.top),
+        )
     }
 
     fn write_some(mut self) -> CodecResult<()> {
-        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: self.top))
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.top),
+        )
     }
 
     /// A unit enum is a `uint8` holding the variant's ID.
@@ -169,11 +187,15 @@ impl Encoder for Eip712Encoder {
         let variant = match V::variant(index) {
             Option::Some(variant) => variant,
             Option::None => {
-                return Result::Err(CodecError::at(kind: ErrorKind::InvalidState, offset: self.top))
+                return Result::Err(
+                    CodecError::at(kind: ErrorKind::InvalidState, offset: self.top),
+                )
             },
         }
         if variant.id > 255 {
-            return Result::Err(CodecError::at(kind: ErrorKind::IntegerOutOfRange, offset: self.top))
+            return Result::Err(
+                CodecError::at(kind: ErrorKind::IntegerOutOfRange, offset: self.top),
+            )
         }
         self.value_word(variant.id as u256)
     }
@@ -184,13 +206,17 @@ impl Encoder for Eip712Encoder {
             count += 1
         }
         if present != count {
-            return Result::Err(CodecError::at(kind: ErrorKind::InvalidState, offset: self.top))
+            return Result::Err(
+                CodecError::at(kind: ErrorKind::InvalidState, offset: self.top),
+            )
         }
         let type_hash = match self.table.hash_of(R::name()) {
             Option::Some(hash) => hash,
             Option::None => {
                 // The value holds a struct its type did not describe.
-                return Result::Err(CodecError::at(kind: ErrorKind::InvalidState, offset: self.top))
+                return Result::Err(
+                    CodecError::at(kind: ErrorKind::InvalidState, offset: self.top),
+                )
             },
         }
         self.begin(count)?
@@ -203,7 +229,9 @@ impl Encoder for Eip712Encoder {
         let field = match R::field(position) {
             Option::Some(field) => field,
             Option::None => {
-                return Result::Err(CodecError::at(kind: ErrorKind::InvalidState, offset: self.top))
+                return Result::Err(
+                    CodecError::at(kind: ErrorKind::InvalidState, offset: self.top),
+                )
             },
         }
         self.structure.member(self.top)?

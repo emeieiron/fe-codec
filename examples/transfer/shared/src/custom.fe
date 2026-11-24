@@ -36,7 +36,9 @@ impl Deserialize for Celsius {
         let start = decoder.offset()
         match Celsius::parse(decoder.read_text<24>()?) {
             Option::Some(value) => Result::Ok(value),
-            Option::None => Result::Err(CodecError::at(kind: ErrorKind::InvalidSyntax, offset: start)),
+            Option::None => Result::Err(
+                CodecError::at(kind: ErrorKind::InvalidSyntax, offset: start),
+            ),
         }
     }
 }
@@ -88,7 +90,9 @@ impl Celsius {
         let first = index
         var whole: u64 = 0
         while let Option::Some(byte) = text.byte_at(index) {
-            if byte < b'0' || byte > b'9' { break }
+            if byte < b'0' || byte > b'9' {
+                break
+            }
             if index != first && text.byte_at(first) == Option::Some(b'0') {
                 return Option::None
             }
@@ -144,8 +148,12 @@ impl Schema for Point {
 
     fn field(_ position: usize) -> Option<FieldInfo> {
         match position {
-            0 => Option::Some(FieldInfo { name: schema_name<1>("x"), id: 1, optional: false }),
-            1 => Option::Some(FieldInfo { name: schema_name<1>("y"), id: 2, optional: false }),
+            0 => Option::Some(
+                FieldInfo { name: schema_name<1>("x"), id: 1, optional: false },
+            ),
+            1 => Option::Some(
+                FieldInfo { name: schema_name<1>("y"), id: 2, optional: false },
+            ),
             _ => Option::None,
         }
     }
@@ -182,12 +190,17 @@ impl Deserialize for Point {
             match key.position {
                 0 => key.read(mut decoder, mut x)?,
                 1 => key.read(mut decoder, mut y)?,
-                _ => return Result::Err(key.unknown()),
+                _ => {
+                    return Result::Err(key.unknown())
+                },
             }
         }
         decoder.end_record(record)?
         Result::Ok(
-            Point { x: Self::required(x, 0, decoder.offset())?, y: Self::required(y, 1, decoder.offset())? },
+            Point {
+                x: Self::required(x, 0, decoder.offset())?,
+                y: Self::required(y, 1, decoder.offset())?,
+            },
         )
     }
 }

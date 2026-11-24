@@ -36,7 +36,19 @@ const SHAPE_EMPTY_CBOR: [u8; 1] = [0x00]
 const SHAPE_POINT_JSON: [u8; 11] = "{\"Point\":5}"
 const SHAPE_POINT_CBOR: [u8; 3] = [0xa1, 0x01, 0x05]
 const SHAPE_POINT_MAX_JSON: [u8; 30] = "{\"Point\":18446744073709551615}"
-const SHAPE_POINT_MAX_CBOR: [u8; 11] = [0xa1, 0x01, 0x1b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]
+const SHAPE_POINT_MAX_CBOR: [u8; 11] = [
+    0xa1,
+    0x01,
+    0x1b,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+]
 const SHAPE_PAIR_JSON: [u8; 16] = "{\"Pair\":[1,\"a\"]}"
 const SHAPE_PAIR_CBOR: [u8; 6] = [0xa1, 0x02, 0x82, 0x01, 0x61, 0x61]
 const SHAPE_CIRCLE_JSON: [u8; 35] = "{\"Circle\":{\"radius\":2,\"label\":\"x\"}}"
@@ -44,13 +56,80 @@ const SHAPE_CIRCLE_CBOR: [u8; 8] = [0xa1, 0x03, 0xa2, 0x01, 0x02, 0x02, 0x61, 0x
 const SHAPE_CIRCLE_BARE_JSON: [u8; 23] = "{\"Circle\":{\"radius\":2}}"
 const SHAPE_CIRCLE_BARE_CBOR: [u8; 5] = [0xa1, 0x03, 0xa1, 0x01, 0x02]
 const CANVAS_JSON: [u8; 147] = "{\"main\":{\"Pair\":[1,\"a\"]},\"spare\":{\"Point\":7},\"ring\":[\"Empty\",{\"Point\":1}],\"layers\":[{\"Circle\":{\"radius\":1}}],\"named\":{\"3\":{\"Point\":2},\"9\":\"Empty\"}}"
-const CANVAS_CBOR: [u8; 33] = [0xa5, 0x01, 0xa1, 0x02, 0x82, 0x01, 0x61, 0x61, 0x02, 0xa1, 0x01, 0x07, 0x03, 0x82, 0x00, 0xa1, 0x01, 0x01, 0x04, 0x81, 0xa1, 0x03, 0xa1, 0x01, 0x01, 0x05, 0xa2, 0x03, 0xa1, 0x01, 0x02, 0x09, 0x00]
+const CANVAS_CBOR: [u8; 33] = [
+    0xa5,
+    0x01,
+    0xa1,
+    0x02,
+    0x82,
+    0x01,
+    0x61,
+    0x61,
+    0x02,
+    0xa1,
+    0x01,
+    0x07,
+    0x03,
+    0x82,
+    0x00,
+    0xa1,
+    0x01,
+    0x01,
+    0x04,
+    0x81,
+    0xa1,
+    0x03,
+    0xa1,
+    0x01,
+    0x01,
+    0x05,
+    0xa2,
+    0x03,
+    0xa1,
+    0x01,
+    0x02,
+    0x09,
+    0x00,
+]
 const CANVAS_BARE_JSON: [u8; 92] = "{\"main\":\"Empty\",\"ring\":[{\"Circle\":{\"radius\":0,\"label\":\"y\"}},\"Empty\"],\"layers\":[],\"named\":{}}"
-const CANVAS_BARE_CBOR: [u8; 18] = [0xa4, 0x01, 0x00, 0x03, 0x82, 0xa1, 0x03, 0xa2, 0x01, 0x00, 0x02, 0x61, 0x79, 0x00, 0x04, 0x80, 0x05, 0xa0]
+const CANVAS_BARE_CBOR: [u8; 18] = [
+    0xa4,
+    0x01,
+    0x00,
+    0x03,
+    0x82,
+    0xa1,
+    0x03,
+    0xa2,
+    0x01,
+    0x00,
+    0x02,
+    0x61,
+    0x79,
+    0x00,
+    0x04,
+    0x80,
+    0x05,
+    0xa0,
+]
 const EVENT_START_JSON: [u8; 7] = "\"Start\""
 const EVENT_START_CBOR: [u8; 1] = [0x07]
 const EVENT_MOVE_JSON: [u8; 39] = "{\"Move\":{\"dy\":-3,\"note\":\"hi\",\"dx\":300}}"
-const EVENT_MOVE_CBOR: [u8; 13] = [0xa1, 0x03, 0xa3, 0x02, 0x22, 0x04, 0x62, 0x68, 0x69, 0x09, 0x19, 0x01, 0x2c]
+const EVENT_MOVE_CBOR: [u8; 13] = [
+    0xa1,
+    0x03,
+    0xa3,
+    0x02,
+    0x22,
+    0x04,
+    0x62,
+    0x68,
+    0x69,
+    0x09,
+    0x19,
+    0x01,
+    0x2c,
+]
 const EVENT_MOVE_BARE_JSON: [u8; 25] = "{\"Move\":{\"dy\":0,\"dx\":-1}}"
 const EVENT_MOVE_BARE_CBOR: [u8; 7] = [0xa1, 0x03, 0xa2, 0x02, 0x00, 0x09, 0x20]
 const EVENT_DRAW_JSON: [u8; 20] = "{\"Draw\":{\"Point\":5}}"
@@ -62,13 +141,59 @@ const EVENT_PAY_CBOR: [u8; 10] = [0xa1, 0x0c, 0xa2, 0x01, 0x62, 0x66, 0x66, 0x02
 const EVENT_PAY_BARE_JSON: [u8; 22] = "{\"Pay\":{\"amount\":\"1\"}}"
 const EVENT_PAY_BARE_CBOR: [u8; 6] = [0xa1, 0x0c, 0xa1, 0x01, 0x61, 0x31]
 const LAYOUT_ROW_JSON: [u8; 87] = "{\"Row\":{\"cells\":[{\"active\":true,\"label\":\"a\"},{\"active\":false,\"label\":\"b\"}],\"flags\":[]}}"
-const LAYOUT_ROW_CBOR: [u8; 19] = [0xa1, 0x00, 0xa2, 0x01, 0x82, 0xa2, 0x01, 0xf5, 0x02, 0x61, 0x61, 0xa2, 0x01, 0xf4, 0x02, 0x61, 0x62, 0x02, 0x80]
+const LAYOUT_ROW_CBOR: [u8; 19] = [
+    0xa1,
+    0x00,
+    0xa2,
+    0x01,
+    0x82,
+    0xa2,
+    0x01,
+    0xf5,
+    0x02,
+    0x61,
+    0x61,
+    0xa2,
+    0x01,
+    0xf4,
+    0x02,
+    0x61,
+    0x62,
+    0x02,
+    0x80,
+]
 const LAYOUT_CELL_JSON: [u8; 36] = "{\"Cell\":{\"active\":true,\"label\":\"c\"}}"
 const LAYOUT_CELL_CBOR: [u8; 8] = [0xa1, 0x01, 0xa2, 0x01, 0xf5, 0x02, 0x61, 0x63]
 const PARTS_MIXED_JSON: [u8; 35] = "{\"Mixed\":[null,[1,2],[true,3],[4]]}"
-const PARTS_MIXED_CBOR: [u8; 12] = [0xa1, 0x00, 0x84, 0xf6, 0x82, 0x01, 0x02, 0x82, 0xf5, 0x03, 0x81, 0x04]
+const PARTS_MIXED_CBOR: [u8; 12] = [
+    0xa1,
+    0x00,
+    0x84,
+    0xf6,
+    0x82,
+    0x01,
+    0x02,
+    0x82,
+    0xf5,
+    0x03,
+    0x81,
+    0x04,
+]
 const PARTS_MIXED_SOME_JSON: [u8; 34] = "{\"Mixed\":[9,[0,255],[false,0],[]]}"
-const PARTS_MIXED_SOME_CBOR: [u8; 12] = [0xa1, 0x00, 0x84, 0x09, 0x82, 0x00, 0x18, 0xff, 0x82, 0xf4, 0x00, 0x80]
+const PARTS_MIXED_SOME_CBOR: [u8; 12] = [
+    0xa1,
+    0x00,
+    0x84,
+    0x09,
+    0x82,
+    0x00,
+    0x18,
+    0xff,
+    0x82,
+    0xf4,
+    0x00,
+    0x80,
+]
 const PARTS_MAYBE_NONE_JSON: [u8; 14] = "{\"Maybe\":null}"
 const PARTS_MAYBE_NONE_CBOR: [u8; 3] = [0xa1, 0x01, 0xf6]
 const PARTS_MAYBE_SOME_JSON: [u8; 11] = "{\"Maybe\":3}"
@@ -92,7 +217,11 @@ const TOLERANT_PLAIN_CBOR: [u8; 3] = [0xa1, 0x03, 0x09]
 const CAPACITY: usize = 192
 
 /// Whether `format` encodes `value` as exactly `expected`.
-fn writes<T: Serialize, F: Format, const M: usize>(_ format: F, _ value: T, _ expected: [u8; M]) -> bool {
+fn writes<T: Serialize, F: Format, const M: usize>(
+    _ format: F,
+    _ value: T,
+    _ expected: [u8; M],
+) -> bool {
     match format.encode<T, CAPACITY>(value) {
         Result::Ok(bytes) => bytes.equals(BoundedBuffer<M>::from_array(expected)),
         Result::Err(_) => false,
@@ -100,10 +229,11 @@ fn writes<T: Serialize, F: Format, const M: usize>(_ format: F, _ value: T, _ ex
 }
 
 /// Decodes `input` as a `T` in `format`.
-fn reads<T: Deserialize, F: Format, const M: usize>(_ format: F, _ input: [u8; M]) -> CodecResult<T> {
+fn reads<T: Deserialize, F: Format, const M: usize>(_ format: F, _ input: [u8; M]) -> CodecResult<
+    T,
+> {
     format.decode<T, CAPACITY>(BoundedBuffer<CAPACITY>::from_prefix(input).unwrap())
 }
-
 
 fn circle(_ radius: u64, _ label: Option<Text<8>>) -> Shape {
     Shape::Circle { radius, label }
@@ -173,9 +303,13 @@ fn check_canvas(_ value: Canvas) {
     assert!(is_pair(value.main, 1, text("a")))
     assert!(is_some_point(value.spare, 7))
     assert!(is_empty(value.ring[0]) && is_point(value.ring[1], 1))
-    assert!(value.layers.len() == 1 && is_circle(value.layers.get(0).unwrap(), 1, Option::None))
+    assert!(
+        value.layers.len() == 1 && is_circle(value.layers.get(0).unwrap(), 1, Option::None),
+    )
     assert!(value.named.len() == 2)
-    assert!(is_point(value.named.get(3).unwrap(), 2) && is_empty(value.named.get(9).unwrap()))
+    assert!(
+        is_point(value.named.get(3).unwrap(), 2) && is_empty(value.named.get(9).unwrap()),
+    )
 }
 
 fn bare_canvas() -> Canvas {
@@ -190,7 +324,9 @@ fn bare_canvas() -> Canvas {
 
 fn check_bare_canvas(_ value: Canvas) {
     assert!(is_empty(value.main) && value.spare.is_none())
-    assert!(is_circle(value.ring[0], 0, Option::Some(text("y"))) && is_empty(value.ring[1]))
+    assert!(
+        is_circle(value.ring[0], 0, Option::Some(text("y"))) && is_empty(value.ring[1]),
+    )
     assert!(value.layers.is_empty() && value.named.is_empty())
 }
 
@@ -207,7 +343,11 @@ fn is_move(_ event: Event, _ dx: i16, _ dy: i16, _ note: Option<Text<8>>) -> boo
 
 fn is_draw(_ event: Event, _ check: bool) -> bool {
     match event {
-        Event::Draw(shape) => if check { is_point(shape, 5) } else { is_empty(shape) },
+        Event::Draw(shape) => if check {
+            is_point(shape, 5)
+        } else {
+            is_empty(shape)
+        },
         _ => false,
     }
 }
@@ -244,7 +384,9 @@ fn row() -> Layout {
 fn is_row(_ layout: Layout) -> bool {
     match layout {
         Layout::Row { ref cells, ref flags } => {
-            cells[0].active && cells[0].label.equals(text<1, 8>("a")) && !cells[1].active
+            cells[0].active
+                && cells[0].label.equals(text<1, 8>("a"))
+                && !cells[1].active
                 && cells[1].label.equals(text<1, 8>("b"))
         },
         _ => false,
@@ -266,7 +408,13 @@ fn bytes_list<const M: usize>(_ items: [u8; M]) -> List<u8, 2> {
     must(List<u8, 2>::from_array(items))
 }
 
-fn is_mixed(_ parts: Parts, _ first: Option<u8>, _ array: [u8; 2], _ pair: (bool, u8), _ list: List<u8, 2>) -> bool {
+fn is_mixed(
+    _ parts: Parts,
+    _ first: Option<u8>,
+    _ array: [u8; 2],
+    _ pair: (bool, u8),
+    _ list: List<u8, 2>,
+) -> bool {
     match parts {
         Parts::Mixed(a, b, c, d) => a == first && b == array && c == pair && d == list,
         _ => false,
@@ -329,44 +477,160 @@ fn stable<T: Serialize + Deserialize, F: Format>(_ format: F, _ value: T) {
 fn json_writes_each_kind_of_variant() {
     assert!(writes(Json::new(), Shape::Empty, SHAPE_EMPTY_JSON))
     assert!(writes(Json::new(), Shape::Point(5), SHAPE_POINT_JSON))
-    assert!(writes(Json::new(), Shape::Point(18446744073709551615), SHAPE_POINT_MAX_JSON))
-    assert!(writes(Json::new(), Shape::Pair(1, text("a")), SHAPE_PAIR_JSON))
-    assert!(writes(Json::new(), circle(2, Option::Some(text("x"))), SHAPE_CIRCLE_JSON))
+    assert!(
+        writes(
+            Json::new(),
+            Shape::Point(18446744073709551615),
+            SHAPE_POINT_MAX_JSON,
+        ),
+    )
+    assert!(
+        writes(Json::new(), Shape::Pair(1, text("a")), SHAPE_PAIR_JSON),
+    )
+    assert!(
+        writes(
+            Json::new(),
+            circle(2, Option::Some(text("x"))),
+            SHAPE_CIRCLE_JSON,
+        ),
+    )
     // An absent optional field is left out of the record.
-    assert!(writes(Json::new(), circle(2, Option::None), SHAPE_CIRCLE_BARE_JSON))
+    assert!(
+        writes(
+            Json::new(),
+            circle(2, Option::None),
+            SHAPE_CIRCLE_BARE_JSON,
+        ),
+    )
 }
 
 #[test]
 fn cbor_writes_each_kind_of_variant() {
     assert!(writes(Cbor::new(), Shape::Empty, SHAPE_EMPTY_CBOR))
     assert!(writes(Cbor::new(), Shape::Point(5), SHAPE_POINT_CBOR))
-    assert!(writes(Cbor::new(), Shape::Point(18446744073709551615), SHAPE_POINT_MAX_CBOR))
-    assert!(writes(Cbor::new(), Shape::Pair(1, text("a")), SHAPE_PAIR_CBOR))
-    assert!(writes(Cbor::new(), circle(2, Option::Some(text("x"))), SHAPE_CIRCLE_CBOR))
-    assert!(writes(Cbor::new(), circle(2, Option::None), SHAPE_CIRCLE_BARE_CBOR))
+    assert!(
+        writes(
+            Cbor::new(),
+            Shape::Point(18446744073709551615),
+            SHAPE_POINT_MAX_CBOR,
+        ),
+    )
+    assert!(
+        writes(Cbor::new(), Shape::Pair(1, text("a")), SHAPE_PAIR_CBOR),
+    )
+    assert!(
+        writes(
+            Cbor::new(),
+            circle(2, Option::Some(text("x"))),
+            SHAPE_CIRCLE_CBOR,
+        ),
+    )
+    assert!(
+        writes(
+            Cbor::new(),
+            circle(2, Option::None),
+            SHAPE_CIRCLE_BARE_CBOR,
+        ),
+    )
 }
 
 #[test]
 fn json_reads_each_kind_of_variant() {
-    assert!(is_empty(must(reads<Shape, Json>(Json::new(), SHAPE_EMPTY_JSON))))
-    assert!(is_point(must(reads<Shape, Json>(Json::new(), SHAPE_POINT_JSON)), 5))
-    assert!(is_point(must(reads<Shape, Json>(Json::new(), SHAPE_POINT_MAX_JSON)), 18446744073709551615))
-    assert!(is_pair(must(reads<Shape, Json>(Json::new(), SHAPE_PAIR_JSON)), 1, text("a")))
-    assert!(is_circle(must(reads<Shape, Json>(Json::new(), SHAPE_CIRCLE_JSON)), 2, Option::Some(text("x"))))
-    assert!(is_circle(must(reads<Shape, Json>(Json::new(), SHAPE_CIRCLE_BARE_JSON)), 2, Option::None))
+    assert!(
+        is_empty(must(reads<Shape, Json>(Json::new(), SHAPE_EMPTY_JSON))),
+    )
+    assert!(
+        is_point(
+            must(reads<Shape, Json>(Json::new(), SHAPE_POINT_JSON)),
+            5,
+        ),
+    )
+    assert!(
+        is_point(
+            must(reads<Shape, Json>(Json::new(), SHAPE_POINT_MAX_JSON)),
+            18446744073709551615,
+        ),
+    )
+    assert!(
+        is_pair(
+            must(reads<Shape, Json>(Json::new(), SHAPE_PAIR_JSON)),
+            1,
+            text("a"),
+        ),
+    )
+    assert!(
+        is_circle(
+            must(reads<Shape, Json>(Json::new(), SHAPE_CIRCLE_JSON)),
+            2,
+            Option::Some(text("x")),
+        ),
+    )
+    assert!(
+        is_circle(
+            must(reads<Shape, Json>(Json::new(), SHAPE_CIRCLE_BARE_JSON)),
+            2,
+            Option::None,
+        ),
+    )
     // An explicit null is an absent optional field.
-    assert!(is_circle(must(reads<Shape, Json>(Json::new(), "{\"Circle\":{\"radius\":2,\"label\":null}}")), 2, Option::None))
+    assert!(
+        is_circle(
+            must(
+                reads<Shape, Json>(Json::new(), "{\"Circle\":{\"radius\":2,\"label\":null}}"),
+            ),
+            2,
+            Option::None,
+        ),
+    )
 }
 
 #[test]
 fn cbor_reads_each_kind_of_variant() {
-    assert!(is_empty(must(reads<Shape, Cbor>(Cbor::new(), SHAPE_EMPTY_CBOR))))
-    assert!(is_point(must(reads<Shape, Cbor>(Cbor::new(), SHAPE_POINT_CBOR)), 5))
-    assert!(is_point(must(reads<Shape, Cbor>(Cbor::new(), SHAPE_POINT_MAX_CBOR)), 18446744073709551615))
-    assert!(is_pair(must(reads<Shape, Cbor>(Cbor::new(), SHAPE_PAIR_CBOR)), 1, text("a")))
-    assert!(is_circle(must(reads<Shape, Cbor>(Cbor::new(), SHAPE_CIRCLE_CBOR)), 2, Option::Some(text("x"))))
-    assert!(is_circle(must(reads<Shape, Cbor>(Cbor::new(), SHAPE_CIRCLE_BARE_CBOR)), 2, Option::None))
-    assert!(is_circle(must(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x03, 0xa2, 0x01, 0x02, 0x02, 0xf6])), 2, Option::None))
+    assert!(
+        is_empty(must(reads<Shape, Cbor>(Cbor::new(), SHAPE_EMPTY_CBOR))),
+    )
+    assert!(
+        is_point(
+            must(reads<Shape, Cbor>(Cbor::new(), SHAPE_POINT_CBOR)),
+            5,
+        ),
+    )
+    assert!(
+        is_point(
+            must(reads<Shape, Cbor>(Cbor::new(), SHAPE_POINT_MAX_CBOR)),
+            18446744073709551615,
+        ),
+    )
+    assert!(
+        is_pair(
+            must(reads<Shape, Cbor>(Cbor::new(), SHAPE_PAIR_CBOR)),
+            1,
+            text("a"),
+        ),
+    )
+    assert!(
+        is_circle(
+            must(reads<Shape, Cbor>(Cbor::new(), SHAPE_CIRCLE_CBOR)),
+            2,
+            Option::Some(text("x")),
+        ),
+    )
+    assert!(
+        is_circle(
+            must(reads<Shape, Cbor>(Cbor::new(), SHAPE_CIRCLE_BARE_CBOR)),
+            2,
+            Option::None,
+        ),
+    )
+    assert!(
+        is_circle(
+            must(
+                reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x03, 0xa2, 0x01, 0x02, 0x02, 0xf6]),
+            ),
+            2,
+            Option::None,
+        ),
+    )
 }
 
 #[test]
@@ -376,9 +640,19 @@ fn unit_variants_of_a_payload_enum_are_written_as_those_of_an_enum_without_paylo
     assert!(writes(Cbor::new(), Status::Sent, [0x01]))
     assert!(writes(Json::new(), Shape::Empty, "\"Empty\""))
     assert!(writes(Cbor::new(), Shape::Empty, [0x00]))
-    assert!(is_gone(must(reads<Tolerant, Json>(Json::new(), TOLERANT_GONE_JSON))))
-    assert!(is_gone(must(reads<Tolerant, Cbor>(Cbor::new(), TOLERANT_GONE_CBOR))))
-    assert!(is_start(must(reads<Event, Json>(Json::new(), EVENT_START_JSON))))
+    assert!(
+        is_gone(
+            must(reads<Tolerant, Json>(Json::new(), TOLERANT_GONE_JSON)),
+        ),
+    )
+    assert!(
+        is_gone(
+            must(reads<Tolerant, Cbor>(Cbor::new(), TOLERANT_GONE_CBOR)),
+        ),
+    )
+    assert!(
+        is_start(must(reads<Event, Json>(Json::new(), EVENT_START_JSON))),
+    )
     assert!(writes(Cbor::new(), Event::Start, EVENT_START_CBOR))
 }
 
@@ -386,10 +660,35 @@ fn unit_variants_of_a_payload_enum_are_written_as_those_of_an_enum_without_paylo
 
 #[test]
 fn json_accepts_whitespace_around_a_wrapper() {
-    assert!(is_point(must(reads<Shape, Json>(Json::new(), " \n{ \"Point\"\t:\r\n 5 }\n ")), 5))
-    assert!(is_pair(must(reads<Shape, Json>(Json::new(), "{ \"Pair\" : [ 1 , \"a\" ] }")), 1, text("a")))
-    assert!(is_circle(must(reads<Shape, Json>(Json::new(), "{ \"Circle\" : { \"radius\" : 2 } }")), 2, Option::None))
-    assert!(is_empty(must(reads<Shape, Json>(Json::new(), " \"Empty\" "))))
+    assert!(
+        is_point(
+            must(
+                reads<Shape, Json>(Json::new(), " \n{ \"Point\"\t:\r\n 5 }\n "),
+            ),
+            5,
+        ),
+    )
+    assert!(
+        is_pair(
+            must(
+                reads<Shape, Json>(Json::new(), "{ \"Pair\" : [ 1 , \"a\" ] }"),
+            ),
+            1,
+            text("a"),
+        ),
+    )
+    assert!(
+        is_circle(
+            must(
+                reads<Shape, Json>(Json::new(), "{ \"Circle\" : { \"radius\" : 2 } }"),
+            ),
+            2,
+            Option::None,
+        ),
+    )
+    assert!(
+        is_empty(must(reads<Shape, Json>(Json::new(), " \"Empty\" "))),
+    )
 }
 
 // A payload enum inside another, in an option, an array, a list and a map.
@@ -409,14 +708,58 @@ fn payload_enums_nest_in_options_arrays_lists_and_maps() {
 
 #[test]
 fn a_variant_holds_a_payload_enum() {
-    assert!(writes(Json::new(), Event::Draw(Shape::Point(5)), EVENT_DRAW_JSON))
-    assert!(writes(Cbor::new(), Event::Draw(Shape::Point(5)), EVENT_DRAW_CBOR))
-    assert!(writes(Json::new(), Event::Draw(Shape::Empty), EVENT_DRAW_EMPTY_JSON))
-    assert!(writes(Cbor::new(), Event::Draw(Shape::Empty), EVENT_DRAW_EMPTY_CBOR))
-    assert!(is_draw(must(reads<Event, Json>(Json::new(), EVENT_DRAW_JSON)), true))
-    assert!(is_draw(must(reads<Event, Cbor>(Cbor::new(), EVENT_DRAW_CBOR)), true))
-    assert!(is_draw(must(reads<Event, Json>(Json::new(), EVENT_DRAW_EMPTY_JSON)), false))
-    assert!(is_draw(must(reads<Event, Cbor>(Cbor::new(), EVENT_DRAW_EMPTY_CBOR)), false))
+    assert!(
+        writes(
+            Json::new(),
+            Event::Draw(Shape::Point(5)),
+            EVENT_DRAW_JSON,
+        ),
+    )
+    assert!(
+        writes(
+            Cbor::new(),
+            Event::Draw(Shape::Point(5)),
+            EVENT_DRAW_CBOR,
+        ),
+    )
+    assert!(
+        writes(
+            Json::new(),
+            Event::Draw(Shape::Empty),
+            EVENT_DRAW_EMPTY_JSON,
+        ),
+    )
+    assert!(
+        writes(
+            Cbor::new(),
+            Event::Draw(Shape::Empty),
+            EVENT_DRAW_EMPTY_CBOR,
+        ),
+    )
+    assert!(
+        is_draw(
+            must(reads<Event, Json>(Json::new(), EVENT_DRAW_JSON)),
+            true,
+        ),
+    )
+    assert!(
+        is_draw(
+            must(reads<Event, Cbor>(Cbor::new(), EVENT_DRAW_CBOR)),
+            true,
+        ),
+    )
+    assert!(
+        is_draw(
+            must(reads<Event, Json>(Json::new(), EVENT_DRAW_EMPTY_JSON)),
+            false,
+        ),
+    )
+    assert!(
+        is_draw(
+            must(reads<Event, Cbor>(Cbor::new(), EVENT_DRAW_EMPTY_CBOR)),
+            false,
+        ),
+    )
 }
 
 // Variants and the fields of a record variant take codec_id and codec_with, as a struct's do.
@@ -426,16 +769,72 @@ fn variant_ids_and_field_ids_order_the_wire_form() {
     // The variant `Move` is ID 3, and its fields come in the order of their IDs: dy, note, dx.
     assert!(writes(Json::new(), movement(), EVENT_MOVE_JSON))
     assert!(writes(Cbor::new(), movement(), EVENT_MOVE_CBOR))
-    assert!(writes(Json::new(), Event::Move { dx: -1, dy: 0, note: Option::None }, EVENT_MOVE_BARE_JSON))
-    assert!(writes(Cbor::new(), Event::Move { dx: -1, dy: 0, note: Option::None }, EVENT_MOVE_BARE_CBOR))
-    assert!(is_move(must(reads<Event, Json>(Json::new(), EVENT_MOVE_JSON)), 300, -3, Option::Some(text("hi"))))
-    assert!(is_move(must(reads<Event, Cbor>(Cbor::new(), EVENT_MOVE_CBOR)), 300, -3, Option::Some(text("hi"))))
-    assert!(is_move(must(reads<Event, Json>(Json::new(), EVENT_MOVE_BARE_JSON)), -1, 0, Option::None))
-    assert!(is_move(must(reads<Event, Cbor>(Cbor::new(), EVENT_MOVE_BARE_CBOR)), -1, 0, Option::None))
+    assert!(
+        writes(
+            Json::new(),
+            Event::Move { dx: -1, dy: 0, note: Option::None },
+            EVENT_MOVE_BARE_JSON,
+        ),
+    )
+    assert!(
+        writes(
+            Cbor::new(),
+            Event::Move { dx: -1, dy: 0, note: Option::None },
+            EVENT_MOVE_BARE_CBOR,
+        ),
+    )
+    assert!(
+        is_move(
+            must(reads<Event, Json>(Json::new(), EVENT_MOVE_JSON)),
+            300,
+            -3,
+            Option::Some(text("hi")),
+        ),
+    )
+    assert!(
+        is_move(
+            must(reads<Event, Cbor>(Cbor::new(), EVENT_MOVE_CBOR)),
+            300,
+            -3,
+            Option::Some(text("hi")),
+        ),
+    )
+    assert!(
+        is_move(
+            must(reads<Event, Json>(Json::new(), EVENT_MOVE_BARE_JSON)),
+            -1,
+            0,
+            Option::None,
+        ),
+    )
+    assert!(
+        is_move(
+            must(reads<Event, Cbor>(Cbor::new(), EVENT_MOVE_BARE_CBOR)),
+            -1,
+            0,
+            Option::None,
+        ),
+    )
     // Fields are matched by name in JSON, so they may come in any order.
-    assert!(is_move(must(reads<Event, Json>(Json::new(), "{\"Move\":{\"dx\":300,\"note\":\"hi\",\"dy\":-3}}")), 300, -3, Option::Some(text("hi"))))
+    assert!(
+        is_move(
+            must(
+                reads<Event, Json>(
+                    Json::new(),
+                    "{\"Move\":{\"dx\":300,\"note\":\"hi\",\"dy\":-3}}",
+                ),
+            ),
+            300,
+            -3,
+            Option::Some(text("hi")),
+        ),
+    )
     // CBOR wants them in ascending order.
-    expect_error(reads<Event, Cbor>(Cbor::new(), [0xa1, 0x03, 0xa2, 0x09, 0x20, 0x02, 0x00]), ErrorKind::NonCanonical, 5)
+    expect_error(
+        reads<Event, Cbor>(Cbor::new(), [0xa1, 0x03, 0xa2, 0x09, 0x20, 0x02, 0x00]),
+        ErrorKind::NonCanonical,
+        5,
+    )
 }
 
 #[test]
@@ -443,26 +842,96 @@ fn variant_ids_name_the_variant_in_cbor() {
     assert!(writes(Cbor::new(), Event::Start, [0x07]))
     assert!(is_start(must(reads<Event, Cbor>(Cbor::new(), [0x07]))))
     // The IDs 0, 1 and 2 belong to no variant: they are not declaration positions.
-    expect_error(reads<Event, Cbor>(Cbor::new(), [0x00]), ErrorKind::UnknownVariant, 0)
-    expect_error(reads<Event, Cbor>(Cbor::new(), [0xa1, 0x01, 0x00]), ErrorKind::UnknownVariant, 1)
+    expect_error(
+        reads<Event, Cbor>(Cbor::new(), [0x00]),
+        ErrorKind::UnknownVariant,
+        0,
+    )
+    expect_error(
+        reads<Event, Cbor>(Cbor::new(), [0xa1, 0x01, 0x00]),
+        ErrorKind::UnknownVariant,
+        1,
+    )
     // The ID of a variant of the enum it holds does not select a variant of this one.
-    expect_error(reads<Event, Cbor>(Cbor::new(), [0xa1, 0x18, 0x28, 0xa1, 0x18, 0x28, 0x05]), ErrorKind::UnknownVariant, 4)
+    expect_error(
+        reads<Event, Cbor>(Cbor::new(), [0xa1, 0x18, 0x28, 0xa1, 0x18, 0x28, 0x05]),
+        ErrorKind::UnknownVariant,
+        4,
+    )
 }
 
 #[test]
 fn a_codec_writes_the_field_of_a_record_variant() {
     // `amount` and `tip` are hexadecimal text, as in a struct field with the codec.
-    assert!(writes(Json::new(), Event::Pay { amount: 255, tip: Option::Some(0) }, EVENT_PAY_JSON))
-    assert!(writes(Cbor::new(), Event::Pay { amount: 255, tip: Option::Some(0) }, EVENT_PAY_CBOR))
-    assert!(writes(Json::new(), Event::Pay { amount: 1, tip: Option::None }, EVENT_PAY_BARE_JSON))
-    assert!(writes(Cbor::new(), Event::Pay { amount: 1, tip: Option::None }, EVENT_PAY_BARE_CBOR))
-    assert!(is_pay(must(reads<Event, Json>(Json::new(), EVENT_PAY_JSON)), 255, Option::Some(0)))
-    assert!(is_pay(must(reads<Event, Cbor>(Cbor::new(), EVENT_PAY_CBOR)), 255, Option::Some(0)))
-    assert!(is_pay(must(reads<Event, Json>(Json::new(), EVENT_PAY_BARE_JSON)), 1, Option::None))
-    assert!(is_pay(must(reads<Event, Cbor>(Cbor::new(), EVENT_PAY_BARE_CBOR)), 1, Option::None))
+    assert!(
+        writes(
+            Json::new(),
+            Event::Pay { amount: 255, tip: Option::Some(0) },
+            EVENT_PAY_JSON,
+        ),
+    )
+    assert!(
+        writes(
+            Cbor::new(),
+            Event::Pay { amount: 255, tip: Option::Some(0) },
+            EVENT_PAY_CBOR,
+        ),
+    )
+    assert!(
+        writes(
+            Json::new(),
+            Event::Pay { amount: 1, tip: Option::None },
+            EVENT_PAY_BARE_JSON,
+        ),
+    )
+    assert!(
+        writes(
+            Cbor::new(),
+            Event::Pay { amount: 1, tip: Option::None },
+            EVENT_PAY_BARE_CBOR,
+        ),
+    )
+    assert!(
+        is_pay(
+            must(reads<Event, Json>(Json::new(), EVENT_PAY_JSON)),
+            255,
+            Option::Some(0),
+        ),
+    )
+    assert!(
+        is_pay(
+            must(reads<Event, Cbor>(Cbor::new(), EVENT_PAY_CBOR)),
+            255,
+            Option::Some(0),
+        ),
+    )
+    assert!(
+        is_pay(
+            must(reads<Event, Json>(Json::new(), EVENT_PAY_BARE_JSON)),
+            1,
+            Option::None,
+        ),
+    )
+    assert!(
+        is_pay(
+            must(reads<Event, Cbor>(Cbor::new(), EVENT_PAY_BARE_CBOR)),
+            1,
+            Option::None,
+        ),
+    )
     // The codec's own checks apply, and name the field.
-    expect_field(reads<Event, Json>(Json::new(), "{\"Pay\":{\"amount\":\"FF\"}}"), ErrorKind::InvalidSyntax, 17, "amount")
-    expect_field(reads<Event, Cbor>(Cbor::new(), [0xa1, 0x0c, 0xa1, 0x01, 0x62, 0x30, 0x31]), ErrorKind::InvalidSyntax, 4, "amount")
+    expect_field(
+        reads<Event, Json>(Json::new(), "{\"Pay\":{\"amount\":\"FF\"}}"),
+        ErrorKind::InvalidSyntax,
+        17,
+        "amount",
+    )
+    expect_field(
+        reads<Event, Cbor>(Cbor::new(), [0xa1, 0x0c, 0xa1, 0x01, 0x62, 0x30, 0x31]),
+        ErrorKind::InvalidSyntax,
+        4,
+        "amount",
+    )
 }
 
 // Arrays in a record variant decode element by element when their elements are not `Copy`.
@@ -471,95 +940,416 @@ fn a_codec_writes_the_field_of_a_record_variant() {
 fn record_variants_hold_arrays_of_records_and_empty_arrays() {
     assert!(writes(Json::new(), row(), LAYOUT_ROW_JSON))
     assert!(writes(Cbor::new(), row(), LAYOUT_ROW_CBOR))
-    assert!(is_row(must(reads<Layout, Json>(Json::new(), LAYOUT_ROW_JSON))))
-    assert!(is_row(must(reads<Layout, Cbor>(Cbor::new(), LAYOUT_ROW_CBOR))))
-    assert!(writes(Json::new(), Layout::Cell(recipient(true, text("c"))), LAYOUT_CELL_JSON))
-    assert!(writes(Cbor::new(), Layout::Cell(recipient(true, text("c"))), LAYOUT_CELL_CBOR))
-    assert!(is_cell(must(reads<Layout, Json>(Json::new(), LAYOUT_CELL_JSON))))
-    assert!(is_cell(must(reads<Layout, Cbor>(Cbor::new(), LAYOUT_CELL_CBOR))))
+    assert!(
+        is_row(must(reads<Layout, Json>(Json::new(), LAYOUT_ROW_JSON))),
+    )
+    assert!(
+        is_row(must(reads<Layout, Cbor>(Cbor::new(), LAYOUT_ROW_CBOR))),
+    )
+    assert!(
+        writes(
+            Json::new(),
+            Layout::Cell(recipient(true, text("c"))),
+            LAYOUT_CELL_JSON,
+        ),
+    )
+    assert!(
+        writes(
+            Cbor::new(),
+            Layout::Cell(recipient(true, text("c"))),
+            LAYOUT_CELL_CBOR,
+        ),
+    )
+    assert!(
+        is_cell(must(reads<Layout, Json>(Json::new(), LAYOUT_CELL_JSON))),
+    )
+    assert!(
+        is_cell(must(reads<Layout, Cbor>(Cbor::new(), LAYOUT_CELL_CBOR))),
+    )
     // One element too many or too few, a repeated field, and an element of the wrong type.
-    expect_field(reads<Layout, Json>(Json::new(), "{\"Row\":{\"cells\":[],\"flags\":[]}}"), ErrorKind::InvalidLength, 17, "cells")
-    expect_field(reads<Layout, Cbor>(Cbor::new(), [0xa1, 0x00, 0xa2, 0x01, 0x80, 0x02, 0x80]), ErrorKind::InvalidLength, 4, "cells")
-    expect_field(reads<Layout, Json>(Json::new(), "{\"Row\":{\"cells\":[1,2],\"flags\":[]}}"), ErrorKind::TypeMismatch, 17, "cells")
-    expect_field(reads<Layout, Cbor>(Cbor::new(), [0xa1, 0x00, 0xa2, 0x01, 0x82, 0x01, 0x02, 0x02, 0x80]), ErrorKind::TypeMismatch, 5, "cells")
-    expect_field(reads<Layout, Json>(Json::new(), "{\"Row\":{\"flags\":[],\"flags\":[]}}"), ErrorKind::DuplicateField, 19, "flags")
-    expect_field(reads<Layout, Cbor>(Cbor::new(), [0xa1, 0x00, 0xa2, 0x02, 0x80, 0x02, 0x80]), ErrorKind::DuplicateField, 5, "flags")
-    expect_field(reads<Layout, Cbor>(Cbor::new(), [0xa1, 0x00, 0xa1, 0x02, 0x80]), ErrorKind::MissingField, 5, "cells")
-    expect_field(reads<Layout, Json>(Json::new(), "{\"Row\":{\"flags\":[true]}}"), ErrorKind::InvalidLength, 17, "flags")
+    expect_field(
+        reads<Layout, Json>(Json::new(), "{\"Row\":{\"cells\":[],\"flags\":[]}}"),
+        ErrorKind::InvalidLength,
+        17,
+        "cells",
+    )
+    expect_field(
+        reads<Layout, Cbor>(Cbor::new(), [0xa1, 0x00, 0xa2, 0x01, 0x80, 0x02, 0x80]),
+        ErrorKind::InvalidLength,
+        4,
+        "cells",
+    )
+    expect_field(
+        reads<Layout, Json>(Json::new(), "{\"Row\":{\"cells\":[1,2],\"flags\":[]}}"),
+        ErrorKind::TypeMismatch,
+        17,
+        "cells",
+    )
+    expect_field(
+        reads<Layout, Cbor>(
+            Cbor::new(),
+            [0xa1, 0x00, 0xa2, 0x01, 0x82, 0x01, 0x02, 0x02, 0x80],
+        ),
+        ErrorKind::TypeMismatch,
+        5,
+        "cells",
+    )
+    expect_field(
+        reads<Layout, Json>(Json::new(), "{\"Row\":{\"flags\":[],\"flags\":[]}}"),
+        ErrorKind::DuplicateField,
+        19,
+        "flags",
+    )
+    expect_field(
+        reads<Layout, Cbor>(Cbor::new(), [0xa1, 0x00, 0xa2, 0x02, 0x80, 0x02, 0x80]),
+        ErrorKind::DuplicateField,
+        5,
+        "flags",
+    )
+    expect_field(
+        reads<Layout, Cbor>(Cbor::new(), [0xa1, 0x00, 0xa1, 0x02, 0x80]),
+        ErrorKind::MissingField,
+        5,
+        "cells",
+    )
+    expect_field(
+        reads<Layout, Json>(Json::new(), "{\"Row\":{\"flags\":[true]}}"),
+        ErrorKind::InvalidLength,
+        17,
+        "flags",
+    )
     // A missing field is reported where the record ends.
-    expect_field(reads<Layout, Json>(Json::new(), "{\"Row\":{\"flags\":[]}}"), ErrorKind::MissingField, 19, "cells")
+    expect_field(
+        reads<Layout, Json>(Json::new(), "{\"Row\":{\"flags\":[]}}"),
+        ErrorKind::MissingField,
+        19,
+        "cells",
+    )
 }
 
 // Tuple variants: elements of every kind, in a sequence, or alone.
 
 #[test]
 fn tuple_variants_hold_elements_of_every_kind() {
-    assert!(writes(Json::new(), mixed(Option::None, [1, 2], (true, 3), bytes_list([4])), PARTS_MIXED_JSON))
-    assert!(writes(Cbor::new(), mixed(Option::None, [1, 2], (true, 3), bytes_list([4])), PARTS_MIXED_CBOR))
-    assert!(writes(Json::new(), mixed(Option::Some(9), [0, 255], (false, 0), bytes_list([0; 0])), PARTS_MIXED_SOME_JSON))
-    assert!(writes(Cbor::new(), mixed(Option::Some(9), [0, 255], (false, 0), bytes_list([0; 0])), PARTS_MIXED_SOME_CBOR))
-    assert!(is_mixed(must(reads<Parts, Json>(Json::new(), PARTS_MIXED_JSON)), Option::None, [1, 2], (true, 3), bytes_list([4])))
-    assert!(is_mixed(must(reads<Parts, Cbor>(Cbor::new(), PARTS_MIXED_CBOR)), Option::None, [1, 2], (true, 3), bytes_list([4])))
-    assert!(is_mixed(must(reads<Parts, Json>(Json::new(), PARTS_MIXED_SOME_JSON)), Option::Some(9), [0, 255], (false, 0), bytes_list([0; 0])))
-    assert!(is_mixed(must(reads<Parts, Cbor>(Cbor::new(), PARTS_MIXED_SOME_CBOR)), Option::Some(9), [0, 255], (false, 0), bytes_list([0; 0])))
+    assert!(
+        writes(
+            Json::new(),
+            mixed(Option::None, [1, 2], (true, 3), bytes_list([4])),
+            PARTS_MIXED_JSON,
+        ),
+    )
+    assert!(
+        writes(
+            Cbor::new(),
+            mixed(Option::None, [1, 2], (true, 3), bytes_list([4])),
+            PARTS_MIXED_CBOR,
+        ),
+    )
+    assert!(
+        writes(
+            Json::new(),
+            mixed(Option::Some(9), [0, 255], (false, 0), bytes_list([0; 0])),
+            PARTS_MIXED_SOME_JSON,
+        ),
+    )
+    assert!(
+        writes(
+            Cbor::new(),
+            mixed(Option::Some(9), [0, 255], (false, 0), bytes_list([0; 0])),
+            PARTS_MIXED_SOME_CBOR,
+        ),
+    )
+    assert!(
+        is_mixed(
+            must(reads<Parts, Json>(Json::new(), PARTS_MIXED_JSON)),
+            Option::None,
+            [1, 2],
+            (true, 3),
+            bytes_list([4]),
+        ),
+    )
+    assert!(
+        is_mixed(
+            must(reads<Parts, Cbor>(Cbor::new(), PARTS_MIXED_CBOR)),
+            Option::None,
+            [1, 2],
+            (true, 3),
+            bytes_list([4]),
+        ),
+    )
+    assert!(
+        is_mixed(
+            must(reads<Parts, Json>(Json::new(), PARTS_MIXED_SOME_JSON)),
+            Option::Some(9),
+            [0, 255],
+            (false, 0),
+            bytes_list([0; 0]),
+        ),
+    )
+    assert!(
+        is_mixed(
+            must(reads<Parts, Cbor>(Cbor::new(), PARTS_MIXED_SOME_CBOR)),
+            Option::Some(9),
+            [0, 255],
+            (false, 0),
+            bytes_list([0; 0]),
+        ),
+    )
     // Too many or too few elements.
-    expect_error(reads<Parts, Json>(Json::new(), "{\"Mixed\":[null,[1,2],[true,3]]}"), ErrorKind::InvalidLength, 29)
-    expect_error(reads<Parts, Cbor>(Cbor::new(), [0xa1, 0x00, 0x83, 0xf6, 0x82, 0x01, 0x02, 0x82, 0xf5, 0x03]), ErrorKind::InvalidLength, 2)
-    expect_error(reads<Parts, Json>(Json::new(), "{\"Mixed\":[null,[1,2],[true,3],[],0]}"), ErrorKind::InvalidLength, 32)
+    expect_error(
+        reads<Parts, Json>(Json::new(), "{\"Mixed\":[null,[1,2],[true,3]]}"),
+        ErrorKind::InvalidLength,
+        29,
+    )
+    expect_error(
+        reads<Parts, Cbor>(
+            Cbor::new(),
+            [0xa1, 0x00, 0x83, 0xf6, 0x82, 0x01, 0x02, 0x82, 0xf5, 0x03],
+        ),
+        ErrorKind::InvalidLength,
+        2,
+    )
+    expect_error(
+        reads<Parts, Json>(Json::new(), "{\"Mixed\":[null,[1,2],[true,3],[],0]}"),
+        ErrorKind::InvalidLength,
+        32,
+    )
 }
 
 #[test]
 fn a_variant_of_one_element_holds_the_element_itself() {
     // An option is its value or null, in a wrapper that is always there; an array is an array.
-    assert!(writes(Json::new(), Parts::Maybe(Option::None), PARTS_MAYBE_NONE_JSON))
-    assert!(writes(Cbor::new(), Parts::Maybe(Option::None), PARTS_MAYBE_NONE_CBOR))
-    assert!(writes(Json::new(), Parts::Maybe(Option::Some(3)), PARTS_MAYBE_SOME_JSON))
-    assert!(writes(Cbor::new(), Parts::Maybe(Option::Some(3)), PARTS_MAYBE_SOME_CBOR))
+    assert!(
+        writes(
+            Json::new(),
+            Parts::Maybe(Option::None),
+            PARTS_MAYBE_NONE_JSON,
+        ),
+    )
+    assert!(
+        writes(
+            Cbor::new(),
+            Parts::Maybe(Option::None),
+            PARTS_MAYBE_NONE_CBOR,
+        ),
+    )
+    assert!(
+        writes(
+            Json::new(),
+            Parts::Maybe(Option::Some(3)),
+            PARTS_MAYBE_SOME_JSON,
+        ),
+    )
+    assert!(
+        writes(
+            Cbor::new(),
+            Parts::Maybe(Option::Some(3)),
+            PARTS_MAYBE_SOME_CBOR,
+        ),
+    )
     assert!(writes(Json::new(), Parts::Pair([1, 2]), PARTS_PAIR_JSON))
     assert!(writes(Cbor::new(), Parts::Pair([1, 2]), PARTS_PAIR_CBOR))
-    assert!(is_maybe(must(reads<Parts, Json>(Json::new(), PARTS_MAYBE_NONE_JSON)), Option::None))
-    assert!(is_maybe(must(reads<Parts, Cbor>(Cbor::new(), PARTS_MAYBE_NONE_CBOR)), Option::None))
-    assert!(is_maybe(must(reads<Parts, Json>(Json::new(), PARTS_MAYBE_SOME_JSON)), Option::Some(3)))
-    assert!(is_maybe(must(reads<Parts, Cbor>(Cbor::new(), PARTS_MAYBE_SOME_CBOR)), Option::Some(3)))
-    assert!(is_pair_of_bytes(must(reads<Parts, Json>(Json::new(), PARTS_PAIR_JSON)), [1, 2]))
-    assert!(is_pair_of_bytes(must(reads<Parts, Cbor>(Cbor::new(), PARTS_PAIR_CBOR)), [1, 2]))
+    assert!(
+        is_maybe(
+            must(reads<Parts, Json>(Json::new(), PARTS_MAYBE_NONE_JSON)),
+            Option::None,
+        ),
+    )
+    assert!(
+        is_maybe(
+            must(reads<Parts, Cbor>(Cbor::new(), PARTS_MAYBE_NONE_CBOR)),
+            Option::None,
+        ),
+    )
+    assert!(
+        is_maybe(
+            must(reads<Parts, Json>(Json::new(), PARTS_MAYBE_SOME_JSON)),
+            Option::Some(3),
+        ),
+    )
+    assert!(
+        is_maybe(
+            must(reads<Parts, Cbor>(Cbor::new(), PARTS_MAYBE_SOME_CBOR)),
+            Option::Some(3),
+        ),
+    )
+    assert!(
+        is_pair_of_bytes(
+            must(reads<Parts, Json>(Json::new(), PARTS_PAIR_JSON)),
+            [1, 2],
+        ),
+    )
+    assert!(
+        is_pair_of_bytes(
+            must(reads<Parts, Cbor>(Cbor::new(), PARTS_PAIR_CBOR)),
+            [1, 2],
+        ),
+    )
     // The payload is not left out: the wrapper holds exactly one entry.
-    expect_error(reads<Parts, Json>(Json::new(), "{\"Maybe\":}"), ErrorKind::TypeMismatch, 9)
-    expect_error(reads<Parts, Cbor>(Cbor::new(), [0xa1, 0x01]), ErrorKind::UnexpectedEnd, 2)
-    expect_error(reads<Parts, Json>(Json::new(), "{\"Pair\":[1]}"), ErrorKind::InvalidLength, 10)
-    expect_error(reads<Parts, Cbor>(Cbor::new(), [0xa1, 0x02, 0x81, 0x01]), ErrorKind::InvalidLength, 2)
+    expect_error(
+        reads<Parts, Json>(Json::new(), "{\"Maybe\":}"),
+        ErrorKind::TypeMismatch,
+        9,
+    )
+    expect_error(
+        reads<Parts, Cbor>(Cbor::new(), [0xa1, 0x01]),
+        ErrorKind::UnexpectedEnd,
+        2,
+    )
+    expect_error(
+        reads<Parts, Json>(Json::new(), "{\"Pair\":[1]}"),
+        ErrorKind::InvalidLength,
+        10,
+    )
+    expect_error(
+        reads<Parts, Cbor>(Cbor::new(), [0xa1, 0x02, 0x81, 0x01]),
+        ErrorKind::InvalidLength,
+        2,
+    )
 }
 
 // An enum marked #[codec_skip_unknown] skips fields its record variants do not list.
 
 #[test]
 fn skip_unknown_applies_to_the_record_variants_of_an_enum() {
-    assert!(writes(Json::new(), Tolerant::Account { owner: 1, balance: 2 }, TOLERANT_ACCOUNT_JSON))
-    assert!(writes(Cbor::new(), Tolerant::Account { owner: 1, balance: 2 }, TOLERANT_ACCOUNT_CBOR))
+    assert!(
+        writes(
+            Json::new(),
+            Tolerant::Account { owner: 1, balance: 2 },
+            TOLERANT_ACCOUNT_JSON,
+        ),
+    )
+    assert!(
+        writes(
+            Cbor::new(),
+            Tolerant::Account { owner: 1, balance: 2 },
+            TOLERANT_ACCOUNT_CBOR,
+        ),
+    )
     assert!(writes(Json::new(), Tolerant::Ping {}, TOLERANT_PING_JSON))
     assert!(writes(Cbor::new(), Tolerant::Ping {}, TOLERANT_PING_CBOR))
-    assert!(writes(Json::new(), Tolerant::Plain(9), TOLERANT_PLAIN_JSON))
-    assert!(writes(Cbor::new(), Tolerant::Plain(9), TOLERANT_PLAIN_CBOR))
-    assert!(is_account(must(reads<Tolerant, Json>(Json::new(), TOLERANT_ACCOUNT_JSON)), 1, 2))
-    assert!(is_account(must(reads<Tolerant, Cbor>(Cbor::new(), TOLERANT_ACCOUNT_CBOR)), 1, 2))
-    assert!(is_ping(must(reads<Tolerant, Json>(Json::new(), TOLERANT_PING_JSON))))
-    assert!(is_ping(must(reads<Tolerant, Cbor>(Cbor::new(), TOLERANT_PING_CBOR))))
-    assert!(is_plain(must(reads<Tolerant, Json>(Json::new(), TOLERANT_PLAIN_JSON)), 9))
-    assert!(is_plain(must(reads<Tolerant, Cbor>(Cbor::new(), TOLERANT_PLAIN_CBOR)), 9))
+    assert!(
+        writes(Json::new(), Tolerant::Plain(9), TOLERANT_PLAIN_JSON),
+    )
+    assert!(
+        writes(Cbor::new(), Tolerant::Plain(9), TOLERANT_PLAIN_CBOR),
+    )
+    assert!(
+        is_account(
+            must(reads<Tolerant, Json>(Json::new(), TOLERANT_ACCOUNT_JSON)),
+            1,
+            2,
+        ),
+    )
+    assert!(
+        is_account(
+            must(reads<Tolerant, Cbor>(Cbor::new(), TOLERANT_ACCOUNT_CBOR)),
+            1,
+            2,
+        ),
+    )
+    assert!(
+        is_ping(
+            must(reads<Tolerant, Json>(Json::new(), TOLERANT_PING_JSON)),
+        ),
+    )
+    assert!(
+        is_ping(
+            must(reads<Tolerant, Cbor>(Cbor::new(), TOLERANT_PING_CBOR)),
+        ),
+    )
+    assert!(
+        is_plain(
+            must(reads<Tolerant, Json>(Json::new(), TOLERANT_PLAIN_JSON)),
+            9,
+        ),
+    )
+    assert!(
+        is_plain(
+            must(reads<Tolerant, Cbor>(Cbor::new(), TOLERANT_PLAIN_CBOR)),
+            9,
+        ),
+    )
     // Unknown fields are skipped, well formed values of any kind.
-    assert!(is_account(must(reads<Tolerant, Json>(Json::new(), "{\"Account\":{\"owner\":1,\"x\":[1,{\"a\":null},\"s\"],\"balance\":2,\"z\":1.5e3}}")), 1, 2))
-    assert!(is_account(must(reads<Tolerant, Cbor>(Cbor::new(), [0xa1, 0x01, 0xa3, 0x01, 0x01, 0x02, 0x02, 0x05, 0x82, 0x01, 0x61, 0x78])), 1, 2))
-    assert!(is_ping(must(reads<Tolerant, Json>(Json::new(), "{\"Ping\":{\"x\":1}}"))))
-    assert!(is_ping(must(reads<Tolerant, Cbor>(Cbor::new(), [0xa1, 0x02, 0xa1, 0x05, 0x01]))))
+    assert!(
+        is_account(
+            must(
+                reads<Tolerant, Json>(
+                    Json::new(),
+                    "{\"Account\":{\"owner\":1,\"x\":[1,{\"a\":null},\"s\"],\"balance\":2,\"z\":1.5e3}}",
+                ),
+            ),
+            1,
+            2,
+        ),
+    )
+    assert!(
+        is_account(
+            must(
+                reads<Tolerant, Cbor>(
+                    Cbor::new(),
+                    [0xa1, 0x01, 0xa3, 0x01, 0x01, 0x02, 0x02, 0x05, 0x82, 0x01, 0x61, 0x78],
+                ),
+            ),
+            1,
+            2,
+        ),
+    )
+    assert!(
+        is_ping(
+            must(
+                reads<Tolerant, Json>(Json::new(), "{\"Ping\":{\"x\":1}}"),
+            ),
+        ),
+    )
+    assert!(
+        is_ping(
+            must(
+                reads<Tolerant, Cbor>(Cbor::new(), [0xa1, 0x02, 0xa1, 0x05, 0x01]),
+            ),
+        ),
+    )
     // The skipped value still has to be well formed, and what the enum does not skip is an error.
-    expect_error(reads<Tolerant, Json>(Json::new(), "{\"Account\":{\"owner\":1,\"x\":[1,],\"balance\":2}}"), ErrorKind::InvalidSyntax, 29)
-    expect_error(reads<Tolerant, Cbor>(Cbor::new(), [0xa1, 0x01, 0xa2, 0x01, 0x01, 0x05, 0x1f]), ErrorKind::NonCanonical, 6)
-    expect_error(reads<Tolerant, Json>(Json::new(), "{\"Other\":{}}"), ErrorKind::UnknownVariant, 1)
-    expect_error(reads<Tolerant, Cbor>(Cbor::new(), [0xa1, 0x09, 0xa0]), ErrorKind::UnknownVariant, 1)
-    expect_field(reads<Tolerant, Json>(Json::new(), "{\"Account\":{\"owner\":1}}"), ErrorKind::MissingField, 22, "balance")
+    expect_error(
+        reads<Tolerant, Json>(
+            Json::new(),
+            "{\"Account\":{\"owner\":1,\"x\":[1,],\"balance\":2}}",
+        ),
+        ErrorKind::InvalidSyntax,
+        29,
+    )
+    expect_error(
+        reads<Tolerant, Cbor>(Cbor::new(), [0xa1, 0x01, 0xa2, 0x01, 0x01, 0x05, 0x1f]),
+        ErrorKind::NonCanonical,
+        6,
+    )
+    expect_error(
+        reads<Tolerant, Json>(Json::new(), "{\"Other\":{}}"),
+        ErrorKind::UnknownVariant,
+        1,
+    )
+    expect_error(
+        reads<Tolerant, Cbor>(Cbor::new(), [0xa1, 0x09, 0xa0]),
+        ErrorKind::UnknownVariant,
+        1,
+    )
+    expect_field(
+        reads<Tolerant, Json>(Json::new(), "{\"Account\":{\"owner\":1}}"),
+        ErrorKind::MissingField,
+        22,
+        "balance",
+    )
     // An enum without the attribute rejects them.
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Circle\":{\"radius\":1,\"x\":2}}"), ErrorKind::UnknownField, 22)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x03, 0xa2, 0x01, 0x02, 0x05, 0x00]), ErrorKind::UnknownField, 5)
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Circle\":{\"radius\":1,\"x\":2}}"),
+        ErrorKind::UnknownField,
+        22,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x03, 0xa2, 0x01, 0x02, 0x05, 0x00]),
+        ErrorKind::UnknownField,
+        5,
+    )
 }
 
 // The variant in the wrong form for its kind, with the wrong number of entries, or unknown.
@@ -567,144 +1357,519 @@ fn skip_unknown_applies_to_the_record_variants_of_an_enum() {
 #[test]
 fn json_rejects_a_variant_written_the_wrong_way() {
     // A variant with no payload as a wrapper, and one with a payload bare: at the variant.
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Empty\":null}"), ErrorKind::TypeMismatch, 0)
-    expect_error(reads<Shape, Json>(Json::new(), " {\"Empty\":{}}"), ErrorKind::TypeMismatch, 1)
-    expect_error(reads<Shape, Json>(Json::new(), "\"Point\""), ErrorKind::TypeMismatch, 0)
-    expect_error(reads<Shape, Json>(Json::new(), "\"Pair\""), ErrorKind::TypeMismatch, 0)
-    expect_error(reads<Shape, Json>(Json::new(), "\"Circle\""), ErrorKind::TypeMismatch, 0)
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Empty\":null}"),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), " {\"Empty\":{}}"),
+        ErrorKind::TypeMismatch,
+        1,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "\"Point\""),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "\"Pair\""),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "\"Circle\""),
+        ErrorKind::TypeMismatch,
+        0,
+    )
     // Neither a string nor an object.
-    expect_error(reads<Shape, Json>(Json::new(), "5"), ErrorKind::TypeMismatch, 0)
-    expect_error(reads<Shape, Json>(Json::new(), "null"), ErrorKind::TypeMismatch, 0)
-    expect_error(reads<Shape, Json>(Json::new(), "[\"Point\",5]"), ErrorKind::TypeMismatch, 0)
-    expect_error(reads<Shape, Json>(Json::new(), "{1:1}"), ErrorKind::TypeMismatch, 1)
+    expect_error(
+        reads<Shape, Json>(Json::new(), "5"),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "null"),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "[\"Point\",5]"),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{1:1}"),
+        ErrorKind::TypeMismatch,
+        1,
+    )
 }
 
 #[test]
 fn json_rejects_a_wrapper_that_does_not_hold_one_entry() {
     // No entry: at the closing brace.
-    expect_error(reads<Shape, Json>(Json::new(), "{}"), ErrorKind::InvalidLength, 1)
-    expect_error(reads<Shape, Json>(Json::new(), "{ }"), ErrorKind::InvalidLength, 2)
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{}"),
+        ErrorKind::InvalidLength,
+        1,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{ }"),
+        ErrorKind::InvalidLength,
+        2,
+    )
     // A second one: at the comma after the first.
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Point\":1,\"Pair\":[1,\"a\"]}"), ErrorKind::InvalidLength, 10)
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Point\":1 ,\"Point\":1}"), ErrorKind::InvalidLength, 11)
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Pair\":[1,\"a\"],}"), ErrorKind::InvalidLength, 15)
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Point\":1,\"Pair\":[1,\"a\"]}"),
+        ErrorKind::InvalidLength,
+        10,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Point\":1 ,\"Point\":1}"),
+        ErrorKind::InvalidLength,
+        11,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Pair\":[1,\"a\"],}"),
+        ErrorKind::InvalidLength,
+        15,
+    )
 }
 
 #[test]
 fn json_rejects_an_unknown_variant() {
-    expect_error(reads<Shape, Json>(Json::new(), "\"Square\""), ErrorKind::UnknownVariant, 0)
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Square\":1}"), ErrorKind::UnknownVariant, 1)
-    expect_error(reads<Shape, Json>(Json::new(), "\"\""), ErrorKind::UnknownVariant, 0)
-    expect_error(reads<Shape, Json>(Json::new(), "{\"point\":1}"), ErrorKind::UnknownVariant, 1)
+    expect_error(
+        reads<Shape, Json>(Json::new(), "\"Square\""),
+        ErrorKind::UnknownVariant,
+        0,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Square\":1}"),
+        ErrorKind::UnknownVariant,
+        1,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "\"\""),
+        ErrorKind::UnknownVariant,
+        0,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"point\":1}"),
+        ErrorKind::UnknownVariant,
+        1,
+    )
     // A name too long for any variant.
-    expect_error(reads<Shape, Json>(Json::new(), "\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""), ErrorKind::UnknownVariant, 0)
-    expect_error(reads<Shape, Json>(Json::new(), "{\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\":1}"), ErrorKind::UnknownVariant, 1)
+    expect_error(
+        reads<Shape, Json>(Json::new(), "\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""),
+        ErrorKind::UnknownVariant,
+        0,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\":1}"),
+        ErrorKind::UnknownVariant,
+        1,
+    )
     // The variants of a payload enum inside another are the inner enum's.
-    expect_error(reads<Event, Json>(Json::new(), "{\"Draw\":{\"Move\":1}}"), ErrorKind::UnknownVariant, 9)
+    expect_error(
+        reads<Event, Json>(Json::new(), "{\"Draw\":{\"Move\":1}}"),
+        ErrorKind::UnknownVariant,
+        9,
+    )
 }
 
 #[test]
 fn json_rejects_malformed_wrappers_and_payloads() {
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Point\" 1}"), ErrorKind::InvalidSyntax, 9)
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Point\"}"), ErrorKind::InvalidSyntax, 8)
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Point\":5 x}"), ErrorKind::InvalidSyntax, 11)
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Point\":5}x"), ErrorKind::TrailingData, 11)
-    expect_error(reads<Shape, Json>(Json::new(), "\"Empty\"x"), ErrorKind::TrailingData, 7)
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Point\":5"), ErrorKind::UnexpectedEnd, 10)
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Point\""), ErrorKind::UnexpectedEnd, 8)
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Poi"), ErrorKind::UnexpectedEnd, 5)
-    expect_error(reads<Shape, Json>(Json::new(), "{"), ErrorKind::UnexpectedEnd, 1)
-    expect_error(reads<Shape, Json>(Json::new(), ""), ErrorKind::UnexpectedEnd, 0)
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Point\" 1}"),
+        ErrorKind::InvalidSyntax,
+        9,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Point\"}"),
+        ErrorKind::InvalidSyntax,
+        8,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Point\":5 x}"),
+        ErrorKind::InvalidSyntax,
+        11,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Point\":5}x"),
+        ErrorKind::TrailingData,
+        11,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "\"Empty\"x"),
+        ErrorKind::TrailingData,
+        7,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Point\":5"),
+        ErrorKind::UnexpectedEnd,
+        10,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Point\""),
+        ErrorKind::UnexpectedEnd,
+        8,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Poi"),
+        ErrorKind::UnexpectedEnd,
+        5,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{"),
+        ErrorKind::UnexpectedEnd,
+        1,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), ""),
+        ErrorKind::UnexpectedEnd,
+        0,
+    )
     // The payload's own errors are reported where they are found.
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Point\":\"x\"}"), ErrorKind::TypeMismatch, 9)
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Point\":-1}"), ErrorKind::IntegerOutOfRange, 9)
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Point\":18446744073709551616}"), ErrorKind::IntegerOutOfRange, 28)
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Pair\":1}"), ErrorKind::TypeMismatch, 8)
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Pair\":[1]}"), ErrorKind::InvalidLength, 10)
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Pair\":[1,\"a\",2]}"), ErrorKind::InvalidLength, 14)
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Circle\":[2]}"), ErrorKind::TypeMismatch, 10)
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Point\":\"x\"}"),
+        ErrorKind::TypeMismatch,
+        9,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Point\":-1}"),
+        ErrorKind::IntegerOutOfRange,
+        9,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Point\":18446744073709551616}"),
+        ErrorKind::IntegerOutOfRange,
+        28,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Pair\":1}"),
+        ErrorKind::TypeMismatch,
+        8,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Pair\":[1]}"),
+        ErrorKind::InvalidLength,
+        10,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Pair\":[1,\"a\",2]}"),
+        ErrorKind::InvalidLength,
+        14,
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Circle\":[2]}"),
+        ErrorKind::TypeMismatch,
+        10,
+    )
 }
 
 #[test]
 fn json_names_the_field_of_a_record_variant() {
-    expect_field(reads<Shape, Json>(Json::new(), "{\"Circle\":{}}"), ErrorKind::MissingField, 12, "radius")
-    expect_field(reads<Shape, Json>(Json::new(), "{\"Circle\":{\"radius\":true}}"), ErrorKind::TypeMismatch, 20, "radius")
-    expect_field(reads<Shape, Json>(Json::new(), "{\"Circle\":{\"radius\":1,\"label\":5}}"), ErrorKind::TypeMismatch, 30, "label")
-    expect_field(reads<Shape, Json>(Json::new(), "{\"Circle\":{\"radius\":1,\"radius\":2}}"), ErrorKind::DuplicateField, 22, "radius")
-    expect_error(reads<Shape, Json>(Json::new(), "{\"Circle\":{\"radius\":1,\"x\":2}}"), ErrorKind::UnknownField, 22)
+    expect_field(
+        reads<Shape, Json>(Json::new(), "{\"Circle\":{}}"),
+        ErrorKind::MissingField,
+        12,
+        "radius",
+    )
+    expect_field(
+        reads<Shape, Json>(Json::new(), "{\"Circle\":{\"radius\":true}}"),
+        ErrorKind::TypeMismatch,
+        20,
+        "radius",
+    )
+    expect_field(
+        reads<Shape, Json>(Json::new(), "{\"Circle\":{\"radius\":1,\"label\":5}}"),
+        ErrorKind::TypeMismatch,
+        30,
+        "label",
+    )
+    expect_field(
+        reads<Shape, Json>(Json::new(), "{\"Circle\":{\"radius\":1,\"radius\":2}}"),
+        ErrorKind::DuplicateField,
+        22,
+        "radius",
+    )
+    expect_error(
+        reads<Shape, Json>(Json::new(), "{\"Circle\":{\"radius\":1,\"x\":2}}"),
+        ErrorKind::UnknownField,
+        22,
+    )
     // Inside a field of a record, the outer field names an error in a payload with none of its own.
-    expect_field(reads<Canvas, Json>(Json::new(), "{\"main\":{\"Point\":\"x\"}}"), ErrorKind::TypeMismatch, 17, "main")
-    expect_field(reads<Canvas, Json>(Json::new(), "{\"main\":\"Empty\",\"ring\":[\"Point\",\"Empty\"]}"), ErrorKind::TypeMismatch, 24, "ring")
-    expect_field(reads<Canvas, Json>(Json::new(), "{\"main\":\"Empty\",\"named\":{\"1\":{\"Pair\":[1]}}}"), ErrorKind::InvalidLength, 39, "named")
+    expect_field(
+        reads<Canvas, Json>(Json::new(), "{\"main\":{\"Point\":\"x\"}}"),
+        ErrorKind::TypeMismatch,
+        17,
+        "main",
+    )
+    expect_field(
+        reads<Canvas, Json>(
+            Json::new(),
+            "{\"main\":\"Empty\",\"ring\":[\"Point\",\"Empty\"]}",
+        ),
+        ErrorKind::TypeMismatch,
+        24,
+        "ring",
+    )
+    expect_field(
+        reads<Canvas, Json>(
+            Json::new(),
+            "{\"main\":\"Empty\",\"named\":{\"1\":{\"Pair\":[1]}}}",
+        ),
+        ErrorKind::InvalidLength,
+        39,
+        "named",
+    )
     // The innermost field is the one named.
-    expect_field(reads<Canvas, Json>(Json::new(), "{\"main\":{\"Circle\":{\"radius\":\"x\"}}}"), ErrorKind::TypeMismatch, 28, "radius")
+    expect_field(
+        reads<Canvas, Json>(Json::new(), "{\"main\":{\"Circle\":{\"radius\":\"x\"}}}"),
+        ErrorKind::TypeMismatch,
+        28,
+        "radius",
+    )
 }
 
 #[test]
 fn cbor_rejects_a_variant_written_the_wrong_way() {
     // A variant with no payload as a wrapper, and one with a payload bare: at the variant.
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x00, 0xf6]), ErrorKind::TypeMismatch, 0)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0x01]), ErrorKind::TypeMismatch, 0)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0x02]), ErrorKind::TypeMismatch, 0)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0x03]), ErrorKind::TypeMismatch, 0)
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x00, 0xf6]),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0x01]),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0x02]),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0x03]),
+        ErrorKind::TypeMismatch,
+        0,
+    )
     // Neither an unsigned integer nor a map.
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0x61, 0x61]), ErrorKind::TypeMismatch, 0)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0x81, 0x01]), ErrorKind::TypeMismatch, 0)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0x20]), ErrorKind::TypeMismatch, 0)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xf6]), ErrorKind::TypeMismatch, 0)
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0x61, 0x61]),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0x81, 0x01]),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0x20]),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0xf6]),
+        ErrorKind::TypeMismatch,
+        0,
+    )
     // A key that is not an unsigned integer is at the key.
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x61, 0x61, 0x05]), ErrorKind::TypeMismatch, 1)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x20, 0x05]), ErrorKind::TypeMismatch, 1)
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x61, 0x61, 0x05]),
+        ErrorKind::TypeMismatch,
+        1,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x20, 0x05]),
+        ErrorKind::TypeMismatch,
+        1,
+    )
 }
 
 #[test]
 fn cbor_rejects_a_wrapper_that_does_not_hold_one_entry() {
     // At the head of the map, which holds the length.
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xa0]), ErrorKind::InvalidLength, 0)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xa2, 0x01, 0x05, 0x02, 0x82, 0x01, 0x61, 0x61]), ErrorKind::InvalidLength, 0)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0x82, 0x01, 0x05]), ErrorKind::TypeMismatch, 0)
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0xa0]),
+        ErrorKind::InvalidLength,
+        0,
+    )
+    expect_error(
+        reads<Shape, Cbor>(
+            Cbor::new(),
+            [0xa2, 0x01, 0x05, 0x02, 0x82, 0x01, 0x61, 0x61],
+        ),
+        ErrorKind::InvalidLength,
+        0,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0x82, 0x01, 0x05]),
+        ErrorKind::TypeMismatch,
+        0,
+    )
     // An indefinite-length map is not canonical.
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xbf, 0x01, 0x05, 0xff]), ErrorKind::NonCanonical, 0)
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0xbf, 0x01, 0x05, 0xff]),
+        ErrorKind::NonCanonical,
+        0,
+    )
 }
 
 #[test]
 fn cbor_rejects_an_unknown_variant() {
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0x09]), ErrorKind::UnknownVariant, 0)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0x04]), ErrorKind::UnknownVariant, 0)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x09, 0x00]), ErrorKind::UnknownVariant, 1)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x04, 0x05]), ErrorKind::UnknownVariant, 1)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0x1b, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01]), ErrorKind::UnknownVariant, 0)
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0x09]),
+        ErrorKind::UnknownVariant,
+        0,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0x04]),
+        ErrorKind::UnknownVariant,
+        0,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x09, 0x00]),
+        ErrorKind::UnknownVariant,
+        1,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x04, 0x05]),
+        ErrorKind::UnknownVariant,
+        1,
+    )
+    expect_error(
+        reads<Shape, Cbor>(
+            Cbor::new(),
+            [0x1b, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01],
+        ),
+        ErrorKind::UnknownVariant,
+        0,
+    )
     // The ID is in its shortest form.
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0x18, 0x01]), ErrorKind::NonCanonical, 0)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x18, 0x01, 0x05]), ErrorKind::NonCanonical, 1)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xb8, 0x01, 0x01, 0x05]), ErrorKind::NonCanonical, 0)
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0x18, 0x01]),
+        ErrorKind::NonCanonical,
+        0,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x18, 0x01, 0x05]),
+        ErrorKind::NonCanonical,
+        1,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0xb8, 0x01, 0x01, 0x05]),
+        ErrorKind::NonCanonical,
+        0,
+    )
 }
 
 #[test]
 fn cbor_rejects_malformed_wrappers_and_payloads() {
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x01, 0x05, 0x00]), ErrorKind::TrailingData, 3)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0x00, 0x00]), ErrorKind::TrailingData, 1)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x01]), ErrorKind::UnexpectedEnd, 2)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xa1]), ErrorKind::UnexpectedEnd, 1)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), []), ErrorKind::UnexpectedEnd, 0)
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x01, 0x05, 0x00]),
+        ErrorKind::TrailingData,
+        3,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0x00, 0x00]),
+        ErrorKind::TrailingData,
+        1,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x01]),
+        ErrorKind::UnexpectedEnd,
+        2,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1]),
+        ErrorKind::UnexpectedEnd,
+        1,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), []),
+        ErrorKind::UnexpectedEnd,
+        0,
+    )
     // The payload's own errors are reported where they are found.
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x01, 0x61, 0x78]), ErrorKind::TypeMismatch, 2)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x01, 0x20]), ErrorKind::TypeMismatch, 2)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x02, 0x81, 0x01]), ErrorKind::InvalidLength, 2)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x02, 0x83, 0x01, 0x61, 0x61, 0x02]), ErrorKind::InvalidLength, 2)
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x03, 0x81, 0x02]), ErrorKind::TypeMismatch, 2)
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x01, 0x61, 0x78]),
+        ErrorKind::TypeMismatch,
+        2,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x01, 0x20]),
+        ErrorKind::TypeMismatch,
+        2,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x02, 0x81, 0x01]),
+        ErrorKind::InvalidLength,
+        2,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x02, 0x83, 0x01, 0x61, 0x61, 0x02]),
+        ErrorKind::InvalidLength,
+        2,
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x03, 0x81, 0x02]),
+        ErrorKind::TypeMismatch,
+        2,
+    )
 }
 
 #[test]
 fn cbor_names_the_field_of_a_record_variant() {
-    expect_field(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x03, 0xa0]), ErrorKind::MissingField, 3, "radius")
-    expect_field(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x03, 0xa1, 0x01, 0xf5]), ErrorKind::TypeMismatch, 4, "radius")
-    expect_field(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x03, 0xa2, 0x01, 0x02, 0x02, 0x05]), ErrorKind::TypeMismatch, 6, "label")
-    expect_field(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x03, 0xa2, 0x01, 0x02, 0x01, 0x03]), ErrorKind::DuplicateField, 5, "radius")
-    expect_field(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x03, 0xa2, 0x02, 0xf6, 0x01, 0x02]), ErrorKind::NonCanonical, 5, "radius")
-    expect_error(reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x03, 0xa2, 0x01, 0x02, 0x05, 0x00]), ErrorKind::UnknownField, 5)
-    expect_field(reads<Canvas, Cbor>(Cbor::new(), [0xa1, 0x01, 0xa1, 0x01, 0x61, 0x78]), ErrorKind::TypeMismatch, 4, "main")
-    expect_field(reads<Canvas, Cbor>(Cbor::new(), [0xa2, 0x01, 0x00, 0x03, 0x82, 0x01, 0x00]), ErrorKind::TypeMismatch, 5, "ring")
+    expect_field(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x03, 0xa0]),
+        ErrorKind::MissingField,
+        3,
+        "radius",
+    )
+    expect_field(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x03, 0xa1, 0x01, 0xf5]),
+        ErrorKind::TypeMismatch,
+        4,
+        "radius",
+    )
+    expect_field(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x03, 0xa2, 0x01, 0x02, 0x02, 0x05]),
+        ErrorKind::TypeMismatch,
+        6,
+        "label",
+    )
+    expect_field(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x03, 0xa2, 0x01, 0x02, 0x01, 0x03]),
+        ErrorKind::DuplicateField,
+        5,
+        "radius",
+    )
+    expect_field(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x03, 0xa2, 0x02, 0xf6, 0x01, 0x02]),
+        ErrorKind::NonCanonical,
+        5,
+        "radius",
+    )
+    expect_error(
+        reads<Shape, Cbor>(Cbor::new(), [0xa1, 0x03, 0xa2, 0x01, 0x02, 0x05, 0x00]),
+        ErrorKind::UnknownField,
+        5,
+    )
+    expect_field(
+        reads<Canvas, Cbor>(Cbor::new(), [0xa1, 0x01, 0xa1, 0x01, 0x61, 0x78]),
+        ErrorKind::TypeMismatch,
+        4,
+        "main",
+    )
+    expect_field(
+        reads<Canvas, Cbor>(Cbor::new(), [0xa2, 0x01, 0x00, 0x03, 0x82, 0x01, 0x00]),
+        ErrorKind::TypeMismatch,
+        5,
+        "ring",
+    )
 }
 
 // The wrapper is a container, which counts toward the limits.
@@ -712,64 +1877,164 @@ fn cbor_names_the_field_of_a_record_variant() {
 #[test]
 fn a_wrapper_counts_toward_the_limits_in_json() {
     let shallow = Json::with_limits(Limits { max_depth: 1, max_items: 256 })
-    assert!(is_point(must(reads<Shape, Json>(shallow, SHAPE_POINT_JSON)), 5))
-    assert!(is_empty(must(reads<Shape, Json>(shallow, SHAPE_EMPTY_JSON))))
-    expect_error(reads<Shape, Json>(shallow, SHAPE_PAIR_JSON), ErrorKind::DepthLimit, 8)
-    expect_error(reads<Shape, Json>(shallow, SHAPE_CIRCLE_JSON), ErrorKind::DepthLimit, 10)
-    expect_error(reads<Event, Json>(shallow, EVENT_DRAW_JSON), ErrorKind::DepthLimit, 8)
+    assert!(
+        is_point(must(reads<Shape, Json>(shallow, SHAPE_POINT_JSON)), 5),
+    )
+    assert!(
+        is_empty(must(reads<Shape, Json>(shallow, SHAPE_EMPTY_JSON))),
+    )
+    expect_error(
+        reads<Shape, Json>(shallow, SHAPE_PAIR_JSON),
+        ErrorKind::DepthLimit,
+        8,
+    )
+    expect_error(
+        reads<Shape, Json>(shallow, SHAPE_CIRCLE_JSON),
+        ErrorKind::DepthLimit,
+        10,
+    )
+    expect_error(
+        reads<Event, Json>(shallow, EVENT_DRAW_JSON),
+        ErrorKind::DepthLimit,
+        8,
+    )
     let flat = Json::with_limits(Limits { max_depth: 0, max_items: 256 })
-    expect_error(reads<Shape, Json>(flat, SHAPE_POINT_JSON), ErrorKind::DepthLimit, 0)
+    expect_error(
+        reads<Shape, Json>(flat, SHAPE_POINT_JSON),
+        ErrorKind::DepthLimit,
+        0,
+    )
     assert!(is_empty(must(reads<Shape, Json>(flat, SHAPE_EMPTY_JSON))))
     let narrow = Json::with_limits(Limits { max_depth: 32, max_items: 1 })
-    assert!(is_point(must(reads<Shape, Json>(narrow, SHAPE_POINT_JSON)), 5))
-    expect_error(reads<Shape, Json>(narrow, SHAPE_PAIR_JSON), ErrorKind::CollectionLimit, 11)
+    assert!(
+        is_point(must(reads<Shape, Json>(narrow, SHAPE_POINT_JSON)), 5),
+    )
+    expect_error(
+        reads<Shape, Json>(narrow, SHAPE_PAIR_JSON),
+        ErrorKind::CollectionLimit,
+        11,
+    )
     let none = Json::with_limits(Limits { max_depth: 32, max_items: 0 })
-    expect_error(reads<Shape, Json>(none, SHAPE_POINT_JSON), ErrorKind::CollectionLimit, 1)
+    expect_error(
+        reads<Shape, Json>(none, SHAPE_POINT_JSON),
+        ErrorKind::CollectionLimit,
+        1,
+    )
 }
 
 #[test]
 fn a_wrapper_counts_toward_the_limits_in_cbor() {
     let shallow = Cbor::with_limits(Limits { max_depth: 1, max_items: 256 })
-    assert!(is_point(must(reads<Shape, Cbor>(shallow, SHAPE_POINT_CBOR)), 5))
-    assert!(is_empty(must(reads<Shape, Cbor>(shallow, SHAPE_EMPTY_CBOR))))
-    expect_error(reads<Shape, Cbor>(shallow, SHAPE_PAIR_CBOR), ErrorKind::DepthLimit, 2)
-    expect_error(reads<Shape, Cbor>(shallow, SHAPE_CIRCLE_CBOR), ErrorKind::DepthLimit, 2)
-    expect_error(reads<Event, Cbor>(shallow, EVENT_DRAW_CBOR), ErrorKind::DepthLimit, 3)
+    assert!(
+        is_point(must(reads<Shape, Cbor>(shallow, SHAPE_POINT_CBOR)), 5),
+    )
+    assert!(
+        is_empty(must(reads<Shape, Cbor>(shallow, SHAPE_EMPTY_CBOR))),
+    )
+    expect_error(
+        reads<Shape, Cbor>(shallow, SHAPE_PAIR_CBOR),
+        ErrorKind::DepthLimit,
+        2,
+    )
+    expect_error(
+        reads<Shape, Cbor>(shallow, SHAPE_CIRCLE_CBOR),
+        ErrorKind::DepthLimit,
+        2,
+    )
+    expect_error(
+        reads<Event, Cbor>(shallow, EVENT_DRAW_CBOR),
+        ErrorKind::DepthLimit,
+        3,
+    )
     let flat = Cbor::with_limits(Limits { max_depth: 0, max_items: 256 })
-    expect_error(reads<Shape, Cbor>(flat, SHAPE_POINT_CBOR), ErrorKind::DepthLimit, 0)
+    expect_error(
+        reads<Shape, Cbor>(flat, SHAPE_POINT_CBOR),
+        ErrorKind::DepthLimit,
+        0,
+    )
     let narrow = Cbor::with_limits(Limits { max_depth: 32, max_items: 1 })
-    assert!(is_point(must(reads<Shape, Cbor>(narrow, SHAPE_POINT_CBOR)), 5))
-    expect_error(reads<Shape, Cbor>(narrow, SHAPE_PAIR_CBOR), ErrorKind::CollectionLimit, 2)
+    assert!(
+        is_point(must(reads<Shape, Cbor>(narrow, SHAPE_POINT_CBOR)), 5),
+    )
+    expect_error(
+        reads<Shape, Cbor>(narrow, SHAPE_PAIR_CBOR),
+        ErrorKind::CollectionLimit,
+        2,
+    )
     let none = Cbor::with_limits(Limits { max_depth: 32, max_items: 0 })
-    expect_error(reads<Shape, Cbor>(none, SHAPE_POINT_CBOR), ErrorKind::CollectionLimit, 0)
+    expect_error(
+        reads<Shape, Cbor>(none, SHAPE_POINT_CBOR),
+        ErrorKind::CollectionLimit,
+        0,
+    )
 }
 
 #[test]
 fn encoders_count_a_wrapper_toward_the_limits_and_the_buffer() {
     let shallow = Json::with_limits(Limits { max_depth: 1, max_items: 256 })
     assert!(writes(shallow, Shape::Point(5), SHAPE_POINT_JSON))
-    expect_error(shallow.encode<Shape, CAPACITY>(Shape::Pair(1, text("a"))), ErrorKind::DepthLimit, 8)
-    expect_error(Json::with_limits(Limits { max_depth: 32, max_items: 0 }).encode<Shape, CAPACITY>(Shape::Point(5)), ErrorKind::CollectionLimit, 0)
+    expect_error(
+        shallow.encode<Shape, CAPACITY>(Shape::Pair(1, text("a"))),
+        ErrorKind::DepthLimit,
+        8,
+    )
+    expect_error(
+        Json::with_limits(Limits { max_depth: 32, max_items: 0 })
+            .encode<Shape, CAPACITY>(Shape::Point(5)),
+        ErrorKind::CollectionLimit,
+        0,
+    )
     let shallow = Cbor::with_limits(Limits { max_depth: 1, max_items: 256 })
     assert!(writes(shallow, Shape::Point(5), SHAPE_POINT_CBOR))
-    expect_error(shallow.encode<Shape, CAPACITY>(Shape::Pair(1, text("a"))), ErrorKind::DepthLimit, 2)
-    expect_error(Cbor::with_limits(Limits { max_depth: 32, max_items: 0 }).encode<Shape, CAPACITY>(Shape::Point(5)), ErrorKind::CollectionLimit, 0)
+    expect_error(
+        shallow.encode<Shape, CAPACITY>(Shape::Pair(1, text("a"))),
+        ErrorKind::DepthLimit,
+        2,
+    )
+    expect_error(
+        Cbor::with_limits(Limits { max_depth: 32, max_items: 0 })
+            .encode<Shape, CAPACITY>(Shape::Point(5)),
+        ErrorKind::CollectionLimit,
+        0,
+    )
     // The buffer runs out at the first byte that does not fit.
-    expect_error(Json::new().encode<Shape, 10>(Shape::Point(5)), ErrorKind::CapacityExceeded, 10)
-    expect_error(Json::new().encode<Shape, 3>(Shape::Point(5)), ErrorKind::CapacityExceeded, 3)
-    expect_error(Cbor::new().encode<Shape, 2>(Shape::Point(5)), ErrorKind::CapacityExceeded, 2)
-    expect_error(Cbor::new().encode<Shape, 0>(Shape::Point(5)), ErrorKind::CapacityExceeded, 0)
+    expect_error(
+        Json::new().encode<Shape, 10>(Shape::Point(5)),
+        ErrorKind::CapacityExceeded,
+        10,
+    )
+    expect_error(
+        Json::new().encode<Shape, 3>(Shape::Point(5)),
+        ErrorKind::CapacityExceeded,
+        3,
+    )
+    expect_error(
+        Cbor::new().encode<Shape, 2>(Shape::Point(5)),
+        ErrorKind::CapacityExceeded,
+        2,
+    )
+    expect_error(
+        Cbor::new().encode<Shape, 0>(Shape::Point(5)),
+        ErrorKind::CapacityExceeded,
+        0,
+    )
 }
 
 #[test]
 fn every_format_round_trips_payload_enums() {
     stable<Shape, Json>(Json::new(), Shape::Empty)
     stable<Shape, Json>(Json::new(), Shape::Point(18446744073709551615))
-    stable<Shape, Json>(Json::new(), Shape::Pair(18446744073709551615, text("héllo")))
+    stable<Shape, Json>(
+        Json::new(),
+        Shape::Pair(18446744073709551615, text("héllo")),
+    )
     stable<Shape, Json>(Json::new(), circle(0, Option::Some(text("a\"b"))))
     stable<Shape, Cbor>(Cbor::new(), Shape::Empty)
     stable<Shape, Cbor>(Cbor::new(), Shape::Point(18446744073709551615))
-    stable<Shape, Cbor>(Cbor::new(), Shape::Pair(18446744073709551615, text("héllo")))
+    stable<Shape, Cbor>(
+        Cbor::new(),
+        Shape::Pair(18446744073709551615, text("héllo")),
+    )
     stable<Shape, Cbor>(Cbor::new(), circle(0, Option::Some(text("a\"b"))))
     stable<Canvas, Json>(Json::new(), canvas())
     stable<Canvas, Cbor>(Cbor::new(), canvas())
@@ -777,12 +2042,24 @@ fn every_format_round_trips_payload_enums() {
     stable<Canvas, Cbor>(Cbor::new(), bare_canvas())
     stable<Event, Json>(Json::new(), movement())
     stable<Event, Cbor>(Cbor::new(), movement())
-    stable<Event, Json>(Json::new(), Event::Pay { amount: 18446744073709551615, tip: Option::Some(0) })
-    stable<Event, Cbor>(Cbor::new(), Event::Pay { amount: 18446744073709551615, tip: Option::Some(0) })
+    stable<Event, Json>(
+        Json::new(),
+        Event::Pay { amount: 18446744073709551615, tip: Option::Some(0) },
+    )
+    stable<Event, Cbor>(
+        Cbor::new(),
+        Event::Pay { amount: 18446744073709551615, tip: Option::Some(0) },
+    )
     stable<Layout, Json>(Json::new(), row())
     stable<Layout, Cbor>(Cbor::new(), row())
-    stable<Parts, Json>(Json::new(), mixed(Option::Some(1), [2, 3], (true, 4), bytes_list([5, 6])))
-    stable<Parts, Cbor>(Cbor::new(), mixed(Option::Some(1), [2, 3], (true, 4), bytes_list([5, 6])))
+    stable<Parts, Json>(
+        Json::new(),
+        mixed(Option::Some(1), [2, 3], (true, 4), bytes_list([5, 6])),
+    )
+    stable<Parts, Cbor>(
+        Cbor::new(),
+        mixed(Option::Some(1), [2, 3], (true, 4), bytes_list([5, 6])),
+    )
 }
 
 // The compact example format has no payload variants: a positional format cannot tell from the
@@ -792,15 +2069,41 @@ fn every_format_round_trips_payload_enums() {
 #[test]
 fn compact_keeps_the_defaults_for_payload_variants() {
     assert!(writes(Compact::new(), Shape::Empty, [0x00]))
-    expect_error(Compact::new().encode<Shape, CAPACITY>(Shape::Point(5)), ErrorKind::Unsupported, 0)
-    expect_error(Compact::new().encode<Shape, CAPACITY>(Shape::Pair(1, text("a"))), ErrorKind::Unsupported, 0)
-    expect_error(Compact::new().encode<Shape, CAPACITY>(circle(1, Option::None)), ErrorKind::Unsupported, 0)
-    expect_error(Compact::new().encode<Canvas, CAPACITY>(canvas()), ErrorKind::Unsupported, 0)
-    expect_error(reads<Shape, Compact>(Compact::new(), [0x00]), ErrorKind::Unsupported, 0)
-    expect_error(reads<Shape, Compact>(Compact::new(), [0x01, 0x05]), ErrorKind::Unsupported, 0)
+    expect_error(
+        Compact::new().encode<Shape, CAPACITY>(Shape::Point(5)),
+        ErrorKind::Unsupported,
+        0,
+    )
+    expect_error(
+        Compact::new().encode<Shape, CAPACITY>(Shape::Pair(1, text("a"))),
+        ErrorKind::Unsupported,
+        0,
+    )
+    expect_error(
+        Compact::new().encode<Shape, CAPACITY>(circle(1, Option::None)),
+        ErrorKind::Unsupported,
+        0,
+    )
+    expect_error(
+        Compact::new().encode<Canvas, CAPACITY>(canvas()),
+        ErrorKind::Unsupported,
+        0,
+    )
+    expect_error(
+        reads<Shape, Compact>(Compact::new(), [0x00]),
+        ErrorKind::Unsupported,
+        0,
+    )
+    expect_error(
+        reads<Shape, Compact>(Compact::new(), [0x01, 0x05]),
+        ErrorKind::Unsupported,
+        0,
+    )
     // An enum with no payloads reads and writes as before.
     assert!(writes(Compact::new(), Status::Sent, [0x01]))
-    assert!(is_sent(must(reads<Status, Compact>(Compact::new(), [0x01]))))
+    assert!(
+        is_sent(must(reads<Status, Compact>(Compact::new(), [0x01]))),
+    )
 }
 
 // EIP-712 has no union type, so a struct holding a payload enum has no type, and the generic path
@@ -809,9 +2112,24 @@ fn compact_keeps_the_defaults_for_payload_variants() {
 #[test]
 fn eip712_rejects_payload_enums() {
     let eip712 = Eip712::new()
-    expect_field(eip712.type_hash<Drawing>(), ErrorKind::Unsupported, 0, "shape")
-    expect_field(eip712.encode_type<Drawing, 64>(), ErrorKind::Unsupported, 0, "shape")
-    expect_field(eip712.hash_struct(Drawing { shape: Shape::Empty }), ErrorKind::Unsupported, 0, "shape")
+    expect_field(
+        eip712.type_hash<Drawing>(),
+        ErrorKind::Unsupported,
+        0,
+        "shape",
+    )
+    expect_field(
+        eip712.encode_type<Drawing, 64>(),
+        ErrorKind::Unsupported,
+        0,
+        "shape",
+    )
+    expect_field(
+        eip712.hash_struct(Drawing { shape: Shape::Empty }),
+        ErrorKind::Unsupported,
+        0,
+        "shape",
+    )
     expect_error(eip712.type_hash<Shape>(), ErrorKind::Unsupported, 0)
 }
 
@@ -946,13 +2264,119 @@ fn a_payload_enum_describes_each_variants_payload_between_union_calls() {
     // Nothing for `Empty`, the value for a variant of one element, a tuple for several, and a record.
     var shape = Trace::new()
     assert!(<Shape as Describe>::describe(mut shape).is_ok())
-    assert!(shape.is([1000, 1100, 1101, 64, 1102, 102, 64, 508, 202, 1103, 1300, 1400, 64, 1401, 300, 508, 400, 1500, 1200]))
+    assert!(
+        shape
+            .is(
+                [
+                    1000,
+                    1100,
+                    1101,
+                    64,
+                    1102,
+                    102,
+                    64,
+                    508,
+                    202,
+                    1103,
+                    1300,
+                    1400,
+                    64,
+                    1401,
+                    300,
+                    508,
+                    400,
+                    1500,
+                    1200,
+                ],
+            ),
+    )
     // Elements of every kind.
     var parts = Trace::new()
     assert!(<Parts as Describe>::describe(mut parts).is_ok())
-    assert!(parts.is([1000, 1100, 104, 300, 8, 400, 702, 8, 802, 102, 1, 8, 202, 602, 8, 902, 204, 1101, 300, 8, 400, 1102, 702, 8, 802, 1200]))
+    assert!(
+        parts
+            .is(
+                [
+                    1000,
+                    1100,
+                    104,
+                    300,
+                    8,
+                    400,
+                    702,
+                    8,
+                    802,
+                    102,
+                    1,
+                    8,
+                    202,
+                    602,
+                    8,
+                    902,
+                    204,
+                    1101,
+                    300,
+                    8,
+                    400,
+                    1102,
+                    702,
+                    8,
+                    802,
+                    1200,
+                ],
+            ),
+    )
     // A codec describes itself in place of the field's type, and a variant holds a union.
     var event = Trace::new()
     assert!(<Event as Describe>::describe(mut event).is_ok())
-    assert!(event.is([1000, 1100, 1101, 1300, 1400, 16, 1401, 300, 508, 400, 1402, 16, 1500, 1102, 1000, 1100, 1101, 64, 1102, 102, 64, 508, 202, 1103, 1300, 1400, 64, 1401, 300, 508, 400, 1500, 1200, 1103, 1300, 1400, 516, 1401, 300, 516, 400, 1500, 1200]))
+    assert!(
+        event
+            .is(
+                [
+                    1000,
+                    1100,
+                    1101,
+                    1300,
+                    1400,
+                    16,
+                    1401,
+                    300,
+                    508,
+                    400,
+                    1402,
+                    16,
+                    1500,
+                    1102,
+                    1000,
+                    1100,
+                    1101,
+                    64,
+                    1102,
+                    102,
+                    64,
+                    508,
+                    202,
+                    1103,
+                    1300,
+                    1400,
+                    64,
+                    1401,
+                    300,
+                    508,
+                    400,
+                    1500,
+                    1200,
+                    1103,
+                    1300,
+                    1400,
+                    516,
+                    1401,
+                    300,
+                    516,
+                    400,
+                    1500,
+                    1200,
+                ],
+            ),
+    )
 }

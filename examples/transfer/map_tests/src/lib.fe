@@ -11,7 +11,21 @@
 use core::bytes::PackedBytes
 use core::ops::Eq
 use fe_codec_cbor::Cbor
-use fe_codec_core::{BoundedBuffer, CodecResult, Decoder, Deserialize, Encoder, ErrorKind, Format, Limits, List, Map, MapKey, Serialize, Text}
+use fe_codec_core::{
+    BoundedBuffer,
+    CodecResult,
+    Decoder,
+    Deserialize,
+    Encoder,
+    ErrorKind,
+    Format,
+    Limits,
+    List,
+    Map,
+    MapKey,
+    Serialize,
+    Text,
+}
 use fe_codec_eip712::{Domain, Eip712}
 use fe_codec_json::{Json, JsonDecoder, JsonEncoder}
 use codec_compact::Compact
@@ -25,36 +39,397 @@ const MAP_U8_CBOR: [u8; 8] = [0xa3, 0x01, 0x01, 0x11, 0x02, 0x18, 0xc8, 0x03]
 const MAP_U16_JSON: [u8; 25] = "{\"0\":3,\"256\":2,\"65535\":1}"
 const MAP_U16_CBOR: [u8; 11] = [0xa3, 0x00, 0x03, 0x19, 0x01, 0x00, 0x02, 0x19, 0xff, 0xff, 0x01]
 const MAP_U32_JSON: [u8; 36] = "{\"65535\":3,\"65536\":2,\"4294967295\":1}"
-const MAP_U32_CBOR: [u8; 17] = [0xa3, 0x19, 0xff, 0xff, 0x03, 0x1a, 0x00, 0x01, 0x00, 0x00, 0x02, 0x1a, 0xff, 0xff, 0xff, 0xff, 0x01]
+const MAP_U32_CBOR: [u8; 17] = [
+    0xa3,
+    0x19,
+    0xff,
+    0xff,
+    0x03,
+    0x1a,
+    0x00,
+    0x01,
+    0x00,
+    0x00,
+    0x02,
+    0x1a,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0x01,
+]
 const MAP_U64_JSON: [u8; 55] = "{\"23\":4,\"24\":3,\"4294967296\":2,\"18446744073709551615\":1}"
-const MAP_U64_CBOR: [u8; 26] = [0xa4, 0x17, 0x04, 0x18, 0x18, 0x03, 0x1b, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x02, 0x1b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01]
+const MAP_U64_CBOR: [u8; 26] = [
+    0xa4,
+    0x17,
+    0x04,
+    0x18,
+    0x18,
+    0x03,
+    0x1b,
+    0x00,
+    0x00,
+    0x00,
+    0x01,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x02,
+    0x1b,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0x01,
+]
 const MAP_U128_JSON: [u8; 76] = "{\"5\":3,\"18446744073709551616\":2,\"340282366920938463463374607431768211455\":1}"
-const MAP_U128_CBOR: [u8; 34] = [0xa3, 0x05, 0x03, 0xc2, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xc2, 0x50, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01]
+const MAP_U128_CBOR: [u8; 34] = [
+    0xa3,
+    0x05,
+    0x03,
+    0xc2,
+    0x49,
+    0x01,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x02,
+    0xc2,
+    0x50,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0x01,
+]
 const MAP_U256_JSON: [u8; 115] = "{\"0\":3,\"18446744073709551616\":2,\"115792089237316195423570985008687907853269984665640564039457584007913129639935\":1}"
-const MAP_U256_CBOR: [u8; 51] = [0xa3, 0x00, 0x03, 0xc2, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xc2, 0x58, 0x20, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01]
+const MAP_U256_CBOR: [u8; 51] = [
+    0xa3,
+    0x00,
+    0x03,
+    0xc2,
+    0x49,
+    0x01,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x02,
+    0xc2,
+    0x58,
+    0x20,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0x01,
+]
 const MAP_TEXT_JSON: [u8; 34] = "{\"\":3,\"a\":2,\"bb\":1,\"é\":5,\"ccc\":4}"
-const MAP_TEXT_CBOR: [u8; 19] = [0xa5, 0x60, 0x03, 0x61, 0x61, 0x02, 0x62, 0x62, 0x62, 0x01, 0x62, 0xc3, 0xa9, 0x05, 0x63, 0x63, 0x63, 0x63, 0x04]
+const MAP_TEXT_CBOR: [u8; 19] = [
+    0xa5,
+    0x60,
+    0x03,
+    0x61,
+    0x61,
+    0x02,
+    0x62,
+    0x62,
+    0x62,
+    0x01,
+    0x62,
+    0xc3,
+    0xa9,
+    0x05,
+    0x63,
+    0x63,
+    0x63,
+    0x63,
+    0x04,
+]
 const MAP_ADDRESS_JSON: [u8; 95] = "{\"0x0000000000000000000000000000000000000001\":2,\"0xd8da6bf26964af9d7eed9e03e53415d37aa96045\":1}"
-const MAP_ADDRESS_CBOR: [u8; 45] = [0xa2, 0x54, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x54, 0xd8, 0xda, 0x6b, 0xf2, 0x69, 0x64, 0xaf, 0x9d, 0x7e, 0xed, 0x9e, 0x03, 0xe5, 0x34, 0x15, 0xd3, 0x7a, 0xa9, 0x60, 0x45, 0x01]
+const MAP_ADDRESS_CBOR: [u8; 45] = [
+    0xa2,
+    0x54,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x01,
+    0x02,
+    0x54,
+    0xd8,
+    0xda,
+    0x6b,
+    0xf2,
+    0x69,
+    0x64,
+    0xaf,
+    0x9d,
+    0x7e,
+    0xed,
+    0x9e,
+    0x03,
+    0xe5,
+    0x34,
+    0x15,
+    0xd3,
+    0x7a,
+    0xa9,
+    0x60,
+    0x45,
+    0x01,
+]
 const MAP_BYTES_JSON: [u8; 34] = "{\"0x00ff\":2,\"0x0100\":1,\"0x0101\":3}"
-const MAP_BYTES_CBOR: [u8; 13] = [0xa3, 0x42, 0x00, 0xff, 0x02, 0x42, 0x01, 0x00, 0x01, 0x42, 0x01, 0x01, 0x03]
+const MAP_BYTES_CBOR: [u8; 13] = [
+    0xa3,
+    0x42,
+    0x00,
+    0xff,
+    0x02,
+    0x42,
+    0x01,
+    0x00,
+    0x01,
+    0x42,
+    0x01,
+    0x01,
+    0x03,
+]
 const MAP_EMPTY_JSON: [u8; 2] = "{}"
 const MAP_EMPTY_CBOR: [u8; 1] = [0xa0]
 const MAP_OF_LISTS_JSON: [u8; 18] = "{\"1\":[],\"2\":[1,2]}"
 const MAP_OF_LISTS_CBOR: [u8; 7] = [0xa2, 0x01, 0x80, 0x02, 0x82, 0x01, 0x02]
 const MAP_LONG_JSON: [u8; 173] = "{\"0\":0,\"1\":1,\"2\":2,\"3\":3,\"4\":4,\"5\":5,\"6\":6,\"7\":7,\"8\":8,\"9\":9,\"10\":10,\"11\":11,\"12\":12,\"13\":13,\"14\":14,\"15\":15,\"16\":16,\"17\":17,\"18\":18,\"19\":19,\"20\":20,\"21\":21,\"22\":22,\"23\":23}"
-const MAP_LONG_CBOR: [u8; 50] = [0xb8, 0x18, 0x00, 0x00, 0x01, 0x01, 0x02, 0x02, 0x03, 0x03, 0x04, 0x04, 0x05, 0x05, 0x06, 0x06, 0x07, 0x07, 0x08, 0x08, 0x09, 0x09, 0x0a, 0x0a, 0x0b, 0x0b, 0x0c, 0x0c, 0x0d, 0x0d, 0x0e, 0x0e, 0x0f, 0x0f, 0x10, 0x10, 0x11, 0x11, 0x12, 0x12, 0x13, 0x13, 0x14, 0x14, 0x15, 0x15, 0x16, 0x16, 0x17, 0x17]
+const MAP_LONG_CBOR: [u8; 50] = [
+    0xb8,
+    0x18,
+    0x00,
+    0x00,
+    0x01,
+    0x01,
+    0x02,
+    0x02,
+    0x03,
+    0x03,
+    0x04,
+    0x04,
+    0x05,
+    0x05,
+    0x06,
+    0x06,
+    0x07,
+    0x07,
+    0x08,
+    0x08,
+    0x09,
+    0x09,
+    0x0a,
+    0x0a,
+    0x0b,
+    0x0b,
+    0x0c,
+    0x0c,
+    0x0d,
+    0x0d,
+    0x0e,
+    0x0e,
+    0x0f,
+    0x0f,
+    0x10,
+    0x10,
+    0x11,
+    0x11,
+    0x12,
+    0x12,
+    0x13,
+    0x13,
+    0x14,
+    0x14,
+    0x15,
+    0x15,
+    0x16,
+    0x16,
+    0x17,
+    0x17,
+]
 const TREASURY_JSON: [u8; 133] = "{\"balances\":{\"0x0000000000000000000000000000000000000001\":6,\"0xd8da6bf26964af9d7eed9e03e53415d37aa96045\":5},\"labels\":{\"hi\":1,\"yo\":2}}"
-const TREASURY_CBOR: [u8; 57] = [0xa2, 0x01, 0xa2, 0x54, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x06, 0x54, 0xd8, 0xda, 0x6b, 0xf2, 0x69, 0x64, 0xaf, 0x9d, 0x7e, 0xed, 0x9e, 0x03, 0xe5, 0x34, 0x15, 0xd3, 0x7a, 0xa9, 0x60, 0x45, 0x05, 0x02, 0xa2, 0x62, 0x68, 0x69, 0x01, 0x62, 0x79, 0x6f, 0x02]
+const TREASURY_CBOR: [u8; 57] = [
+    0xa2,
+    0x01,
+    0xa2,
+    0x54,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x01,
+    0x06,
+    0x54,
+    0xd8,
+    0xda,
+    0x6b,
+    0xf2,
+    0x69,
+    0x64,
+    0xaf,
+    0x9d,
+    0x7e,
+    0xed,
+    0x9e,
+    0x03,
+    0xe5,
+    0x34,
+    0x15,
+    0xd3,
+    0x7a,
+    0xa9,
+    0x60,
+    0x45,
+    0x05,
+    0x02,
+    0xa2,
+    0x62,
+    0x68,
+    0x69,
+    0x01,
+    0x62,
+    0x79,
+    0x6f,
+    0x02,
+]
 const TREASURY_EMPTY_JSON: [u8; 27] = "{\"balances\":{},\"labels\":{}}"
 const TREASURY_EMPTY_CBOR: [u8; 5] = [0xa2, 0x01, 0xa0, 0x02, 0xa0]
 const ROSTER_JSON: [u8; 117] = "{\"members\":{\"1\":{\"id\":1,\"name\":\"hi\"},\"2\":{\"id\":2,\"name\":\"yo\"}},\"groups\":{\"5\":[1,2],\"300\":[7]},\"guests\":{\"3\":2,\"9\":1}}"
-const ROSTER_CBOR: [u8; 36] = [0xa3, 0x01, 0xa2, 0x01, 0xa2, 0x01, 0x01, 0x02, 0x62, 0x68, 0x69, 0x02, 0xa2, 0x01, 0x02, 0x02, 0x62, 0x79, 0x6f, 0x02, 0xa2, 0x05, 0x82, 0x01, 0x02, 0x19, 0x01, 0x2c, 0x81, 0x07, 0x03, 0xa2, 0x03, 0x02, 0x09, 0x01]
+const ROSTER_CBOR: [u8; 36] = [
+    0xa3,
+    0x01,
+    0xa2,
+    0x01,
+    0xa2,
+    0x01,
+    0x01,
+    0x02,
+    0x62,
+    0x68,
+    0x69,
+    0x02,
+    0xa2,
+    0x01,
+    0x02,
+    0x02,
+    0x62,
+    0x79,
+    0x6f,
+    0x02,
+    0xa2,
+    0x05,
+    0x82,
+    0x01,
+    0x02,
+    0x19,
+    0x01,
+    0x2c,
+    0x81,
+    0x07,
+    0x03,
+    0xa2,
+    0x03,
+    0x02,
+    0x09,
+    0x01,
+]
 const ROSTER_BARE_JSON: [u8; 26] = "{\"members\":{},\"groups\":{}}"
 const ROSTER_BARE_CBOR: [u8; 5] = [0xa2, 0x01, 0xa0, 0x02, 0xa0]
 
 /// The map holding `keys[i] -> values[i]`, inserted in the order given.
-fn map_of<K: MapKey, V: Copy, const N: usize, const M: usize>(_ keys: [K; M], _ values: [V; M]) -> Map<K, V, N> {
+fn map_of<K: MapKey, V: Copy, const N: usize, const M: usize>(
+    _ keys: [K; M],
+    _ values: [V; M],
+) -> Map<K, V, N> {
     var map = Map<K, V, N>::new()
     var index: usize = 0
     while index < M {
@@ -65,13 +440,18 @@ fn map_of<K: MapKey, V: Copy, const N: usize, const M: usize>(_ keys: [K; M], _ 
 }
 
 /// The entries of `map` in key order are exactly `keys` and `values`.
-fn holds<K: MapKey, V: Copy + Eq, const N: usize, const M: usize>(_ map: Map<K, V, N>, _ keys: [K; M], _ values: [V; M]) -> bool {
+fn holds<K: MapKey, V: Copy + Eq, const N: usize, const M: usize>(
+    _ map: Map<K, V, N>,
+    _ keys: [K; M],
+    _ values: [V; M],
+) -> bool {
     if map.len() != M {
         return false
     }
     var index: usize = 0
     while index < M {
-        if !map.key_at(index).unwrap().same(keys[index]) || map.value_at(index).unwrap() != values[index] {
+        if !map.key_at(index).unwrap().same(keys[index])
+            || map.value_at(index).unwrap() != values[index] {
             return false
         }
         index += 1
@@ -80,11 +460,17 @@ fn holds<K: MapKey, V: Copy + Eq, const N: usize, const M: usize>(_ map: Map<K, 
 }
 
 /// `result` is an error of `kind` that names the field `name`.
-fn expect_named<T, const M: usize>(_ result: own CodecResult<T>, _ kind: ErrorKind, _ name: [u8; M]) {
+fn expect_named<T, const M: usize>(
+    _ result: own CodecResult<T>,
+    _ kind: ErrorKind,
+    _ name: [u8; M],
+) {
     match result {
         Result::Err(error) => {
             assert!(error.kind == kind)
-            assert!(error.field().unwrap().as_bytes().equals(BoundedBuffer<M>::from_array(name)))
+            assert!(
+                error.field().unwrap().as_bytes().equals(BoundedBuffer<M>::from_array(name)),
+            )
         },
         Result::Ok(_) => assert!(false),
     }
@@ -131,13 +517,18 @@ fn treasury() -> Treasury {
 fn check_treasury(_ value: Treasury) {
     assert!(holds(value.balances, [low_address(), address()], [6, 5]))
     assert!(value.labels.len() == 2)
-    assert!(value.labels.get(hi()) == Option::Some(1) && value.labels.get(yo()) == Option::Some(2))
+    assert!(
+        value.labels.get(hi()) == Option::Some(1) && value.labels.get(yo()) == Option::Some(2),
+    )
 }
 
 fn roster() -> Roster {
     Roster {
         members: map_of([2, 1], [member(2, yo()), member(1, hi())]),
-        groups: map_of([300, 5], [must(List<u8, 2>::from_array([7])), must(List<u8, 2>::from_array([1, 2]))]),
+        groups: map_of(
+            [300, 5],
+            [must(List<u8, 2>::from_array([7])), must(List<u8, 2>::from_array([1, 2]))],
+        ),
         guests: Option::Some(map_of([9, 3], [1, 2])),
     }
 }
@@ -146,11 +537,19 @@ fn check_roster(_ value: Roster) {
     assert!(value.members.len() == 2)
     let first = value.members.get(1).unwrap()
     let second = value.members.get(2).unwrap()
-    assert!(first.id == 1 && first.name.equals(hi()) && second.id == 2 && second.name.equals(yo()))
-    assert!(value.members.key_at(0) == Option::Some(1) && value.members.key_at(1) == Option::Some(2))
+    assert!(
+        first.id == 1 && first.name.equals(hi()) && second.id == 2 && second.name.equals(yo()),
+    )
+    assert!(
+        value.members.key_at(0) == Option::Some(1) && value.members.key_at(1) == Option::Some(2),
+    )
     assert!(value.groups.len() == 2)
-    assert!(value.groups.get(5).unwrap() == must(List<u8, 2>::from_array([1, 2])))
-    assert!(value.groups.get(300).unwrap() == must(List<u8, 2>::from_array([7])))
+    assert!(
+        value.groups.get(5).unwrap() == must(List<u8, 2>::from_array([1, 2])),
+    )
+    assert!(
+        value.groups.get(300).unwrap() == must(List<u8, 2>::from_array([7])),
+    )
     assert!(holds(value.guests.unwrap(), [3, 9], [2, 1]))
 }
 
@@ -179,8 +578,24 @@ fn json_and_cbor_write_u8_keys_in_key_order() {
 
 #[test]
 fn json_and_cbor_read_u8_keys() {
-    assert!(holds(must(decodes<Map<u8, u8, 4>, Json, 22>(Json::new(), MAP_U8_JSON)), [1, 17, 200], [1, 2, 3]))
-    assert!(holds(must(decodes<Map<u8, u8, 4>, Cbor, 8>(Cbor::new(), MAP_U8_CBOR)), [1, 17, 200], [1, 2, 3]))
+    assert!(
+        holds(
+            must(
+                decodes<Map<u8, u8, 4>, Json, 22>(Json::new(), MAP_U8_JSON),
+            ),
+            [1, 17, 200],
+            [1, 2, 3],
+        ),
+    )
+    assert!(
+        holds(
+            must(
+                decodes<Map<u8, u8, 4>, Cbor, 8>(Cbor::new(), MAP_U8_CBOR),
+            ),
+            [1, 17, 200],
+            [1, 2, 3],
+        ),
+    )
     stable<Map<u8, u8, 4>, Json, 30>(Json::new(), map_u8())
     stable<Map<u8, u8, 4>, Cbor, 16>(Cbor::new(), map_u8())
 }
@@ -200,8 +615,24 @@ fn json_and_cbor_write_u16_keys_in_key_order() {
 
 #[test]
 fn json_and_cbor_read_u16_keys() {
-    assert!(holds(must(decodes<Map<u16, u8, 4>, Json, 25>(Json::new(), MAP_U16_JSON)), [0, 256, 65535], [3, 2, 1]))
-    assert!(holds(must(decodes<Map<u16, u8, 4>, Cbor, 11>(Cbor::new(), MAP_U16_CBOR)), [0, 256, 65535], [3, 2, 1]))
+    assert!(
+        holds(
+            must(
+                decodes<Map<u16, u8, 4>, Json, 25>(Json::new(), MAP_U16_JSON),
+            ),
+            [0, 256, 65535],
+            [3, 2, 1],
+        ),
+    )
+    assert!(
+        holds(
+            must(
+                decodes<Map<u16, u8, 4>, Cbor, 11>(Cbor::new(), MAP_U16_CBOR),
+            ),
+            [0, 256, 65535],
+            [3, 2, 1],
+        ),
+    )
     stable<Map<u16, u8, 4>, Json, 33>(Json::new(), map_u16())
     stable<Map<u16, u8, 4>, Cbor, 19>(Cbor::new(), map_u16())
 }
@@ -221,8 +652,24 @@ fn json_and_cbor_write_u32_keys_in_key_order() {
 
 #[test]
 fn json_and_cbor_read_u32_keys() {
-    assert!(holds(must(decodes<Map<u32, u8, 4>, Json, 36>(Json::new(), MAP_U32_JSON)), [65535, 65536, 4294967295], [3, 2, 1]))
-    assert!(holds(must(decodes<Map<u32, u8, 4>, Cbor, 17>(Cbor::new(), MAP_U32_CBOR)), [65535, 65536, 4294967295], [3, 2, 1]))
+    assert!(
+        holds(
+            must(
+                decodes<Map<u32, u8, 4>, Json, 36>(Json::new(), MAP_U32_JSON),
+            ),
+            [65535, 65536, 4294967295],
+            [3, 2, 1],
+        ),
+    )
+    assert!(
+        holds(
+            must(
+                decodes<Map<u32, u8, 4>, Cbor, 17>(Cbor::new(), MAP_U32_CBOR),
+            ),
+            [65535, 65536, 4294967295],
+            [3, 2, 1],
+        ),
+    )
     stable<Map<u32, u8, 4>, Json, 44>(Json::new(), map_u32())
     stable<Map<u32, u8, 4>, Cbor, 25>(Cbor::new(), map_u32())
 }
@@ -235,78 +682,215 @@ fn map_u64() -> Map<u64, u8, 4> {
 fn json_and_cbor_write_u64_keys_in_key_order() {
     assert!(encodes(Json::new(), map_u64(), MAP_U64_JSON))
     assert!(encodes(Cbor::new(), map_u64(), MAP_U64_CBOR))
-    assert!(holds(map_u64(), [23, 24, 4294967296, 18446744073709551615], [4, 3, 2, 1]))
+    assert!(
+        holds(
+            map_u64(),
+            [23, 24, 4294967296, 18446744073709551615],
+            [4, 3, 2, 1],
+        ),
+    )
     // The same entries inserted in key order give the same map.
-    assert!(map_u64() == map_of([23, 24, 4294967296, 18446744073709551615], [4, 3, 2, 1]))
+    assert!(
+        map_u64() == map_of([23, 24, 4294967296, 18446744073709551615], [4, 3, 2, 1]),
+    )
 }
 
 #[test]
 fn json_and_cbor_read_u64_keys() {
-    assert!(holds(must(decodes<Map<u64, u8, 4>, Json, 55>(Json::new(), MAP_U64_JSON)), [23, 24, 4294967296, 18446744073709551615], [4, 3, 2, 1]))
-    assert!(holds(must(decodes<Map<u64, u8, 4>, Cbor, 26>(Cbor::new(), MAP_U64_CBOR)), [23, 24, 4294967296, 18446744073709551615], [4, 3, 2, 1]))
+    assert!(
+        holds(
+            must(
+                decodes<Map<u64, u8, 4>, Json, 55>(Json::new(), MAP_U64_JSON),
+            ),
+            [23, 24, 4294967296, 18446744073709551615],
+            [4, 3, 2, 1],
+        ),
+    )
+    assert!(
+        holds(
+            must(
+                decodes<Map<u64, u8, 4>, Cbor, 26>(Cbor::new(), MAP_U64_CBOR),
+            ),
+            [23, 24, 4294967296, 18446744073709551615],
+            [4, 3, 2, 1],
+        ),
+    )
     stable<Map<u64, u8, 4>, Json, 63>(Json::new(), map_u64())
     stable<Map<u64, u8, 4>, Cbor, 34>(Cbor::new(), map_u64())
 }
 
 fn map_u128() -> Map<u128, u8, 4> {
-    map_of([0x10000000000000000, 0xffffffffffffffffffffffffffffffff, 5], [2, 1, 3])
+    map_of(
+        [0x10000000000000000, 0xffffffffffffffffffffffffffffffff, 5],
+        [2, 1, 3],
+    )
 }
 
 #[test]
 fn json_and_cbor_write_u128_keys_in_key_order() {
     assert!(encodes(Json::new(), map_u128(), MAP_U128_JSON))
     assert!(encodes(Cbor::new(), map_u128(), MAP_U128_CBOR))
-    assert!(holds(map_u128(), [5, 0x10000000000000000, 0xffffffffffffffffffffffffffffffff], [3, 2, 1]))
+    assert!(
+        holds(
+            map_u128(),
+            [5, 0x10000000000000000, 0xffffffffffffffffffffffffffffffff],
+            [3, 2, 1],
+        ),
+    )
     // The same entries inserted in key order give the same map.
-    assert!(map_u128() == map_of([5, 0x10000000000000000, 0xffffffffffffffffffffffffffffffff], [3, 2, 1]))
+    assert!(
+        map_u128()
+            == map_of(
+                [5, 0x10000000000000000, 0xffffffffffffffffffffffffffffffff],
+                [3, 2, 1],
+            ),
+    )
 }
 
 #[test]
 fn json_and_cbor_read_u128_keys() {
-    assert!(holds(must(decodes<Map<u128, u8, 4>, Json, 76>(Json::new(), MAP_U128_JSON)), [5, 0x10000000000000000, 0xffffffffffffffffffffffffffffffff], [3, 2, 1]))
-    assert!(holds(must(decodes<Map<u128, u8, 4>, Cbor, 34>(Cbor::new(), MAP_U128_CBOR)), [5, 0x10000000000000000, 0xffffffffffffffffffffffffffffffff], [3, 2, 1]))
+    assert!(
+        holds(
+            must(
+                decodes<Map<u128, u8, 4>, Json, 76>(Json::new(), MAP_U128_JSON),
+            ),
+            [5, 0x10000000000000000, 0xffffffffffffffffffffffffffffffff],
+            [3, 2, 1],
+        ),
+    )
+    assert!(
+        holds(
+            must(
+                decodes<Map<u128, u8, 4>, Cbor, 34>(Cbor::new(), MAP_U128_CBOR),
+            ),
+            [5, 0x10000000000000000, 0xffffffffffffffffffffffffffffffff],
+            [3, 2, 1],
+        ),
+    )
     stable<Map<u128, u8, 4>, Json, 84>(Json::new(), map_u128())
     stable<Map<u128, u8, 4>, Cbor, 42>(Cbor::new(), map_u128())
 }
 
 fn map_u256() -> Map<u256, u8, 4> {
-    map_of([0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff, 0, 0x10000000000000000], [1, 3, 2])
+    map_of(
+        [
+            0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff,
+            0,
+            0x10000000000000000,
+        ],
+        [1, 3, 2],
+    )
 }
 
 #[test]
 fn json_and_cbor_write_u256_keys_in_key_order() {
     assert!(encodes(Json::new(), map_u256(), MAP_U256_JSON))
     assert!(encodes(Cbor::new(), map_u256(), MAP_U256_CBOR))
-    assert!(holds(map_u256(), [0, 0x10000000000000000, 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff], [3, 2, 1]))
+    assert!(
+        holds(
+            map_u256(),
+            [
+                0,
+                0x10000000000000000,
+                0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff,
+            ],
+            [3, 2, 1],
+        ),
+    )
     // The same entries inserted in key order give the same map.
-    assert!(map_u256() == map_of([0, 0x10000000000000000, 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff], [3, 2, 1]))
+    assert!(
+        map_u256()
+            == map_of(
+                [
+                    0,
+                    0x10000000000000000,
+                    0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff,
+                ],
+                [3, 2, 1],
+            ),
+    )
 }
 
 #[test]
 fn json_and_cbor_read_u256_keys() {
-    assert!(holds(must(decodes<Map<u256, u8, 4>, Json, 115>(Json::new(), MAP_U256_JSON)), [0, 0x10000000000000000, 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff], [3, 2, 1]))
-    assert!(holds(must(decodes<Map<u256, u8, 4>, Cbor, 51>(Cbor::new(), MAP_U256_CBOR)), [0, 0x10000000000000000, 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff], [3, 2, 1]))
+    assert!(
+        holds(
+            must(
+                decodes<Map<u256, u8, 4>, Json, 115>(Json::new(), MAP_U256_JSON),
+            ),
+            [
+                0,
+                0x10000000000000000,
+                0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff,
+            ],
+            [3, 2, 1],
+        ),
+    )
+    assert!(
+        holds(
+            must(
+                decodes<Map<u256, u8, 4>, Cbor, 51>(Cbor::new(), MAP_U256_CBOR),
+            ),
+            [
+                0,
+                0x10000000000000000,
+                0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff,
+            ],
+            [3, 2, 1],
+        ),
+    )
     stable<Map<u256, u8, 4>, Json, 123>(Json::new(), map_u256())
     stable<Map<u256, u8, 4>, Cbor, 59>(Cbor::new(), map_u256())
 }
 
 fn map_text() -> Map<Text<8>, u8, 5> {
-    map_of([text8("ccc"), text8("a"), text8([0xc3, 0xa9]), text8(""), text8("bb")], [4, 2, 5, 3, 1])
+    map_of(
+        [text8("ccc"), text8("a"), text8([0xc3, 0xa9]), text8(""), text8("bb")],
+        [4, 2, 5, 3, 1],
+    )
 }
 
 #[test]
 fn json_and_cbor_write_text_keys_in_key_order() {
     assert!(encodes(Json::new(), map_text(), MAP_TEXT_JSON))
     assert!(encodes(Cbor::new(), map_text(), MAP_TEXT_CBOR))
-    assert!(holds(map_text(), [text8(""), text8("a"), text8("bb"), text8([0xc3, 0xa9]), text8("ccc")], [3, 2, 1, 5, 4]))
+    assert!(
+        holds(
+            map_text(),
+            [text8(""), text8("a"), text8("bb"), text8([0xc3, 0xa9]), text8("ccc")],
+            [3, 2, 1, 5, 4],
+        ),
+    )
     // The same entries inserted in key order give the same map.
-    assert!(map_text() == map_of([text8(""), text8("a"), text8("bb"), text8([0xc3, 0xa9]), text8("ccc")], [3, 2, 1, 5, 4]))
+    assert!(
+        map_text()
+            == map_of(
+                [text8(""), text8("a"), text8("bb"), text8([0xc3, 0xa9]), text8("ccc")],
+                [3, 2, 1, 5, 4],
+            ),
+    )
 }
 
 #[test]
 fn json_and_cbor_read_text_keys() {
-    assert!(holds(must(decodes<Map<Text<8>, u8, 5>, Json, 34>(Json::new(), MAP_TEXT_JSON)), [text8(""), text8("a"), text8("bb"), text8([0xc3, 0xa9]), text8("ccc")], [3, 2, 1, 5, 4]))
-    assert!(holds(must(decodes<Map<Text<8>, u8, 5>, Cbor, 19>(Cbor::new(), MAP_TEXT_CBOR)), [text8(""), text8("a"), text8("bb"), text8([0xc3, 0xa9]), text8("ccc")], [3, 2, 1, 5, 4]))
+    assert!(
+        holds(
+            must(
+                decodes<Map<Text<8>, u8, 5>, Json, 34>(Json::new(), MAP_TEXT_JSON),
+            ),
+            [text8(""), text8("a"), text8("bb"), text8([0xc3, 0xa9]), text8("ccc")],
+            [3, 2, 1, 5, 4],
+        ),
+    )
+    assert!(
+        holds(
+            must(
+                decodes<Map<Text<8>, u8, 5>, Cbor, 19>(Cbor::new(), MAP_TEXT_CBOR),
+            ),
+            [text8(""), text8("a"), text8("bb"), text8([0xc3, 0xa9]), text8("ccc")],
+            [3, 2, 1, 5, 4],
+        ),
+    )
     stable<Map<Text<8>, u8, 5>, Json, 42>(Json::new(), map_text())
     stable<Map<Text<8>, u8, 5>, Cbor, 27>(Cbor::new(), map_text())
 }
@@ -321,13 +905,31 @@ fn json_and_cbor_write_address_keys_in_key_order() {
     assert!(encodes(Cbor::new(), map_address(), MAP_ADDRESS_CBOR))
     assert!(holds(map_address(), [low_address(), address()], [2, 1]))
     // The same entries inserted in key order give the same map.
-    assert!(map_address() == map_of([low_address(), address()], [2, 1]))
+    assert!(
+        map_address() == map_of([low_address(), address()], [2, 1]),
+    )
 }
 
 #[test]
 fn json_and_cbor_read_address_keys() {
-    assert!(holds(must(decodes<Map<Address, u8, 2>, Json, 95>(Json::new(), MAP_ADDRESS_JSON)), [low_address(), address()], [2, 1]))
-    assert!(holds(must(decodes<Map<Address, u8, 2>, Cbor, 45>(Cbor::new(), MAP_ADDRESS_CBOR)), [low_address(), address()], [2, 1]))
+    assert!(
+        holds(
+            must(
+                decodes<Map<Address, u8, 2>, Json, 95>(Json::new(), MAP_ADDRESS_JSON),
+            ),
+            [low_address(), address()],
+            [2, 1],
+        ),
+    )
+    assert!(
+        holds(
+            must(
+                decodes<Map<Address, u8, 2>, Cbor, 45>(Cbor::new(), MAP_ADDRESS_CBOR),
+            ),
+            [low_address(), address()],
+            [2, 1],
+        ),
+    )
     stable<Map<Address, u8, 2>, Json, 103>(Json::new(), map_address())
     stable<Map<Address, u8, 2>, Cbor, 53>(Cbor::new(), map_address())
 }
@@ -340,15 +942,39 @@ fn map_bytes() -> Map<PackedBytes<2>, u8, 3> {
 fn json_and_cbor_write_bytes_keys_in_key_order() {
     assert!(encodes(Json::new(), map_bytes(), MAP_BYTES_JSON))
     assert!(encodes(Cbor::new(), map_bytes(), MAP_BYTES_CBOR))
-    assert!(holds(map_bytes(), [bytes2(0, 255), bytes2(1, 0), bytes2(1, 1)], [2, 1, 3]))
+    assert!(
+        holds(
+            map_bytes(),
+            [bytes2(0, 255), bytes2(1, 0), bytes2(1, 1)],
+            [2, 1, 3],
+        ),
+    )
     // The same entries inserted in key order give the same map.
-    assert!(map_bytes() == map_of([bytes2(0, 255), bytes2(1, 0), bytes2(1, 1)], [2, 1, 3]))
+    assert!(
+        map_bytes() == map_of([bytes2(0, 255), bytes2(1, 0), bytes2(1, 1)], [2, 1, 3]),
+    )
 }
 
 #[test]
 fn json_and_cbor_read_bytes_keys() {
-    assert!(holds(must(decodes<Map<PackedBytes<2>, u8, 3>, Json, 34>(Json::new(), MAP_BYTES_JSON)), [bytes2(0, 255), bytes2(1, 0), bytes2(1, 1)], [2, 1, 3]))
-    assert!(holds(must(decodes<Map<PackedBytes<2>, u8, 3>, Cbor, 13>(Cbor::new(), MAP_BYTES_CBOR)), [bytes2(0, 255), bytes2(1, 0), bytes2(1, 1)], [2, 1, 3]))
+    assert!(
+        holds(
+            must(
+                decodes<Map<PackedBytes<2>, u8, 3>, Json, 34>(Json::new(), MAP_BYTES_JSON),
+            ),
+            [bytes2(0, 255), bytes2(1, 0), bytes2(1, 1)],
+            [2, 1, 3],
+        ),
+    )
+    assert!(
+        holds(
+            must(
+                decodes<Map<PackedBytes<2>, u8, 3>, Cbor, 13>(Cbor::new(), MAP_BYTES_CBOR),
+            ),
+            [bytes2(0, 255), bytes2(1, 0), bytes2(1, 1)],
+            [2, 1, 3],
+        ),
+    )
     stable<Map<PackedBytes<2>, u8, 3>, Json, 42>(Json::new(), map_bytes())
     stable<Map<PackedBytes<2>, u8, 3>, Cbor, 21>(Cbor::new(), map_bytes())
 }
@@ -358,21 +984,46 @@ fn empty_maps_are_empty_objects_and_maps() {
     let empty = Map<u8, u8, 4>::new()
     assert!(encodes(Json::new(), empty, MAP_EMPTY_JSON))
     assert!(encodes(Cbor::new(), empty, MAP_EMPTY_CBOR))
-    assert!(must(decodes<Map<u8, u8, 4>, Json, 2>(Json::new(), MAP_EMPTY_JSON)).is_empty())
-    assert!(must(decodes<Map<u8, u8, 4>, Cbor, 1>(Cbor::new(), MAP_EMPTY_CBOR)).is_empty())
-    assert!(must(decodes<Map<u8, u8, 4>, Json, 5>(Json::new(), " { } ")).is_empty())
+    assert!(
+        must(
+            decodes<Map<u8, u8, 4>, Json, 2>(Json::new(), MAP_EMPTY_JSON),
+        ).is_empty(),
+    )
+    assert!(
+        must(
+            decodes<Map<u8, u8, 4>, Cbor, 1>(Cbor::new(), MAP_EMPTY_CBOR),
+        ).is_empty(),
+    )
+    assert!(
+        must(decodes<Map<u8, u8, 4>, Json, 5>(Json::new(), " { } ")).is_empty(),
+    )
     // A map with no capacity holds nothing.
-    assert!(must(decodes<Map<u8, u8, 0>, Json, 2>(Json::new(), "{}")).is_empty())
-    assert!(must(decodes<Map<u8, u8, 0>, Cbor, 1>(Cbor::new(), [0xa0])).is_empty())
+    assert!(
+        must(decodes<Map<u8, u8, 0>, Json, 2>(Json::new(), "{}")).is_empty(),
+    )
+    assert!(
+        must(decodes<Map<u8, u8, 0>, Cbor, 1>(Cbor::new(), [0xa0])).is_empty(),
+    )
 }
 
 #[test]
 fn maps_of_lists_and_long_maps() {
-    let lists: Map<u8, List<u8, 2>, 3> = map_of([2, 1], [must(List<u8, 2>::from_array([1, 2])), List<u8, 2>::new()])
+    let lists: Map<u8, List<u8, 2>, 3> = map_of(
+        [2, 1],
+        [must(List<u8, 2>::from_array([1, 2])), List<u8, 2>::new()],
+    )
     assert!(encodes(Json::new(), lists, MAP_OF_LISTS_JSON))
     assert!(encodes(Cbor::new(), lists, MAP_OF_LISTS_CBOR))
-    assert!(must(decodes<Map<u8, List<u8, 2>, 3>, Json, 18>(Json::new(), MAP_OF_LISTS_JSON)) == lists)
-    assert!(must(decodes<Map<u8, List<u8, 2>, 3>, Cbor, 7>(Cbor::new(), MAP_OF_LISTS_CBOR)) == lists)
+    assert!(
+        must(
+                decodes<Map<u8, List<u8, 2>, 3>, Json, 18>(Json::new(), MAP_OF_LISTS_JSON),
+            ) == lists,
+    )
+    assert!(
+        must(
+                decodes<Map<u8, List<u8, 2>, 3>, Cbor, 7>(Cbor::new(), MAP_OF_LISTS_CBOR),
+            ) == lists,
+    )
     // More than 23 entries have a one-byte head, as any map does.
     var long = Map<u8, u8, 24>::new()
     var index: u8 = 24
@@ -382,22 +1033,40 @@ fn maps_of_lists_and_long_maps() {
     }
     assert!(encodes(Json::new(), long, MAP_LONG_JSON))
     assert!(encodes(Cbor::new(), long, MAP_LONG_CBOR))
-    assert!(must(decodes<Map<u8, u8, 24>, Cbor, 50>(Cbor::new(), MAP_LONG_CBOR)) == long)
+    assert!(
+        must(
+                decodes<Map<u8, u8, 24>, Cbor, 50>(Cbor::new(), MAP_LONG_CBOR),
+            ) == long,
+    )
 }
 
 #[test]
 fn insertion_order_and_replaced_values_do_not_show() {
     var a = Map<u8, u8, 4>::new()
     var b = Map<u8, u8, 4>::new()
-    assert!(must(a.insert(3, 30)).is_none() && must(a.insert(1, 10)).is_none() && must(a.insert(2, 20)).is_none())
-    assert!(must(b.insert(2, 99)).is_none() && must(b.insert(1, 10)).is_none() && must(b.insert(3, 30)).is_none())
+    assert!(
+        must(a.insert(3, 30)).is_none()
+            && must(a.insert(1, 10)).is_none()
+            && must(a.insert(2, 20)).is_none(),
+    )
+    assert!(
+        must(b.insert(2, 99)).is_none()
+            && must(b.insert(1, 10)).is_none()
+            && must(b.insert(3, 30)).is_none(),
+    )
     assert!(must(b.insert(2, 20)) == Option::Some(99))
     assert!(a == b)
-    assert!(must(b.insert(4, 40)).is_none() && b.remove(4) == Option::Some(40))
+    assert!(
+        must(b.insert(4, 40)).is_none() && b.remove(4) == Option::Some(40),
+    )
     let json: [u8; 22] = "{\"1\":10,\"2\":20,\"3\":30}"
     let cbor: [u8; 8] = [0xa3, 0x01, 0x0a, 0x02, 0x14, 0x03, 0x18, 0x1e]
-    assert!(encodes(Json::new(), a, json) && encodes(Json::new(), b, json))
-    assert!(encodes(Cbor::new(), a, cbor) && encodes(Cbor::new(), b, cbor))
+    assert!(
+        encodes(Json::new(), a, json) && encodes(Json::new(), b, json),
+    )
+    assert!(
+        encodes(Cbor::new(), a, cbor) && encodes(Cbor::new(), b, cbor),
+    )
 }
 
 // Records holding maps.
@@ -406,8 +1075,20 @@ fn insertion_order_and_replaced_values_do_not_show() {
 fn records_write_maps_as_objects_and_maps() {
     assert!(encodes(Json::new(), treasury(), TREASURY_JSON))
     assert!(encodes(Cbor::new(), treasury(), TREASURY_CBOR))
-    assert!(encodes(Json::new(), Treasury { balances: Map<Address, u64, 3>::new(), labels: Map<Text<8>, u8, 3>::new() }, TREASURY_EMPTY_JSON))
-    assert!(encodes(Cbor::new(), Treasury { balances: Map<Address, u64, 3>::new(), labels: Map<Text<8>, u8, 3>::new() }, TREASURY_EMPTY_CBOR))
+    assert!(
+        encodes(
+            Json::new(),
+            Treasury { balances: Map<Address, u64, 3>::new(), labels: Map<Text<8>, u8, 3>::new() },
+            TREASURY_EMPTY_JSON,
+        ),
+    )
+    assert!(
+        encodes(
+            Cbor::new(),
+            Treasury { balances: Map<Address, u64, 3>::new(), labels: Map<Text<8>, u8, 3>::new() },
+            TREASURY_EMPTY_CBOR,
+        ),
+    )
     assert!(encodes(Json::new(), roster(), ROSTER_JSON))
     assert!(encodes(Cbor::new(), roster(), ROSTER_CBOR))
     assert!(encodes(Json::new(), bare_roster(), ROSTER_BARE_JSON))
@@ -416,18 +1097,36 @@ fn records_write_maps_as_objects_and_maps() {
 
 #[test]
 fn records_read_maps_of_records_lists_and_options() {
-    check_treasury(must(decodes<Treasury, Json, 133>(Json::new(), TREASURY_JSON)))
-    check_treasury(must(decodes<Treasury, Cbor, 57>(Cbor::new(), TREASURY_CBOR)))
+    check_treasury(
+        must(decodes<Treasury, Json, 133>(Json::new(), TREASURY_JSON)),
+    )
+    check_treasury(
+        must(decodes<Treasury, Cbor, 57>(Cbor::new(), TREASURY_CBOR)),
+    )
     check_roster(must(decodes<Roster, Json, 117>(Json::new(), ROSTER_JSON)))
     check_roster(must(decodes<Roster, Cbor, 36>(Cbor::new(), ROSTER_CBOR)))
     let bare_json = must(decodes<Roster, Json, 26>(Json::new(), ROSTER_BARE_JSON))
     let bare_cbor = must(decodes<Roster, Cbor, 5>(Cbor::new(), ROSTER_BARE_CBOR))
-    assert!(bare_json.members.is_empty() && bare_json.groups.is_empty() && bare_json.guests.is_none())
-    assert!(bare_cbor.members.is_empty() && bare_cbor.groups.is_empty() && bare_cbor.guests.is_none())
+    assert!(
+        bare_json.members.is_empty() && bare_json.groups.is_empty() && bare_json.guests.is_none(),
+    )
+    assert!(
+        bare_cbor.members.is_empty() && bare_cbor.groups.is_empty() && bare_cbor.guests.is_none(),
+    )
     // An absent optional map and an empty one differ.
-    let empty_guests = must(decodes<Roster, Json, 38>(Json::new(), "{\"members\":{},\"groups\":{},\"guests\":{}}"))
+    let empty_guests = must(
+        decodes<Roster, Json, 38>(
+            Json::new(),
+            "{\"members\":{},\"groups\":{},\"guests\":{}}",
+        ),
+    )
     assert!(empty_guests.guests.unwrap().is_empty())
-    let null_guests = must(decodes<Roster, Json, 40>(Json::new(), "{\"members\":{},\"groups\":{},\"guests\":null}"))
+    let null_guests = must(
+        decodes<Roster, Json, 40>(
+            Json::new(),
+            "{\"members\":{},\"groups\":{},\"guests\":null}",
+        ),
+    )
     assert!(null_guests.guests.is_none())
 }
 
@@ -444,13 +1143,60 @@ fn every_format_round_trips_maps_in_records() {
 #[test]
 fn generic_records_hold_maps() {
     let atlas = Atlas<u16, u8, 3> { entries: map_of([7, 3], [2, 1]) }
-    assert!(encodes(Json::new(), atlas, "{\"entries\":{\"3\":1,\"7\":2}}"))
-    assert!(encodes(Cbor::new(), atlas, [0xa1, 0x01, 0xa2, 0x03, 0x01, 0x07, 0x02]))
-    assert!(holds(must(decodes<Atlas<u16, u8, 3>, Json, 25>(Json::new(), "{\"entries\":{\"7\":2,\"3\":1}}")).entries, [3, 7], [1, 2]))
-    assert!(holds(must(decodes<Atlas<u16, u8, 3>, Cbor, 7>(Cbor::new(), [0xa1, 0x01, 0xa2, 0x03, 0x01, 0x07, 0x02])).entries, [3, 7], [1, 2]))
-    expect_field(decodes<Atlas<u16, u8, 1>, Json, 25>(Json::new(), "{\"entries\":{\"7\":2,\"3\":1}}"), ErrorKind::CapacityExceeded, 18, "entries")
-    stable<Atlas<Text<8>, Member, 2>, Json, 96>(Json::new(), Atlas<Text<8>, Member, 2> { entries: map_of([yo(), hi()], [member(2, yo()), member(1, hi())]) })
-    stable<Atlas<Text<8>, Member, 2>, Cbor, 48>(Cbor::new(), Atlas<Text<8>, Member, 2> { entries: map_of([yo(), hi()], [member(2, yo()), member(1, hi())]) })
+    assert!(
+        encodes(Json::new(), atlas, "{\"entries\":{\"3\":1,\"7\":2}}"),
+    )
+    assert!(
+        encodes(
+            Cbor::new(),
+            atlas,
+            [0xa1, 0x01, 0xa2, 0x03, 0x01, 0x07, 0x02],
+        ),
+    )
+    assert!(
+        holds(
+            must(
+                decodes<Atlas<u16, u8, 3>, Json, 25>(
+                    Json::new(),
+                    "{\"entries\":{\"7\":2,\"3\":1}}",
+                ),
+            )
+                .entries,
+            [3, 7],
+            [1, 2],
+        ),
+    )
+    assert!(
+        holds(
+            must(
+                decodes<Atlas<u16, u8, 3>, Cbor, 7>(
+                    Cbor::new(),
+                    [0xa1, 0x01, 0xa2, 0x03, 0x01, 0x07, 0x02],
+                ),
+            )
+                .entries,
+            [3, 7],
+            [1, 2],
+        ),
+    )
+    expect_field(
+        decodes<Atlas<u16, u8, 1>, Json, 25>(Json::new(), "{\"entries\":{\"7\":2,\"3\":1}}"),
+        ErrorKind::CapacityExceeded,
+        18,
+        "entries",
+    )
+    stable<Atlas<Text<8>, Member, 2>, Json, 96>(
+        Json::new(),
+        Atlas<Text<8>, Member, 2> {
+            entries: map_of([yo(), hi()], [member(2, yo()), member(1, hi())]),
+        },
+    )
+    stable<Atlas<Text<8>, Member, 2>, Cbor, 48>(
+        Cbor::new(),
+        Atlas<Text<8>, Member, 2> {
+            entries: map_of([yo(), hi()], [member(2, yo()), member(1, hi())]),
+        },
+    )
 }
 
 // JSON: any order is read, and the keys are strings.
@@ -459,69 +1205,273 @@ fn generic_records_hold_maps() {
 fn json_reads_members_in_any_order() {
     let json = Json::new()
     let natural = map_of<u8, u8, 4, 3>([1, 17, 200], [1, 2, 3])
-    assert!(must(decodes<Map<u8, u8, 4>, Json, 22>(json, "{\"200\":3,\"17\":2,\"1\":1}")) == natural)
-    assert!(must(decodes<Map<u8, u8, 4>, Json, 22>(json, "{\"17\":2,\"1\":1,\"200\":3}")) == natural)
-    assert!(must(decodes<Map<u8, u8, 4>, Json, 36>(json, " { \"17\" : 2 , \"1\" : 1 , \"200\" : 3 } ")) == natural)
-    let text = must(decodes<Map<Text<8>, u8, 5>, Json, 38>(json, "{\"ccc\":4,\"\":3,\"bb\":1,\"a\":2,\"\\u00e9\":5}"))
+    assert!(
+        must(
+                decodes<Map<u8, u8, 4>, Json, 22>(json, "{\"200\":3,\"17\":2,\"1\":1}"),
+            ) == natural,
+    )
+    assert!(
+        must(
+                decodes<Map<u8, u8, 4>, Json, 22>(json, "{\"17\":2,\"1\":1,\"200\":3}"),
+            ) == natural,
+    )
+    assert!(
+        must(
+                decodes<Map<u8, u8, 4>, Json, 36>(
+                    json,
+                    " { \"17\" : 2 , \"1\" : 1 , \"200\" : 3 } ",
+                ),
+            )
+            == natural,
+    )
+    let text = must(
+        decodes<Map<Text<8>, u8, 5>, Json, 38>(
+            json,
+            "{\"ccc\":4,\"\":3,\"bb\":1,\"a\":2,\"\\u00e9\":5}",
+        ),
+    )
     assert!(text == map_text())
-    let owners = must(decodes<Map<Address, u8, 2>, Json, 95>(json, "{\"0xd8da6bf26964af9d7eed9e03e53415d37aa96045\":1,\"0x0000000000000000000000000000000000000001\":2}"))
+    let owners = must(
+        decodes<Map<Address, u8, 2>, Json, 95>(
+            json,
+            "{\"0xd8da6bf26964af9d7eed9e03e53415d37aa96045\":1,\"0x0000000000000000000000000000000000000001\":2}",
+        ),
+    )
     assert!(owners == map_address())
     // Hex keys are read in either case.
-    let upper = must(decodes<Map<Address, u8, 2>, Json, 95>(json, "{\"0xD8DA6BF26964AF9D7EED9E03E53415D37AA96045\":1,\"0x0000000000000000000000000000000000000001\":2}"))
+    let upper = must(
+        decodes<Map<Address, u8, 2>, Json, 95>(
+            json,
+            "{\"0xD8DA6BF26964AF9D7EED9E03E53415D37AA96045\":1,\"0x0000000000000000000000000000000000000001\":2}",
+        ),
+    )
     assert!(upper == map_address())
     // A record's members in another order hold maps in another order too.
-    check_treasury(must(decodes<Treasury, Json, 133>(json, "{\"labels\":{\"yo\":2,\"hi\":1},\"balances\":{\"0xd8da6bf26964af9d7eed9e03e53415d37aa96045\":5,\"0x0000000000000000000000000000000000000001\":6}}")))
+    check_treasury(
+        must(
+            decodes<Treasury, Json, 133>(
+                json,
+                "{\"labels\":{\"yo\":2,\"hi\":1},\"balances\":{\"0xd8da6bf26964af9d7eed9e03e53415d37aa96045\":5,\"0x0000000000000000000000000000000000000001\":6}}",
+            ),
+        ),
+    )
 }
 
 #[test]
 fn json_rejects_repeated_keys() {
     // The repeat is reported where its key starts.
-    expect_error(decodes<Map<u8, u8, 4>, Json, 13>(Json::new(), "{\"1\":1,\"1\":2}"), ErrorKind::DuplicateField, 7)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 19>(Json::new(), "{\"1\":1,\"2\":2,\"1\":3}"), ErrorKind::DuplicateField, 13)
-    expect_error(decodes<Map<Text<8>, u8, 4>, Json, 13>(Json::new(), "{\"a\":1,\"a\":2}"), ErrorKind::DuplicateField, 7)
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 13>(Json::new(), "{\"1\":1,\"1\":2}"),
+        ErrorKind::DuplicateField,
+        7,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 19>(Json::new(), "{\"1\":1,\"2\":2,\"1\":3}"),
+        ErrorKind::DuplicateField,
+        13,
+    )
+    expect_error(
+        decodes<Map<Text<8>, u8, 4>, Json, 13>(Json::new(), "{\"a\":1,\"a\":2}"),
+        ErrorKind::DuplicateField,
+        7,
+    )
     // A key spelled with an escape is the same key.
-    expect_error(decodes<Map<Text<8>, u8, 4>, Json, 18>(Json::new(), "{\"a\":1,\"\\u0061\":2}"), ErrorKind::DuplicateField, 7)
-    expect_error(decodes<Map<Address, u8, 4>, Json, 95>(Json::new(), "{\"0x00000000000000000000000000000000000000aa\":1,\"0x00000000000000000000000000000000000000AA\":2}"), ErrorKind::DuplicateField, 48)
-    expect_field(decodes<Atlas<u8, u8, 3>, Json, 25>(Json::new(), "{\"entries\":{\"1\":1,\"1\":2}}"), ErrorKind::DuplicateField, 18, "entries")
+    expect_error(
+        decodes<Map<Text<8>, u8, 4>, Json, 18>(Json::new(), "{\"a\":1,\"\\u0061\":2}"),
+        ErrorKind::DuplicateField,
+        7,
+    )
+    expect_error(
+        decodes<Map<Address, u8, 4>, Json, 95>(
+            Json::new(),
+            "{\"0x00000000000000000000000000000000000000aa\":1,\"0x00000000000000000000000000000000000000AA\":2}",
+        ),
+        ErrorKind::DuplicateField,
+        48,
+    )
+    expect_field(
+        decodes<Atlas<u8, u8, 3>, Json, 25>(Json::new(), "{\"entries\":{\"1\":1,\"1\":2}}"),
+        ErrorKind::DuplicateField,
+        18,
+        "entries",
+    )
 }
 
 #[test]
 fn json_rejects_keys_that_are_not_canonical_numbers() {
     let json = Json::new()
-    expect_error(decodes<Map<u8, u8, 4>, Json, 9>(json, "{\"042\":1}"), ErrorKind::InvalidSyntax, 3)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 8>(json, "{\"00\":1}"), ErrorKind::InvalidSyntax, 3)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 8>(json, "{\"-1\":1}"), ErrorKind::IntegerOutOfRange, 1)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 8>(json, "{\"-0\":1}"), ErrorKind::IntegerOutOfRange, 1)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 8>(json, "{\" 1\":1}"), ErrorKind::TypeMismatch, 2)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 8>(json, "{\"1 \":1}"), ErrorKind::InvalidSyntax, 3)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 8>(json, "{\"+1\":1}"), ErrorKind::TypeMismatch, 2)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 6>(json, "{\"\":1}"), ErrorKind::TypeMismatch, 2)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 9>(json, "{\"1.5\":1}"), ErrorKind::InvalidSyntax, 3)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 9>(json, "{\"1e2\":1}"), ErrorKind::InvalidSyntax, 3)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 9>(json, "{\"0x1\":1}"), ErrorKind::InvalidSyntax, 3)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 7>(json, "{\"a\":1}"), ErrorKind::TypeMismatch, 2)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 9>(json, "{\"256\":1}"), ErrorKind::IntegerOutOfRange, 1)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 15>(json, "{\"1\":1,\"300\":2}"), ErrorKind::IntegerOutOfRange, 7)
-    expect_error(decodes<Map<u16, u8, 4>, Json, 11>(json, "{\"65536\":1}"), ErrorKind::IntegerOutOfRange, 1)
-    expect_error(decodes<Map<u64, u8, 4>, Json, 26>(json, "{\"18446744073709551616\":1}"), ErrorKind::IntegerOutOfRange, 21)
-    expect_error(decodes<Map<u128, u8, 4>, Json, 45>(json, "{\"340282366920938463463374607431768211456\":1}"), ErrorKind::IntegerOutOfRange, 1)
-    expect_error(decodes<Map<u256, u8, 4>, Json, 84>(json, "{\"115792089237316195423570985008687907853269984665640564039457584007913129639936\":1}"), ErrorKind::IntegerOutOfRange, 79)
-    expect_error(decodes<Map<u256, u8, 4>, Json, 9>(json, "{\"042\":1}"), ErrorKind::InvalidSyntax, 3)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 5>(json, "{1:1}"), ErrorKind::TypeMismatch, 1)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 8>(json, "{true:1}"), ErrorKind::TypeMismatch, 1)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 8>(json, "{null:1}"), ErrorKind::TypeMismatch, 1)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 6>(json, "{\"1\":1"), ErrorKind::UnexpectedEnd, 6)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 4>(json, "{\"1\""), ErrorKind::UnexpectedEnd, 4)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 3>(json, "{\"1"), ErrorKind::UnexpectedEnd, 3)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 1>(json, "{"), ErrorKind::UnexpectedEnd, 1)
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 9>(json, "{\"042\":1}"),
+        ErrorKind::InvalidSyntax,
+        3,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 8>(json, "{\"00\":1}"),
+        ErrorKind::InvalidSyntax,
+        3,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 8>(json, "{\"-1\":1}"),
+        ErrorKind::IntegerOutOfRange,
+        1,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 8>(json, "{\"-0\":1}"),
+        ErrorKind::IntegerOutOfRange,
+        1,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 8>(json, "{\" 1\":1}"),
+        ErrorKind::TypeMismatch,
+        2,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 8>(json, "{\"1 \":1}"),
+        ErrorKind::InvalidSyntax,
+        3,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 8>(json, "{\"+1\":1}"),
+        ErrorKind::TypeMismatch,
+        2,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 6>(json, "{\"\":1}"),
+        ErrorKind::TypeMismatch,
+        2,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 9>(json, "{\"1.5\":1}"),
+        ErrorKind::InvalidSyntax,
+        3,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 9>(json, "{\"1e2\":1}"),
+        ErrorKind::InvalidSyntax,
+        3,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 9>(json, "{\"0x1\":1}"),
+        ErrorKind::InvalidSyntax,
+        3,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 7>(json, "{\"a\":1}"),
+        ErrorKind::TypeMismatch,
+        2,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 9>(json, "{\"256\":1}"),
+        ErrorKind::IntegerOutOfRange,
+        1,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 15>(json, "{\"1\":1,\"300\":2}"),
+        ErrorKind::IntegerOutOfRange,
+        7,
+    )
+    expect_error(
+        decodes<Map<u16, u8, 4>, Json, 11>(json, "{\"65536\":1}"),
+        ErrorKind::IntegerOutOfRange,
+        1,
+    )
+    expect_error(
+        decodes<Map<u64, u8, 4>, Json, 26>(json, "{\"18446744073709551616\":1}"),
+        ErrorKind::IntegerOutOfRange,
+        21,
+    )
+    expect_error(
+        decodes<Map<u128, u8, 4>, Json, 45>(
+            json,
+            "{\"340282366920938463463374607431768211456\":1}",
+        ),
+        ErrorKind::IntegerOutOfRange,
+        1,
+    )
+    expect_error(
+        decodes<Map<u256, u8, 4>, Json, 84>(
+            json,
+            "{\"115792089237316195423570985008687907853269984665640564039457584007913129639936\":1}",
+        ),
+        ErrorKind::IntegerOutOfRange,
+        79,
+    )
+    expect_error(
+        decodes<Map<u256, u8, 4>, Json, 9>(json, "{\"042\":1}"),
+        ErrorKind::InvalidSyntax,
+        3,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 5>(json, "{1:1}"),
+        ErrorKind::TypeMismatch,
+        1,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 8>(json, "{true:1}"),
+        ErrorKind::TypeMismatch,
+        1,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 8>(json, "{null:1}"),
+        ErrorKind::TypeMismatch,
+        1,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 6>(json, "{\"1\":1"),
+        ErrorKind::UnexpectedEnd,
+        6,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 4>(json, "{\"1\""),
+        ErrorKind::UnexpectedEnd,
+        4,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 3>(json, "{\"1"),
+        ErrorKind::UnexpectedEnd,
+        3,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 1>(json, "{"),
+        ErrorKind::UnexpectedEnd,
+        1,
+    )
     // Keys of the other kinds.
-    expect_error(decodes<Map<Text<8>, u8, 4>, Json, 5>(json, "{1:1}"), ErrorKind::TypeMismatch, 1)
-    expect_error(decodes<Map<Address, u8, 4>, Json, 5>(json, "{1:1}"), ErrorKind::TypeMismatch, 1)
-    expect_error(decodes<Map<Address, u8, 4>, Json, 16>(json, "{\"0x01\":1,\"2\":2}"), ErrorKind::InvalidLength, 1)
-    expect_error(decodes<Map<PackedBytes<2>, u8, 4>, Json, 10>(json, "{\"00ff\":1}"), ErrorKind::InvalidSyntax, 3)
-    expect_error(decodes<Map<PackedBytes<2>, u8, 4>, Json, 10>(json, "{\"0x00\":1}"), ErrorKind::InvalidLength, 1)
-    expect_error(decodes<Map<PackedBytes<2>, u8, 4>, Json, 14>(json, "{\"0x00ffff\":1}"), ErrorKind::CapacityExceeded, 8)
-    expect_error(decodes<Map<Text<2>, u8, 4>, Json, 9>(json, "{\"abc\":1}"), ErrorKind::CapacityExceeded, 4)
+    expect_error(
+        decodes<Map<Text<8>, u8, 4>, Json, 5>(json, "{1:1}"),
+        ErrorKind::TypeMismatch,
+        1,
+    )
+    expect_error(
+        decodes<Map<Address, u8, 4>, Json, 5>(json, "{1:1}"),
+        ErrorKind::TypeMismatch,
+        1,
+    )
+    expect_error(
+        decodes<Map<Address, u8, 4>, Json, 16>(json, "{\"0x01\":1,\"2\":2}"),
+        ErrorKind::InvalidLength,
+        1,
+    )
+    expect_error(
+        decodes<Map<PackedBytes<2>, u8, 4>, Json, 10>(json, "{\"00ff\":1}"),
+        ErrorKind::InvalidSyntax,
+        3,
+    )
+    expect_error(
+        decodes<Map<PackedBytes<2>, u8, 4>, Json, 10>(json, "{\"0x00\":1}"),
+        ErrorKind::InvalidLength,
+        1,
+    )
+    expect_error(
+        decodes<Map<PackedBytes<2>, u8, 4>, Json, 14>(json, "{\"0x00ffff\":1}"),
+        ErrorKind::CapacityExceeded,
+        8,
+    )
+    expect_error(
+        decodes<Map<Text<2>, u8, 4>, Json, 9>(json, "{\"abc\":1}"),
+        ErrorKind::CapacityExceeded,
+        4,
+    )
 }
 
 #[test]
@@ -529,57 +1479,230 @@ fn json_rejects_malformed_objects_and_maps_that_are_too_big() {
     let json = Json::new()
     // Commas and colons.
 
-    expect_error(decodes<Map<u8, u8, 4>, Json, 8>(json, "{\"1\":1,}"), ErrorKind::InvalidSyntax, 7)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 9>(json, "{\"1\":1, }"), ErrorKind::InvalidSyntax, 8)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 8>(json, "{,\"1\":1}"), ErrorKind::TypeMismatch, 1)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 14>(json, "{\"1\":1,,\"2\":2}"), ErrorKind::TypeMismatch, 7)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 13>(json, "{\"1\":1 \"2\":2}"), ErrorKind::InvalidSyntax, 7)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 7>(json, "{\"1\" 1}"), ErrorKind::InvalidSyntax, 5)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 5>(json, "{\"1\"}"), ErrorKind::InvalidSyntax, 4)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 6>(json, "{\"1\":}"), ErrorKind::TypeMismatch, 5)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 7>(json, "{\"1\":1]"), ErrorKind::InvalidSyntax, 6)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 9>(json, "{\"1\":300}"), ErrorKind::IntegerOutOfRange, 5)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 9>(json, "{\"1\":\"a\"}"), ErrorKind::TypeMismatch, 5)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 8>(json, "{\"1\":{}}"), ErrorKind::TypeMismatch, 5)
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 8>(json, "{\"1\":1,}"),
+        ErrorKind::InvalidSyntax,
+        7,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 9>(json, "{\"1\":1, }"),
+        ErrorKind::InvalidSyntax,
+        8,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 8>(json, "{,\"1\":1}"),
+        ErrorKind::TypeMismatch,
+        1,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 14>(json, "{\"1\":1,,\"2\":2}"),
+        ErrorKind::TypeMismatch,
+        7,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 13>(json, "{\"1\":1 \"2\":2}"),
+        ErrorKind::InvalidSyntax,
+        7,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 7>(json, "{\"1\" 1}"),
+        ErrorKind::InvalidSyntax,
+        5,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 5>(json, "{\"1\"}"),
+        ErrorKind::InvalidSyntax,
+        4,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 6>(json, "{\"1\":}"),
+        ErrorKind::TypeMismatch,
+        5,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 7>(json, "{\"1\":1]"),
+        ErrorKind::InvalidSyntax,
+        6,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 9>(json, "{\"1\":300}"),
+        ErrorKind::IntegerOutOfRange,
+        5,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 9>(json, "{\"1\":\"a\"}"),
+        ErrorKind::TypeMismatch,
+        5,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 8>(json, "{\"1\":{}}"),
+        ErrorKind::TypeMismatch,
+        5,
+    )
     // Other kinds of value where an object belongs.
-    expect_error(decodes<Map<u8, u8, 4>, Json, 2>(json, "[]"), ErrorKind::TypeMismatch, 0)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 4>(json, "null"), ErrorKind::TypeMismatch, 0)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 4>(json, "\"{}\""), ErrorKind::TypeMismatch, 0)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 1>(json, "1"), ErrorKind::TypeMismatch, 0)
-    expect_error(decodes<Map<u8, u8, 4>, Json, 4>(json, "{} x"), ErrorKind::TrailingData, 3)
-    expect_field(decodes<Treasury, Json, 13>(json, "{\"labels\":[]}"), ErrorKind::TypeMismatch, 10, "labels")
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 2>(json, "[]"),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 4>(json, "null"),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 4>(json, "\"{}\""),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 1>(json, "1"),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 4>(json, "{} x"),
+        ErrorKind::TrailingData,
+        3,
+    )
+    expect_field(
+        decodes<Treasury, Json, 13>(json, "{\"labels\":[]}"),
+        ErrorKind::TypeMismatch,
+        10,
+        "labels",
+    )
     // More than `N` entries is `CapacityExceeded` where the extra entry's key starts.
 
-    expect_error(decodes<Map<u8, u8, 2>, Json, 19>(json, "{\"1\":1,\"2\":2,\"3\":3}"), ErrorKind::CapacityExceeded, 13)
-    expect_error(decodes<Map<u8, u8, 2>, Json, 20>(json, "{\"1\":1,\"2\":2, \"3\":3}"), ErrorKind::CapacityExceeded, 14)
-    expect_error(decodes<Map<u8, u8, 0>, Json, 7>(json, "{\"1\":1}"), ErrorKind::CapacityExceeded, 1)
-    expect_error(decodes<Map<Text<8>, u8, 1>, Json, 13>(json, "{\"a\":1,\"b\":2}"), ErrorKind::CapacityExceeded, 7)
-    expect_error(decodes<Map<u8, u8, 2>, Json, 19>(json, "{\"1\":1,\"2\":2,\"x\":3}"), ErrorKind::CapacityExceeded, 13)
-    expect_field(decodes<Treasury, Json, 36>(json, "{\"labels\":{\"a\":1,\"b\":2,\"c\":3,\"d\":4}}"), ErrorKind::CapacityExceeded, 29, "labels")
+    expect_error(
+        decodes<Map<u8, u8, 2>, Json, 19>(json, "{\"1\":1,\"2\":2,\"3\":3}"),
+        ErrorKind::CapacityExceeded,
+        13,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 2>, Json, 20>(json, "{\"1\":1,\"2\":2, \"3\":3}"),
+        ErrorKind::CapacityExceeded,
+        14,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 0>, Json, 7>(json, "{\"1\":1}"),
+        ErrorKind::CapacityExceeded,
+        1,
+    )
+    expect_error(
+        decodes<Map<Text<8>, u8, 1>, Json, 13>(json, "{\"a\":1,\"b\":2}"),
+        ErrorKind::CapacityExceeded,
+        7,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 2>, Json, 19>(json, "{\"1\":1,\"2\":2,\"x\":3}"),
+        ErrorKind::CapacityExceeded,
+        13,
+    )
+    expect_field(
+        decodes<Treasury, Json, 36>(json, "{\"labels\":{\"a\":1,\"b\":2,\"c\":3,\"d\":4}}"),
+        ErrorKind::CapacityExceeded,
+        29,
+        "labels",
+    )
     // An error inside a value names the innermost field.
-    expect_field(decodes<Roster, Json, 26>(json, "{\"members\":{\"1\":{\"id\":1}}}"), ErrorKind::MissingField, 24, "name")
-    expect_field(decodes<Roster, Json, 24>(json, "{\"groups\":{\"1\":[1,2,3]}}"), ErrorKind::CapacityExceeded, 20, "groups")
-    expect_field(decodes<Roster, Json, 26>(json, "{\"groups\":{\"1\":[],\"1\":[]}}"), ErrorKind::DuplicateField, 18, "groups")
+    expect_field(
+        decodes<Roster, Json, 26>(json, "{\"members\":{\"1\":{\"id\":1}}}"),
+        ErrorKind::MissingField,
+        24,
+        "name",
+    )
+    expect_field(
+        decodes<Roster, Json, 24>(json, "{\"groups\":{\"1\":[1,2,3]}}"),
+        ErrorKind::CapacityExceeded,
+        20,
+        "groups",
+    )
+    expect_field(
+        decodes<Roster, Json, 26>(json, "{\"groups\":{\"1\":[],\"1\":[]}}"),
+        ErrorKind::DuplicateField,
+        18,
+        "groups",
+    )
 }
 
 #[test]
 fn json_limits_apply_to_maps() {
     // `Limits.max_items` counts the entries of a map, and wins over the capacity.
     let narrow = Limits { max_depth: 32, max_items: 2 }
-    expect_error(decodes<Map<u8, u8, 4>, Json, 19>(Json::with_limits(narrow), "{\"1\":1,\"2\":2,\"3\":3}"), ErrorKind::CollectionLimit, 13)
-    expect_error(decodes<Map<u8, u8, 2>, Json, 19>(Json::with_limits(narrow), "{\"1\":1,\"2\":2,\"3\":3}"), ErrorKind::CollectionLimit, 13)
-    assert!(must(decodes<Map<u8, u8, 4>, Json, 13>(Json::with_limits(narrow), "{\"1\":1,\"2\":2}")).len() == 2)
-    expect_error(decodes<Map<u8, u8, 2>, Json, 19>(Json::with_limits(Limits { max_depth: 32, max_items: 5 }), "{\"1\":1,\"2\":2,\"3\":3}"), ErrorKind::CapacityExceeded, 13)
+    expect_error(
+        decodes<Map<u8, u8, 4>, Json, 19>(Json::with_limits(narrow), "{\"1\":1,\"2\":2,\"3\":3}"),
+        ErrorKind::CollectionLimit,
+        13,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 2>, Json, 19>(Json::with_limits(narrow), "{\"1\":1,\"2\":2,\"3\":3}"),
+        ErrorKind::CollectionLimit,
+        13,
+    )
+    assert!(
+        must(
+                decodes<Map<u8, u8, 4>, Json, 13>(Json::with_limits(narrow), "{\"1\":1,\"2\":2}"),
+            )
+                .len()
+            == 2,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 2>, Json, 19>(
+            Json::with_limits(Limits { max_depth: 32, max_items: 5 }),
+            "{\"1\":1,\"2\":2,\"3\":3}",
+        ),
+        ErrorKind::CapacityExceeded,
+        13,
+    )
     // A map is one level of depth, inside the record's.
-    expect_field(decodes<Atlas<u8, u8, 2>, Json, 14>(Json::with_limits(Limits { max_depth: 1, max_items: 256 }), "{\"entries\":{}}"), ErrorKind::DepthLimit, 11, "entries")
-    assert!(must(decodes<Atlas<u8, u8, 2>, Json, 14>(Json::with_limits(Limits { max_depth: 2, max_items: 256 }), "{\"entries\":{}}")).entries.is_empty())
+    expect_field(
+        decodes<Atlas<u8, u8, 2>, Json, 14>(
+            Json::with_limits(Limits { max_depth: 1, max_items: 256 }),
+            "{\"entries\":{}}",
+        ),
+        ErrorKind::DepthLimit,
+        11,
+        "entries",
+    )
+    assert!(
+        must(
+            decodes<Atlas<u8, u8, 2>, Json, 14>(
+                Json::with_limits(Limits { max_depth: 2, max_items: 256 }),
+                "{\"entries\":{}}",
+            ),
+        )
+            .entries
+            .is_empty(),
+    )
     // A map as a value is a level deeper.
-    expect_error(decodes<Map<u8, Map<u8, u8, 1>, 1>, Json, 8>(Json::with_limits(Limits { max_depth: 1, max_items: 256 }), "{\"1\":{}}"), ErrorKind::DepthLimit, 5)
+    expect_error(
+        decodes<Map<u8, Map<u8, u8, 1>, 1>, Json, 8>(
+            Json::with_limits(Limits { max_depth: 1, max_items: 256 }),
+            "{\"1\":{}}",
+        ),
+        ErrorKind::DepthLimit,
+        5,
+    )
     // Writing checks the same limits.
     let writer = Json::with_limits(narrow)
-    expect_error(writer.encode<Map<u8, u8, 4>, 64>(map_of([1, 2, 3], [1, 2, 3])), ErrorKind::CollectionLimit, 0)
-    assert!(encodes(writer, map_of<u8, u8, 4, 2>([1, 2], [1, 2]), "{\"1\":1,\"2\":2}"))
-    expect_error(Json::with_limits(Limits { max_depth: 0, max_items: 256 }).encode<Map<u8, u8, 4>, 64>(Map<u8, u8, 4>::new()), ErrorKind::DepthLimit, 0)
+    expect_error(
+        writer.encode<Map<u8, u8, 4>, 64>(map_of([1, 2, 3], [1, 2, 3])),
+        ErrorKind::CollectionLimit,
+        0,
+    )
+    assert!(
+        encodes(
+            writer,
+            map_of<u8, u8, 4, 2>([1, 2], [1, 2]),
+            "{\"1\":1,\"2\":2}",
+        ),
+    )
+    expect_error(
+        Json::with_limits(Limits { max_depth: 0, max_items: 256 })
+            .encode<Map<u8, u8, 4>, 64>(Map<u8, u8, 4>::new()),
+        ErrorKind::DepthLimit,
+        0,
+    )
 }
 
 // CBOR: keys ascend in the bytes they are encoded as.
@@ -587,98 +1710,473 @@ fn json_limits_apply_to_maps() {
 #[test]
 fn cbor_rejects_keys_out_of_order_or_repeated() {
     let cbor = Cbor::new()
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 5>(cbor, [0xa2, 0x02, 0x02, 0x01, 0x01]), ErrorKind::NonCanonical, 3)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 7>(cbor, [0xa3, 0x01, 0x01, 0x03, 0x03, 0x02, 0x02]), ErrorKind::NonCanonical, 5)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 5>(cbor, [0xa2, 0x01, 0x01, 0x01, 0x02]), ErrorKind::DuplicateField, 3)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 7>(cbor, [0xa3, 0x01, 0x01, 0x02, 0x02, 0x02, 0x03]), ErrorKind::DuplicateField, 5)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 7>(cbor, [0xa2, 0x18, 0x18, 0x01, 0x18, 0x18, 0x02]), ErrorKind::DuplicateField, 4)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 6>(cbor, [0xa2, 0x18, 0x18, 0x01, 0x17, 0x02]), ErrorKind::NonCanonical, 4)
-    expect_error(decodes<Map<Text<8>, u8, 4>, Cbor, 8>(cbor, [0xa2, 0x62, 0x61, 0x61, 0x01, 0x61, 0x62, 0x02]), ErrorKind::NonCanonical, 5)
-    expect_error(decodes<Map<Text<8>, u8, 4>, Cbor, 7>(cbor, [0xa2, 0x61, 0x62, 0x01, 0x61, 0x61, 0x02]), ErrorKind::NonCanonical, 4)
-    expect_error(decodes<Map<Text<8>, u8, 4>, Cbor, 7>(cbor, [0xa2, 0x61, 0x61, 0x01, 0x61, 0x61, 0x02]), ErrorKind::DuplicateField, 4)
-    expect_error(decodes<Map<Text<8>, u8, 4>, Cbor, 5>(cbor, [0xa2, 0x60, 0x01, 0x60, 0x02]), ErrorKind::DuplicateField, 3)
-    expect_error(decodes<Map<PackedBytes<2>, u8, 4>, Cbor, 9>(cbor, [0xa2, 0x42, 0x01, 0x00, 0x01, 0x42, 0x00, 0xff, 0x02]), ErrorKind::NonCanonical, 5)
-    expect_error(decodes<Map<PackedBytes<2>, u8, 4>, Cbor, 9>(cbor, [0xa2, 0x42, 0x01, 0x00, 0x01, 0x42, 0x01, 0x00, 0x02]), ErrorKind::DuplicateField, 5)
-    expect_error(decodes<Map<u256, u8, 4>, Cbor, 15>(cbor, [0xa2, 0xc2, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x05, 0x02]), ErrorKind::NonCanonical, 13)
-    expect_error(decodes<Map<u256, u8, 4>, Cbor, 25>(cbor, [0xa2, 0xc2, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0xc2, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02]), ErrorKind::DuplicateField, 13)
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 5>(cbor, [0xa2, 0x02, 0x02, 0x01, 0x01]),
+        ErrorKind::NonCanonical,
+        3,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 7>(cbor, [0xa3, 0x01, 0x01, 0x03, 0x03, 0x02, 0x02]),
+        ErrorKind::NonCanonical,
+        5,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 5>(cbor, [0xa2, 0x01, 0x01, 0x01, 0x02]),
+        ErrorKind::DuplicateField,
+        3,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 7>(cbor, [0xa3, 0x01, 0x01, 0x02, 0x02, 0x02, 0x03]),
+        ErrorKind::DuplicateField,
+        5,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 7>(cbor, [0xa2, 0x18, 0x18, 0x01, 0x18, 0x18, 0x02]),
+        ErrorKind::DuplicateField,
+        4,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 6>(cbor, [0xa2, 0x18, 0x18, 0x01, 0x17, 0x02]),
+        ErrorKind::NonCanonical,
+        4,
+    )
+    expect_error(
+        decodes<Map<Text<8>, u8, 4>, Cbor, 8>(
+            cbor,
+            [0xa2, 0x62, 0x61, 0x61, 0x01, 0x61, 0x62, 0x02],
+        ),
+        ErrorKind::NonCanonical,
+        5,
+    )
+    expect_error(
+        decodes<Map<Text<8>, u8, 4>, Cbor, 7>(cbor, [0xa2, 0x61, 0x62, 0x01, 0x61, 0x61, 0x02]),
+        ErrorKind::NonCanonical,
+        4,
+    )
+    expect_error(
+        decodes<Map<Text<8>, u8, 4>, Cbor, 7>(cbor, [0xa2, 0x61, 0x61, 0x01, 0x61, 0x61, 0x02]),
+        ErrorKind::DuplicateField,
+        4,
+    )
+    expect_error(
+        decodes<Map<Text<8>, u8, 4>, Cbor, 5>(cbor, [0xa2, 0x60, 0x01, 0x60, 0x02]),
+        ErrorKind::DuplicateField,
+        3,
+    )
+    expect_error(
+        decodes<Map<PackedBytes<2>, u8, 4>, Cbor, 9>(
+            cbor,
+            [0xa2, 0x42, 0x01, 0x00, 0x01, 0x42, 0x00, 0xff, 0x02],
+        ),
+        ErrorKind::NonCanonical,
+        5,
+    )
+    expect_error(
+        decodes<Map<PackedBytes<2>, u8, 4>, Cbor, 9>(
+            cbor,
+            [0xa2, 0x42, 0x01, 0x00, 0x01, 0x42, 0x01, 0x00, 0x02],
+        ),
+        ErrorKind::DuplicateField,
+        5,
+    )
+    expect_error(
+        decodes<Map<u256, u8, 4>, Cbor, 15>(
+            cbor,
+            [
+                0xa2,
+                0xc2,
+                0x49,
+                0x01,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x01,
+                0x05,
+                0x02,
+            ],
+        ),
+        ErrorKind::NonCanonical,
+        13,
+    )
+    expect_error(
+        decodes<Map<u256, u8, 4>, Cbor, 25>(
+            cbor,
+            [
+                0xa2,
+                0xc2,
+                0x49,
+                0x01,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x01,
+                0xc2,
+                0x49,
+                0x01,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x02,
+            ],
+        ),
+        ErrorKind::DuplicateField,
+        13,
+    )
     // Keys that are not well formed or not canonical are reported as for any value.
 
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 4>(cbor, [0xa1, 0x18, 0x01, 0x01]), ErrorKind::NonCanonical, 1)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 5>(cbor, [0xa1, 0x19, 0x00, 0x01, 0x01]), ErrorKind::NonCanonical, 1)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 4>(cbor, [0xa1, 0x61, 0x61, 0x01]), ErrorKind::TypeMismatch, 1)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 3>(cbor, [0xa1, 0x20, 0x01]), ErrorKind::TypeMismatch, 1)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 3>(cbor, [0xa1, 0xf6, 0x01]), ErrorKind::TypeMismatch, 1)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 3>(cbor, [0xa1, 0x80, 0x01]), ErrorKind::TypeMismatch, 1)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 5>(cbor, [0xa1, 0x19, 0x01, 0x00, 0x01]), ErrorKind::IntegerOutOfRange, 1)
-    expect_error(decodes<Map<Text<8>, u8, 4>, Cbor, 3>(cbor, [0xa1, 0x01, 0x01]), ErrorKind::TypeMismatch, 1)
-    expect_error(decodes<Map<Text<2>, u8, 4>, Cbor, 6>(cbor, [0xa1, 0x63, 0x61, 0x62, 0x63, 0x01]), ErrorKind::CapacityExceeded, 1)
-    expect_error(decodes<Map<Text<8>, u8, 4>, Cbor, 4>(cbor, [0xa1, 0x61, 0xff, 0x01]), ErrorKind::InvalidUtf8, 2)
-    expect_error(decodes<Map<Address, u8, 4>, Cbor, 4>(cbor, [0xa1, 0x41, 0x01, 0x01]), ErrorKind::InvalidLength, 1)
-    expect_error(decodes<Map<PackedBytes<2>, u8, 4>, Cbor, 4>(cbor, [0xa1, 0x41, 0x01, 0x01]), ErrorKind::InvalidLength, 1)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 5>(cbor, [0xa1, 0x01, 0x19, 0x01, 0x00]), ErrorKind::IntegerOutOfRange, 2)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 4>(cbor, [0xa1, 0x01, 0x61, 0x61]), ErrorKind::TypeMismatch, 2)
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 4>(cbor, [0xa1, 0x18, 0x01, 0x01]),
+        ErrorKind::NonCanonical,
+        1,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 5>(cbor, [0xa1, 0x19, 0x00, 0x01, 0x01]),
+        ErrorKind::NonCanonical,
+        1,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 4>(cbor, [0xa1, 0x61, 0x61, 0x01]),
+        ErrorKind::TypeMismatch,
+        1,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 3>(cbor, [0xa1, 0x20, 0x01]),
+        ErrorKind::TypeMismatch,
+        1,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 3>(cbor, [0xa1, 0xf6, 0x01]),
+        ErrorKind::TypeMismatch,
+        1,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 3>(cbor, [0xa1, 0x80, 0x01]),
+        ErrorKind::TypeMismatch,
+        1,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 5>(cbor, [0xa1, 0x19, 0x01, 0x00, 0x01]),
+        ErrorKind::IntegerOutOfRange,
+        1,
+    )
+    expect_error(
+        decodes<Map<Text<8>, u8, 4>, Cbor, 3>(cbor, [0xa1, 0x01, 0x01]),
+        ErrorKind::TypeMismatch,
+        1,
+    )
+    expect_error(
+        decodes<Map<Text<2>, u8, 4>, Cbor, 6>(cbor, [0xa1, 0x63, 0x61, 0x62, 0x63, 0x01]),
+        ErrorKind::CapacityExceeded,
+        1,
+    )
+    expect_error(
+        decodes<Map<Text<8>, u8, 4>, Cbor, 4>(cbor, [0xa1, 0x61, 0xff, 0x01]),
+        ErrorKind::InvalidUtf8,
+        2,
+    )
+    expect_error(
+        decodes<Map<Address, u8, 4>, Cbor, 4>(cbor, [0xa1, 0x41, 0x01, 0x01]),
+        ErrorKind::InvalidLength,
+        1,
+    )
+    expect_error(
+        decodes<Map<PackedBytes<2>, u8, 4>, Cbor, 4>(cbor, [0xa1, 0x41, 0x01, 0x01]),
+        ErrorKind::InvalidLength,
+        1,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 5>(cbor, [0xa1, 0x01, 0x19, 0x01, 0x00]),
+        ErrorKind::IntegerOutOfRange,
+        2,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 4>(cbor, [0xa1, 0x01, 0x61, 0x61]),
+        ErrorKind::TypeMismatch,
+        2,
+    )
     // Input that ends inside a map, and input after it.
 
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 4>(cbor, [0xa2, 0x01, 0x01, 0x02]), ErrorKind::UnexpectedEnd, 4)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 3>(cbor, [0xa2, 0x01, 0x01]), ErrorKind::UnexpectedEnd, 3)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 2>(cbor, [0xa1, 0x01]), ErrorKind::UnexpectedEnd, 2)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 1>(cbor, [0xa1]), ErrorKind::UnexpectedEnd, 1)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 2>(cbor, [0xa1, 0x18]), ErrorKind::UnexpectedEnd, 2)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 2>(cbor, [0xa0, 0x00]), ErrorKind::TrailingData, 1)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 4>(cbor, [0xa1, 0x01, 0x01, 0x00]), ErrorKind::TrailingData, 3)
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 4>(cbor, [0xa2, 0x01, 0x01, 0x02]),
+        ErrorKind::UnexpectedEnd,
+        4,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 3>(cbor, [0xa2, 0x01, 0x01]),
+        ErrorKind::UnexpectedEnd,
+        3,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 2>(cbor, [0xa1, 0x01]),
+        ErrorKind::UnexpectedEnd,
+        2,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 1>(cbor, [0xa1]),
+        ErrorKind::UnexpectedEnd,
+        1,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 2>(cbor, [0xa1, 0x18]),
+        ErrorKind::UnexpectedEnd,
+        2,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 2>(cbor, [0xa0, 0x00]),
+        ErrorKind::TrailingData,
+        1,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 4>(cbor, [0xa1, 0x01, 0x01, 0x00]),
+        ErrorKind::TrailingData,
+        3,
+    )
     // Another kind of item, or an indefinite or non-shortest head, where a map belongs.
 
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 1>(cbor, [0x80]), ErrorKind::TypeMismatch, 0)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 1>(cbor, [0xf6]), ErrorKind::TypeMismatch, 0)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 1>(cbor, [0x01]), ErrorKind::TypeMismatch, 0)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 1>(cbor, [0x40]), ErrorKind::TypeMismatch, 0)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 2>(cbor, [0xbf, 0xff]), ErrorKind::NonCanonical, 0)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 2>(cbor, [0xb8, 0x00]), ErrorKind::NonCanonical, 0)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 5>(cbor, [0xb9, 0x00, 0x01, 0x01, 0x01]), ErrorKind::NonCanonical, 0)
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 1>(cbor, [0xbc]), ErrorKind::InvalidSyntax, 0)
-    expect_error(decodes<Map<u8, u8, 2>, Cbor, 7>(cbor, [0xa3, 0x01, 0x01, 0x02, 0x02, 0x03, 0x03]), ErrorKind::CapacityExceeded, 0)
-    expect_error(decodes<Map<u8, u8, 2>, Cbor, 1>(cbor, [0xa3]), ErrorKind::CapacityExceeded, 0)
-    expect_error(decodes<Map<u8, u8, 0>, Cbor, 3>(cbor, [0xa1, 0x01, 0x01]), ErrorKind::CapacityExceeded, 0)
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 1>(cbor, [0x80]),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 1>(cbor, [0xf6]),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 1>(cbor, [0x01]),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 1>(cbor, [0x40]),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 2>(cbor, [0xbf, 0xff]),
+        ErrorKind::NonCanonical,
+        0,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 2>(cbor, [0xb8, 0x00]),
+        ErrorKind::NonCanonical,
+        0,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 5>(cbor, [0xb9, 0x00, 0x01, 0x01, 0x01]),
+        ErrorKind::NonCanonical,
+        0,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 1>(cbor, [0xbc]),
+        ErrorKind::InvalidSyntax,
+        0,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 2>, Cbor, 7>(cbor, [0xa3, 0x01, 0x01, 0x02, 0x02, 0x03, 0x03]),
+        ErrorKind::CapacityExceeded,
+        0,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 2>, Cbor, 1>(cbor, [0xa3]),
+        ErrorKind::CapacityExceeded,
+        0,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 0>, Cbor, 3>(cbor, [0xa1, 0x01, 0x01]),
+        ErrorKind::CapacityExceeded,
+        0,
+    )
     // In a record, the error names the field.
 
-    expect_field(decodes<Treasury, Cbor, 11>(cbor, [0xa1, 0x02, 0xa2, 0x62, 0x79, 0x6f, 0x02, 0x62, 0x68, 0x69, 0x01]), ErrorKind::NonCanonical, 7, "labels")
-    expect_field(decodes<Treasury, Cbor, 11>(cbor, [0xa1, 0x02, 0xa2, 0x62, 0x68, 0x69, 0x02, 0x62, 0x68, 0x69, 0x01]), ErrorKind::DuplicateField, 7, "labels")
-    expect_field(decodes<Treasury, Cbor, 3>(cbor, [0xa1, 0x02, 0xa4]), ErrorKind::CapacityExceeded, 2, "labels")
-    expect_field(decodes<Treasury, Cbor, 6>(cbor, [0xa1, 0x01, 0xa1, 0x41, 0x01, 0x01]), ErrorKind::InvalidLength, 3, "balances")
-    expect_field(decodes<Roster, Cbor, 7>(cbor, [0xa1, 0x01, 0xa1, 0x01, 0xa1, 0x01, 0x01]), ErrorKind::MissingField, 7, "name")
-    expect_field(decodes<Roster, Cbor, 8>(cbor, [0xa1, 0x02, 0xa1, 0x01, 0x83, 0x01, 0x02, 0x03]), ErrorKind::CapacityExceeded, 4, "groups")
-    expect_field(decodes<Roster, Cbor, 7>(cbor, [0xa1, 0x02, 0xa2, 0x02, 0x80, 0x01, 0x80]), ErrorKind::NonCanonical, 5, "groups")
-    expect_field(decodes<Roster, Cbor, 7>(cbor, [0xa1, 0x03, 0xa2, 0x09, 0x01, 0x03, 0x02]), ErrorKind::NonCanonical, 5, "guests")
-    expect_field(decodes<Roster, Cbor, 9>(cbor, [0xa1, 0x03, 0xa3, 0x01, 0x01, 0x02, 0x02, 0x03, 0x03]), ErrorKind::CapacityExceeded, 2, "guests")
+    expect_field(
+        decodes<Treasury, Cbor, 11>(
+            cbor,
+            [0xa1, 0x02, 0xa2, 0x62, 0x79, 0x6f, 0x02, 0x62, 0x68, 0x69, 0x01],
+        ),
+        ErrorKind::NonCanonical,
+        7,
+        "labels",
+    )
+    expect_field(
+        decodes<Treasury, Cbor, 11>(
+            cbor,
+            [0xa1, 0x02, 0xa2, 0x62, 0x68, 0x69, 0x02, 0x62, 0x68, 0x69, 0x01],
+        ),
+        ErrorKind::DuplicateField,
+        7,
+        "labels",
+    )
+    expect_field(
+        decodes<Treasury, Cbor, 3>(cbor, [0xa1, 0x02, 0xa4]),
+        ErrorKind::CapacityExceeded,
+        2,
+        "labels",
+    )
+    expect_field(
+        decodes<Treasury, Cbor, 6>(cbor, [0xa1, 0x01, 0xa1, 0x41, 0x01, 0x01]),
+        ErrorKind::InvalidLength,
+        3,
+        "balances",
+    )
+    expect_field(
+        decodes<Roster, Cbor, 7>(cbor, [0xa1, 0x01, 0xa1, 0x01, 0xa1, 0x01, 0x01]),
+        ErrorKind::MissingField,
+        7,
+        "name",
+    )
+    expect_field(
+        decodes<Roster, Cbor, 8>(cbor, [0xa1, 0x02, 0xa1, 0x01, 0x83, 0x01, 0x02, 0x03]),
+        ErrorKind::CapacityExceeded,
+        4,
+        "groups",
+    )
+    expect_field(
+        decodes<Roster, Cbor, 7>(cbor, [0xa1, 0x02, 0xa2, 0x02, 0x80, 0x01, 0x80]),
+        ErrorKind::NonCanonical,
+        5,
+        "groups",
+    )
+    expect_field(
+        decodes<Roster, Cbor, 7>(cbor, [0xa1, 0x03, 0xa2, 0x09, 0x01, 0x03, 0x02]),
+        ErrorKind::NonCanonical,
+        5,
+        "guests",
+    )
+    expect_field(
+        decodes<Roster, Cbor, 9>(
+            cbor,
+            [0xa1, 0x03, 0xa3, 0x01, 0x01, 0x02, 0x02, 0x03, 0x03],
+        ),
+        ErrorKind::CapacityExceeded,
+        2,
+        "guests",
+    )
 }
 
 #[test]
 fn cbor_limits_apply_to_maps() {
     // `Limits.max_items` is checked at the head, and wins over the capacity.
-    expect_error(decodes<Map<u8, u8, 4>, Cbor, 7>(Cbor::with_limits(Limits { max_depth: 32, max_items: 2 }), [0xa3, 0x01, 0x01, 0x02, 0x02, 0x03, 0x03]), ErrorKind::CollectionLimit, 0)
-    expect_error(decodes<Map<u8, u8, 2>, Cbor, 1>(Cbor::with_limits(Limits { max_depth: 32, max_items: 2 }), [0xa3]), ErrorKind::CollectionLimit, 0)
-    expect_error(decodes<Map<u8, u8, 2>, Cbor, 1>(Cbor::with_limits(Limits { max_depth: 32, max_items: 5 }), [0xa3]), ErrorKind::CapacityExceeded, 0)
-    assert!(must(decodes<Map<u8, u8, 4>, Cbor, 5>(Cbor::with_limits(Limits { max_depth: 32, max_items: 2 }), [0xa2, 0x01, 0x01, 0x02, 0x02])).len() == 2)
+    expect_error(
+        decodes<Map<u8, u8, 4>, Cbor, 7>(
+            Cbor::with_limits(Limits { max_depth: 32, max_items: 2 }),
+            [0xa3, 0x01, 0x01, 0x02, 0x02, 0x03, 0x03],
+        ),
+        ErrorKind::CollectionLimit,
+        0,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 2>, Cbor, 1>(
+            Cbor::with_limits(Limits { max_depth: 32, max_items: 2 }),
+            [0xa3],
+        ),
+        ErrorKind::CollectionLimit,
+        0,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 2>, Cbor, 1>(
+            Cbor::with_limits(Limits { max_depth: 32, max_items: 5 }),
+            [0xa3],
+        ),
+        ErrorKind::CapacityExceeded,
+        0,
+    )
+    assert!(
+        must(
+                decodes<Map<u8, u8, 4>, Cbor, 5>(
+                    Cbor::with_limits(Limits { max_depth: 32, max_items: 2 }),
+                    [0xa2, 0x01, 0x01, 0x02, 0x02],
+                ),
+            )
+                .len()
+            == 2,
+    )
     // A map is one level of depth, inside the record's.
-    expect_field(decodes<Atlas<u8, u8, 2>, Cbor, 3>(Cbor::with_limits(Limits { max_depth: 1, max_items: 256 }), [0xa1, 0x01, 0xa0]), ErrorKind::DepthLimit, 2, "entries")
-    assert!(must(decodes<Atlas<u8, u8, 2>, Cbor, 3>(Cbor::with_limits(Limits { max_depth: 2, max_items: 256 }), [0xa1, 0x01, 0xa0])).entries.is_empty())
-    expect_error(decodes<Map<u8, Map<u8, u8, 1>, 1>, Cbor, 3>(Cbor::with_limits(Limits { max_depth: 1, max_items: 256 }), [0xa1, 0x01, 0xa0]), ErrorKind::DepthLimit, 2)
+    expect_field(
+        decodes<Atlas<u8, u8, 2>, Cbor, 3>(
+            Cbor::with_limits(Limits { max_depth: 1, max_items: 256 }),
+            [0xa1, 0x01, 0xa0],
+        ),
+        ErrorKind::DepthLimit,
+        2,
+        "entries",
+    )
+    assert!(
+        must(
+            decodes<Atlas<u8, u8, 2>, Cbor, 3>(
+                Cbor::with_limits(Limits { max_depth: 2, max_items: 256 }),
+                [0xa1, 0x01, 0xa0],
+            ),
+        )
+            .entries
+            .is_empty(),
+    )
+    expect_error(
+        decodes<Map<u8, Map<u8, u8, 1>, 1>, Cbor, 3>(
+            Cbor::with_limits(Limits { max_depth: 1, max_items: 256 }),
+            [0xa1, 0x01, 0xa0],
+        ),
+        ErrorKind::DepthLimit,
+        2,
+    )
     // Writing checks the same limits.
     let writer = Cbor::with_limits(Limits { max_depth: 32, max_items: 2 })
-    expect_error(writer.encode<Map<u8, u8, 4>, 64>(map_of([1, 2, 3], [1, 2, 3])), ErrorKind::CollectionLimit, 0)
-    assert!(encodes(writer, map_of<u8, u8, 4, 2>([1, 2], [1, 2]), [0xa2, 0x01, 0x01, 0x02, 0x02]))
+    expect_error(
+        writer.encode<Map<u8, u8, 4>, 64>(map_of([1, 2, 3], [1, 2, 3])),
+        ErrorKind::CollectionLimit,
+        0,
+    )
+    assert!(
+        encodes(
+            writer,
+            map_of<u8, u8, 4, 2>([1, 2], [1, 2]),
+            [0xa2, 0x01, 0x01, 0x02, 0x02],
+        ),
+    )
 }
-
 
 // Formats without maps keep the defaults, and EIP-712 has no map type.
 
 #[test]
 fn the_compact_format_has_no_maps() {
     let compact = Compact::new()
-    expect_error(compact.encode<Map<u8, u8, 4>, 16>(map_of([1], [1])), ErrorKind::Unsupported, 0)
-    expect_error(compact.encode<Treasury, 64>(treasury()), ErrorKind::Unsupported, 0)
-    expect_error(decodes<Map<u8, u8, 4>, Compact, 3>(compact, [0x01, 0x01, 0x01]), ErrorKind::Unsupported, 0)
-    expect_field(decodes<Treasury, Compact, 3>(compact, [0x00, 0x00, 0x00]), ErrorKind::Unsupported, 0, "balances")
+    expect_error(
+        compact.encode<Map<u8, u8, 4>, 16>(map_of([1], [1])),
+        ErrorKind::Unsupported,
+        0,
+    )
+    expect_error(
+        compact.encode<Treasury, 64>(treasury()),
+        ErrorKind::Unsupported,
+        0,
+    )
+    expect_error(
+        decodes<Map<u8, u8, 4>, Compact, 3>(compact, [0x01, 0x01, 0x01]),
+        ErrorKind::Unsupported,
+        0,
+    )
+    expect_field(
+        decodes<Treasury, Compact, 3>(compact, [0x00, 0x00, 0x00]),
+        ErrorKind::Unsupported,
+        0,
+        "balances",
+    )
 }
 
 #[test]
@@ -686,12 +2184,36 @@ fn eip712_has_no_maps() {
     let eip712 = Eip712::new()
     let registry = Registry { owners: map_of([2, 1], [20, 10]) }
     // The type is rejected naming the field, so no hash is produced for a value holding a map.
-    expect_named(eip712.type_hash<Registry>(), ErrorKind::Unsupported, "owners")
-    expect_named(eip712.encode_type<Registry, 64>(), ErrorKind::Unsupported, "owners")
-    expect_named(eip712.hash_struct(registry), ErrorKind::Unsupported, "owners")
-    expect_named(eip712.signing_hash(Domain::new(), registry), ErrorKind::Unsupported, "owners")
-    expect_named(eip712.typed_data_json<Registry, 256>(Domain::new(), registry), ErrorKind::Unsupported, "owners")
-    expect_error(eip712.type_hash<Map<u8, u8, 2>>(), ErrorKind::Unsupported, 0)
+    expect_named(
+        eip712.type_hash<Registry>(),
+        ErrorKind::Unsupported,
+        "owners",
+    )
+    expect_named(
+        eip712.encode_type<Registry, 64>(),
+        ErrorKind::Unsupported,
+        "owners",
+    )
+    expect_named(
+        eip712.hash_struct(registry),
+        ErrorKind::Unsupported,
+        "owners",
+    )
+    expect_named(
+        eip712.signing_hash(Domain::new(), registry),
+        ErrorKind::Unsupported,
+        "owners",
+    )
+    expect_named(
+        eip712.typed_data_json<Registry, 256>(Domain::new(), registry),
+        ErrorKind::Unsupported,
+        "owners",
+    )
+    expect_error(
+        eip712.type_hash<Map<u8, u8, 2>>(),
+        ErrorKind::Unsupported,
+        0,
+    )
 }
 
 // JSON key position. After `begin_map` and `next_key` a decoder stands at a key, and after
@@ -773,9 +2295,17 @@ fn json_decoder_reports_a_key_where_it_starts() {
     var spaced_signed = at_key<8>("{ \"1\":1}", 0)
     expect_error(spaced_signed.read_signed(8), ErrorKind::TypeMismatch, 2)
     var spaced_record = at_key<8>("{ \"1\":1}", 0)
-    expect_error(spaced_record.begin_record<Member>(), ErrorKind::TypeMismatch, 2)
+    expect_error(
+        spaced_record.begin_record<Member>(),
+        ErrorKind::TypeMismatch,
+        2,
+    )
     var spaced_sequence = at_key<8>("{ \"1\":1}", 0)
-    expect_error(spaced_sequence.begin_sequence(1), ErrorKind::TypeMismatch, 2)
+    expect_error(
+        spaced_sequence.begin_sequence(1),
+        ErrorKind::TypeMismatch,
+        2,
+    )
     var spaced_list = at_key<8>("{ \"1\":1}", 0)
     expect_error(spaced_list.begin_list(1), ErrorKind::TypeMismatch, 2)
     var spaced_map = at_key<8>("{ \"1\":1}", 0)
@@ -790,7 +2320,11 @@ fn json_decoder_reports_a_key_where_it_starts() {
     var later_signed = at_key<14>("{\"1\":1, \"2\":2}", 1)
     expect_error(later_signed.read_signed(8), ErrorKind::TypeMismatch, 8)
     var later_record = at_key<14>("{\"1\":1, \"2\":2}", 1)
-    expect_error(later_record.begin_record<Member>(), ErrorKind::TypeMismatch, 8)
+    expect_error(
+        later_record.begin_record<Member>(),
+        ErrorKind::TypeMismatch,
+        8,
+    )
     var later_map = at_key<14>("{\"1\":1, \"2\":2}", 1)
     expect_error(later_map.begin_map(1), ErrorKind::TypeMismatch, 8)
 }
@@ -810,7 +2344,10 @@ fn json_decoder_leaves_the_key_in_place_when_it_rejects() {
 /// value again.
 #[test]
 fn json_decoder_reads_the_kinds_that_can_be_keys() {
-    var number = JsonDecoder<12>::new(BoundedBuffer<12>::from_array("{\"300\":true}"), Limits::standard())
+    var number = JsonDecoder<12>::new(
+        BoundedBuffer<12>::from_array("{\"300\":true}"),
+        Limits::standard(),
+    )
     var number_map = must(number.begin_map(1))
     assert!(must(number.next_key(mut number_map)))
     assert!(must(number.read_wide_unsigned(256)) == 300)
@@ -820,7 +2357,10 @@ fn json_decoder_reads_the_kinds_that_can_be_keys() {
     must(number.end_map(number_map))
     must(number.finish())
 
-    var name = JsonDecoder<12>::new(BoundedBuffer<12>::from_array("{\"hi\":[1,2]}"), Limits::standard())
+    var name = JsonDecoder<12>::new(
+        BoundedBuffer<12>::from_array("{\"hi\":[1,2]}"),
+        Limits::standard(),
+    )
     var name_map = must(name.begin_map(1))
     assert!(must(name.next_key(mut name_map)))
     assert!(must(name.read_text<8>()).equals(hi()))
@@ -830,10 +2370,15 @@ fn json_decoder_reads_the_kinds_that_can_be_keys() {
     must(name.end_map(name_map))
     must(name.finish())
 
-    var bytes = JsonDecoder<15>::new(BoundedBuffer<15>::from_array("{\"0x0102\":null}"), Limits::standard())
+    var bytes = JsonDecoder<15>::new(
+        BoundedBuffer<15>::from_array("{\"0x0102\":null}"),
+        Limits::standard(),
+    )
     var bytes_map = must(bytes.begin_map(1))
     assert!(must(bytes.next_key(mut bytes_map)))
-    assert!(must(bytes.read_bytes<2>()).equals(BoundedBuffer<2>::from_array([1, 2])))
+    assert!(
+        must(bytes.read_bytes<2>()).equals(BoundedBuffer<2>::from_array([1, 2])),
+    )
     must(bytes.map_value(mut bytes_map))
     assert!(!must(bytes.read_some()))
     assert!(!must(bytes.next_key(mut bytes_map)))
@@ -847,22 +2392,66 @@ fn json_decoder_reads_the_kinds_that_can_be_keys() {
 fn json_encoder_rejects_values_that_are_not_keys() {
     expect_error(at_key_encoder(0).write_none(), ErrorKind::Unsupported, 1)
     expect_error(at_key_encoder(0).write_some(), ErrorKind::Unsupported, 1)
-    expect_error(at_key_encoder(0).write_bool(true), ErrorKind::Unsupported, 1)
-    expect_error(at_key_encoder(0).write_signed(1, 8), ErrorKind::Unsupported, 1)
-    expect_error(at_key_encoder(0).write_wide_signed(1, 256), ErrorKind::Unsupported, 1)
-    expect_error(at_key_encoder(0).write_variant<Status>(0), ErrorKind::Unsupported, 1)
-    expect_error(at_key_encoder(0).begin_variant<Shape>(1), ErrorKind::Unsupported, 1)
-    expect_error(at_key_encoder(0).begin_record<Member>(2), ErrorKind::Unsupported, 1)
-    expect_error(at_key_encoder(0).begin_sequence(1), ErrorKind::Unsupported, 1)
+    expect_error(
+        at_key_encoder(0).write_bool(true),
+        ErrorKind::Unsupported,
+        1,
+    )
+    expect_error(
+        at_key_encoder(0).write_signed(1, 8),
+        ErrorKind::Unsupported,
+        1,
+    )
+    expect_error(
+        at_key_encoder(0).write_wide_signed(1, 256),
+        ErrorKind::Unsupported,
+        1,
+    )
+    expect_error(
+        at_key_encoder(0).write_variant<Status>(0),
+        ErrorKind::Unsupported,
+        1,
+    )
+    expect_error(
+        at_key_encoder(0).begin_variant<Shape>(1),
+        ErrorKind::Unsupported,
+        1,
+    )
+    expect_error(
+        at_key_encoder(0).begin_record<Member>(2),
+        ErrorKind::Unsupported,
+        1,
+    )
+    expect_error(
+        at_key_encoder(0).begin_sequence(1),
+        ErrorKind::Unsupported,
+        1,
+    )
     expect_error(at_key_encoder(0).begin_list(1), ErrorKind::Unsupported, 1)
     expect_error(at_key_encoder(0).begin_map(1), ErrorKind::Unsupported, 1)
     // The second key is after the first entry and the comma: `{"1":1,` is 7 bytes.
     expect_error(at_key_encoder(1).write_none(), ErrorKind::Unsupported, 7)
     expect_error(at_key_encoder(1).write_some(), ErrorKind::Unsupported, 7)
-    expect_error(at_key_encoder(1).write_bool(false), ErrorKind::Unsupported, 7)
-    expect_error(at_key_encoder(1).write_signed(-1, 8), ErrorKind::Unsupported, 7)
-    expect_error(at_key_encoder(1).begin_record<Member>(2), ErrorKind::Unsupported, 7)
-    expect_error(at_key_encoder(1).begin_sequence(1), ErrorKind::Unsupported, 7)
+    expect_error(
+        at_key_encoder(1).write_bool(false),
+        ErrorKind::Unsupported,
+        7,
+    )
+    expect_error(
+        at_key_encoder(1).write_signed(-1, 8),
+        ErrorKind::Unsupported,
+        7,
+    )
+    expect_error(
+        at_key_encoder(1).begin_record<Member>(2),
+        ErrorKind::Unsupported,
+        7,
+    )
+    expect_error(
+        at_key_encoder(1).begin_sequence(1),
+        ErrorKind::Unsupported,
+        7,
+    )
     expect_error(at_key_encoder(1).begin_map(1), ErrorKind::Unsupported, 7)
 }
 
@@ -881,7 +2470,11 @@ fn json_encoder_writes_the_kinds_that_can_be_keys() {
     must(number.map_value(mut number_map))
     must(number.write_bool(true))
     must(number.end_map(number_map))
-    assert!(must(number.finish()).equals(BoundedBuffer<21>::from_array("{\"7\":null,\"300\":true}")))
+    assert!(
+        must(number.finish()).equals(
+                BoundedBuffer<21>::from_array("{\"7\":null,\"300\":true}"),
+            ),
+    )
 
     var name = JsonEncoder<9>::new(Limits::standard())
     var name_map = must(name.begin_map(1))
@@ -890,7 +2483,9 @@ fn json_encoder_writes_the_kinds_that_can_be_keys() {
     must(name.map_value(mut name_map))
     must(name.write_signed(-1, 8))
     must(name.end_map(name_map))
-    assert!(must(name.finish()).equals(BoundedBuffer<9>::from_array("{\"hi\":-1}")))
+    assert!(
+        must(name.finish()).equals(BoundedBuffer<9>::from_array("{\"hi\":-1}")),
+    )
 
     var bytes = JsonEncoder<16>::new(Limits::standard())
     var bytes_map = must(bytes.begin_map(1))
@@ -900,5 +2495,7 @@ fn json_encoder_writes_the_kinds_that_can_be_keys() {
     must(bytes.write_some())
     must(bytes.write_bool(false))
     must(bytes.end_map(bytes_map))
-    assert!(must(bytes.finish()).equals(BoundedBuffer<16>::from_array("{\"0x0102\":false}")))
+    assert!(
+        must(bytes.finish()).equals(BoundedBuffer<16>::from_array("{\"0x0102\":false}")),
+    )
 }

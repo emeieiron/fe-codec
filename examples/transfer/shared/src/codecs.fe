@@ -39,14 +39,20 @@ impl FieldCodec<u64> for HexAmount {
         let start = decoder.offset()
         let text = decoder.read_text<16>()?
         if text.len() == 0 || (text.len() > 1 && text.byte_at(0) == Option::Some(b'0')) {
-            return Result::Err(CodecError::at(kind: ErrorKind::InvalidSyntax, offset: start))
+            return Result::Err(
+                CodecError::at(kind: ErrorKind::InvalidSyntax, offset: start),
+            )
         }
         var value: u64 = 0
         var index: usize = 0
         while index < text.len() {
             match nibble(text.byte_at(index).unwrap()) {
                 Option::Some(digit) => value = value * 16 + (digit as u64),
-                Option::None => return Result::Err(CodecError::at(kind: ErrorKind::InvalidSyntax, offset: start)),
+                Option::None => {
+                    return Result::Err(
+                        CodecError::at(kind: ErrorKind::InvalidSyntax, offset: start),
+                    )
+                },
             }
             index += 1
         }
@@ -79,14 +85,18 @@ impl FieldCodec<[u8; 4]> for HexWord {
         let text = decoder.read_text<8>()?
         var bytes: [u8; 4] = [0; 4]
         if text.len() != 8 {
-            return Result::Err(CodecError::at(kind: ErrorKind::InvalidLength, offset: start))
+            return Result::Err(
+                CodecError::at(kind: ErrorKind::InvalidLength, offset: start),
+            )
         }
         var index: usize = 0
         while index < 4 {
             let high = nibble(text.byte_at(index * 2).unwrap())
             let low = nibble(text.byte_at(index * 2 + 1).unwrap())
             if high.is_none() || low.is_none() {
-                return Result::Err(CodecError::at(kind: ErrorKind::InvalidSyntax, offset: start))
+                return Result::Err(
+                    CodecError::at(kind: ErrorKind::InvalidSyntax, offset: start),
+                )
             }
             bytes[index] = high.unwrap() * 16 + low.unwrap()
             index += 1
@@ -126,7 +136,11 @@ impl FieldCodec<Recipient> for RecipientPair {
 }
 
 fn digit(_ value: u8) -> u8 {
-    if value < 10 { b'0' + value } else { b'a' + (value - 10) }
+    if value < 10 {
+        b'0' + value
+    } else {
+        b'a' + (value - 10)
+    }
 }
 
 fn nibble(_ byte: u8) -> Option<u8> {

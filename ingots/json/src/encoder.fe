@@ -163,9 +163,7 @@ impl<const N: usize> JsonEncoder<N> {
     /// Writes the separator before an entry; `first` is whether the frame was empty.
     fn separate(mut self, _ first: bool, _ offset: usize) -> CodecResult<()> {
         self.structure.member(offset)?
-        if !first {
-            self.byte(b',')?
-        }
+        if !first { self.byte(b',')? }
         Result::Ok(())
     }
 

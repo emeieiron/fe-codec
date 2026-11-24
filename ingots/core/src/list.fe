@@ -38,7 +38,9 @@ impl<T: Copy, const N: usize> List<T, N> {
     /// `N` when `M` is more than `N`.
     pub fn from_array<const M: usize>(_ values: [T; M]) -> CodecResult<Self> {
         if M > N {
-            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: N))
+            return Result::Err(
+                CodecError::at(kind: ErrorKind::CapacityExceeded, offset: N),
+            )
         }
         var list = Self::new()
         var index: usize = 0
@@ -53,7 +55,9 @@ impl<T: Copy, const N: usize> List<T, N> {
     /// Appends `value`, or fails with `CapacityExceeded` at offset `N` when the list is full.
     pub fn push(mut self, _ value: T) -> CodecResult<()> {
         if self.length == N {
-            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: N))
+            return Result::Err(
+                CodecError::at(kind: ErrorKind::CapacityExceeded, offset: N),
+            )
         }
         self.items[self.length] = Option::Some(value)
         self.length += 1

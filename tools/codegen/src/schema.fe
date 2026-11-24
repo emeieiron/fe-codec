@@ -11,8 +11,19 @@
 use core::marker::Copy
 use core::{MemBuffer, MemVec, Option, Result}
 use fe_syntax::{
-    ArgKind, File, FieldsKind, GenericArg, GenericKind, ItemKind, Modifiers, Run, Span, TypeKind,
-    VariantKind, lex, parse,
+    ArgKind,
+    File,
+    FieldsKind,
+    GenericArg,
+    GenericKind,
+    ItemKind,
+    Modifiers,
+    Run,
+    Span,
+    TypeKind,
+    VariantKind,
+    lex,
+    parse,
 }
 use ingot::text::{contains, copy, ends_with, is_text, same, starts_with}
 
@@ -133,20 +144,12 @@ pub struct Output {
 }
 
 /// A local struct or enum, whether it is serializable and whether it implements `Copy`.
-struct Local {
-    source: usize,
-    name: usize,
-    serializable: bool,
-    copy: bool,
-}
+struct Local { source: usize, name: usize, serializable: bool, copy: bool }
 
 impl Copy for Local {}
 
 /// The parsed sources and the local declarations they make.
-pub struct Program {
-    pub files: MemVec<File>,
-    locals: MemVec<Local>,
-}
+pub struct Program { pub files: MemVec<File>, locals: MemVec<Local> }
 
 /// The 1-based line and column of byte `offset` of `text`. The line is 1 plus the number of
 /// `\n` bytes before the offset; the column counts characters (UTF-8 code points, that is the
@@ -272,7 +275,9 @@ fn last_segment(_ name: ref MemBuffer) -> MemBuffer {
 pub fn list_element(_ file: ref File, _ ty: usize) -> Option<usize> {
     match ty_kind(file, ty) {
         TyKind::Path => {},
-        _ => return Option::None,
+        _ => {
+            return Option::None
+        },
     }
     if last_segment(ty_name(file, ty)) != "List" || arg_run(file, ty).len < 1 {
         return Option::None
@@ -284,7 +289,9 @@ pub fn list_element(_ file: ref File, _ ty: usize) -> Option<usize> {
 pub fn map_parts(_ file: ref File, _ ty: usize) -> Option<(usize, usize)> {
     match ty_kind(file, ty) {
         TyKind::Path => {},
-        _ => return Option::None,
+        _ => {
+            return Option::None
+        },
     }
     if last_segment(ty_name(file, ty)) != "Map" || arg_run(file, ty).len < 2 {
         return Option::None
@@ -300,16 +307,28 @@ fn is_option(_ name: ref MemBuffer) -> bool {
 }
 
 fn is_primitive(_ name: ref MemBuffer) -> bool {
-    name == "bool" || name == "u8" || name == "u16" || name == "u32" || name == "u64"
-        || name == "u128" || name == "u256" || name == "i8" || name == "i16" || name == "i32"
-        || name == "i64" || name == "i128" || name == "i256"
+    name == "bool"
+        || name == "u8"
+        || name == "u16"
+        || name == "u32"
+        || name == "u64"
+        || name == "u128"
+        || name == "u256"
+        || name == "i8"
+        || name == "i16"
+        || name == "i32"
+        || name == "i64"
+        || name == "i128"
+        || name == "i256"
 }
 
 /// The payload of `Option<T>`: the one type argument of an `Option` path.
 fn option_payload(_ file: ref File, _ ty: usize) -> Option<usize> {
     match ty_kind(file, ty) {
         TyKind::Path => {},
-        _ => return Option::None,
+        _ => {
+            return Option::None
+        },
     }
     if !is_option(ty_name(file, ty)) {
         return Option::None
@@ -422,13 +441,25 @@ fn serializable(_ file: ref File, _ source: usize, _ attrs: Run) -> Result<Diagn
         let path = attr_path(file, attrs, i)
         if path == "serializable" {
             if attribute.has_args || attribute.value.is_some() {
-                return fail(source, attribute.start, format!("#[serializable] takes no arguments"))
+                return fail(
+                    source,
+                    attribute.start,
+                    format!("#[serializable] takes no arguments"),
+                )
             }
             found = true
         } else if path == "codec_id" {
-            return fail(source, attribute.start, format!("codec_id belongs on fields and enum variants"))
+            return fail(
+                source,
+                attribute.start,
+                format!("codec_id belongs on fields and enum variants"),
+            )
         } else if path == "codec_with" {
-            return fail(source, attribute.start, format!("codec_with belongs on struct and record variant fields"))
+            return fail(
+                source,
+                attribute.start,
+                format!("codec_with belongs on struct and record variant fields"),
+            )
         }
         i += 1
     }
@@ -439,10 +470,12 @@ fn serializable(_ file: ref File, _ source: usize, _ attrs: Run) -> Result<Diagn
 /// arguments and belongs on `#[serializable]` declarations, and fails on any other `codec`
 /// attribute of a serializable one: `serializable` has already handled `codec_id` and
 /// `codec_with`. `is_serializable` says whether the declaration is.
-fn item_codec_attrs(_ file: ref File, _ source: usize, _ attrs: Run, _ is_serializable: bool) -> Result<
-    Diagnostic,
-    bool,
-> {
+fn item_codec_attrs(
+    _ file: ref File,
+    _ source: usize,
+    _ attrs: Run,
+    _ is_serializable: bool,
+) -> Result<Diagnostic, bool> {
     var found = false
     var i: usize = 0
     while i < attrs.len {
@@ -450,23 +483,44 @@ fn item_codec_attrs(_ file: ref File, _ source: usize, _ attrs: Run, _ is_serial
         let path = attr_path(file, attrs, i)
         i += 1
         if path != "codec_skip_unknown" {
-            if is_serializable && starts_with(path, "codec") && path != "codec_id" && path != "codec_with" {
+            if is_serializable
+                && starts_with(path, "codec")
+                && path != "codec_id"
+                && path != "codec_with" {
                 return fail(
                     source,
                     attribute.start,
-                    format!("unknown codec attribute '", path, "'; structs and enums take codec_skip_unknown"),
+                    format!(
+                        "unknown codec attribute '",
+                        path,
+                        "'; structs and enums take codec_skip_unknown",
+                    ),
                 )
             }
             continue
         }
         if !is_serializable {
-            return fail(source, attribute.start, format!("codec_skip_unknown belongs on serializable structs and enums"))
+            return fail(
+                source,
+                attribute.start,
+                format!(
+                    "codec_skip_unknown belongs on serializable structs and enums",
+                ),
+            )
         }
         if attribute.has_args || attribute.value.is_some() {
-            return fail(source, attribute.start, format!("#[codec_skip_unknown] takes no arguments"))
+            return fail(
+                source,
+                attribute.start,
+                format!("#[codec_skip_unknown] takes no arguments"),
+            )
         }
         if found {
-            return fail(source, attribute.start, format!("duplicate codec_skip_unknown attribute"))
+            return fail(
+                source,
+                attribute.start,
+                format!("duplicate codec_skip_unknown attribute"),
+            )
         }
         found = true
     }
@@ -474,9 +528,16 @@ fn item_codec_attrs(_ file: ref File, _ source: usize, _ attrs: Run, _ is_serial
 }
 
 /// Fails if a schema name token is longer than `MAX_NAME_BYTES`.
-fn check_name(_ file: ref File, _ source: usize, _ name: usize, _ site: usize) -> Result<Diagnostic, ()> {
+fn check_name(_ file: ref File, _ source: usize, _ name: usize, _ site: usize) -> Result<
+    Diagnostic,
+    (),
+> {
     if file.token_text(name).len() > MAX_NAME_BYTES {
-        return fail(source, site, format!("schema name exceeds ", MAX_NAME_BYTES, " bytes"))
+        return fail(
+            source,
+            site,
+            format!("schema name exceeds ", MAX_NAME_BYTES, " bytes"),
+        )
     }
     Result::Ok(())
 }
@@ -489,7 +550,9 @@ pub fn parse_sources(_ texts: ref MemVec<MemBuffer>) -> Result<Diagnostic, MemVe
         match parse(lex(copy(texts[index]))) {
             Result::Ok(file) => files.push(file),
             Result::Err(error) => {
-                return Result::Err(Diagnostic { source: index, offset: error.offset, message: error.message })
+                return Result::Err(
+                    Diagnostic { source: index, offset: error.offset, message: error.message },
+                )
             },
         }
         index += 1
@@ -527,7 +590,13 @@ fn resolve_ids(
         return Result::Ok(result)
     }
     if !all {
-        return fail(source, site, format!("assign codec_id to every member of an explicitly numbered type"))
+        return fail(
+            source,
+            site,
+            format!(
+                "assign codec_id to every member of an explicitly numbered type",
+            ),
+        )
     }
     i = 0
     while i < ids.len() {
@@ -562,10 +631,7 @@ fn resolve_ids(
 
 /// What the attributes of a field or variant say: its `codec_id`, and for a field the path of
 /// its `codec_with` codec.
-struct MemberAttrs {
-    id: Option<u64>,
-    with: Option<Span>,
-}
+struct MemberAttrs { id: Option<u64>, with: Option<Span> }
 
 impl Copy for MemberAttrs {}
 
@@ -590,7 +656,9 @@ pub fn codec_path(_ file: ref File, _ span: Span) -> Option<MemBuffer> {
             out.push(b':')
             segment = 0
             i += 2
-        } else if b == b' ' && ((segment > 0 && i + 1 < text.len() && text[i + 1] == b':') || (segment == 0 && out.len() > 0)) {
+        } else if b == b' '
+            && ((segment > 0 && i + 1 < text.len() && text[i + 1] == b':')
+                || (segment == 0 && out.len() > 0)) {
             // Space around `::`, which the path does not keep.
             i += 1
         } else {
@@ -604,7 +672,10 @@ pub fn codec_path(_ file: ref File, _ span: Span) -> Option<MemBuffer> {
 }
 
 /// The `codec_id` of a field or variant, if it has one, and the `codec_with` of a field.
-fn member_attrs(_ file: ref File, _ source: usize, _ attrs: Run, _ field: bool) -> Result<Diagnostic, MemberAttrs> {
+fn member_attrs(_ file: ref File, _ source: usize, _ attrs: Run, _ field: bool) -> Result<
+    Diagnostic,
+    MemberAttrs,
+> {
     var result = MemberAttrs { id: Option::None, with: Option::None }
     var i: usize = 0
     while i < attrs.len {
@@ -613,10 +684,18 @@ fn member_attrs(_ file: ref File, _ source: usize, _ attrs: Run, _ field: bool) 
         i += 1
         if path == "codec_with" {
             if !field {
-                return fail(source, attribute.start, format!("codec_with belongs on struct and record variant fields"))
+                return fail(
+                    source,
+                    attribute.start,
+                    format!("codec_with belongs on struct and record variant fields"),
+                )
             }
             if result.with.is_some() {
-                return fail(source, attribute.start, format!("duplicate codec_with attribute"))
+                return fail(
+                    source,
+                    attribute.start,
+                    format!("duplicate codec_with attribute"),
+                )
             }
             match attribute.value {
                 Option::Some(span) => {
@@ -624,46 +703,76 @@ fn member_attrs(_ file: ref File, _ source: usize, _ attrs: Run, _ field: bool) 
                         return fail(
                             source,
                             attribute.start,
-                            format!("codec_with must be a type path without generic arguments, such as Hex or ingot::codecs::Hex"),
+                            format!(
+                                "codec_with must be a type path without generic arguments, such as Hex or ingot::codecs::Hex",
+                            ),
                         )
                     }
                     result.with = Option::Some(span)
                 },
                 Option::None => {
-                    return fail(source, attribute.start, format!("codec_with needs a codec type, as in #[codec_with = Hex]"))
+                    return fail(
+                        source,
+                        attribute.start,
+                        format!(
+                            "codec_with needs a codec type, as in #[codec_with = Hex]",
+                        ),
+                    )
                 },
             }
             continue
         }
         if path == "codec_skip_unknown" {
-            return fail(source, attribute.start, format!("codec_skip_unknown belongs on serializable structs and enums"))
+            return fail(
+                source,
+                attribute.start,
+                format!(
+                    "codec_skip_unknown belongs on serializable structs and enums",
+                ),
+            )
         }
         if (starts_with(path, "codec") && path != "codec_id") || path == "serializable" {
             if field {
                 return fail(
                     source,
                     attribute.start,
-                    format!("unknown codec attribute '", path, "'; fields take codec_id and codec_with"),
+                    format!(
+                        "unknown codec attribute '",
+                        path,
+                        "'; fields take codec_id and codec_with",
+                    ),
                 )
             }
             return fail(
                 source,
                 attribute.start,
-                format!("unknown codec attribute '", path, "'; variants take codec_id"),
+                format!(
+                    "unknown codec attribute '",
+                    path,
+                    "'; variants take codec_id",
+                ),
             )
         }
         if path != "codec_id" {
             continue
         }
         if result.id.is_some() {
-            return fail(source, attribute.start, format!("duplicate codec_id attribute"))
+            return fail(
+                source,
+                attribute.start,
+                format!("duplicate codec_id attribute"),
+            )
         }
         result.id = match attribute.value {
             Option::Some(span) => file.literal_u64(span),
             Option::None => Option::None,
         }
         if result.id.is_none() {
-            return fail(source, attribute.start, format!("codec_id must be an unsigned 64-bit integer literal"))
+            return fail(
+                source,
+                attribute.start,
+                format!("codec_id must be an unsigned 64-bit integer literal"),
+            )
         }
     }
     Result::Ok(result)
@@ -734,13 +843,22 @@ impl Program {
                         }
                         continue
                     },
-                    _ => continue,
+                    _ => {
+                        continue
+                    },
                 }
                 let text = file.token_text(name)
                 if self.local(file, text).is_some() {
-                    return fail(index, file.token_start(name), format!("duplicate declaration '", text, "'"))
+                    return fail(
+                        index,
+                        file.token_start(name),
+                        format!("duplicate declaration '", text, "'"),
+                    )
                 }
-                self.locals.push(Local { source: index, name, serializable: is_serializable, copy: false })
+                self.locals
+                    .push(
+                        Local { source: index, name, serializable: is_serializable, copy: false },
+                    )
             }
             index += 1
         }
@@ -749,7 +867,10 @@ impl Program {
             var l: usize = 0
             while l < self.locals.len() {
                 var local = self.locals[l]
-                if same(self.files[local.source].token_text(local.name), copies[c]) {
+                if same(
+                    self.files[local.source].token_text(local.name),
+                    copies[c],
+                ) {
                     local.copy = true
                     self.locals.set(l, local)
                 }
@@ -805,7 +926,11 @@ impl Program {
                             record.skip_unknown = marked(file, model.attrs, "codec_skip_unknown")
                             output.models.set(last, record)
                         } else if marked(file, model.attrs, "eip712") {
-                            return fail(index, item.start, format!("#[eip712] types must also be #[serializable]"))
+                            return fail(
+                                index,
+                                item.start,
+                                format!("#[eip712] types must also be #[serializable]"),
+                            )
                         }
                     },
                     ItemKind::Enum => {
@@ -817,7 +942,11 @@ impl Program {
                             self.enumeration(index, item.start, model, mut output)?
                             let last = output.models.len() - 1
                             var enumeration = output.models[last]
-                            enumeration.skip_unknown = marked(file, model.attrs, "codec_skip_unknown")
+                            enumeration.skip_unknown = marked(
+                                file,
+                                model.attrs,
+                                "codec_skip_unknown",
+                            )
                             output.models.set(last, enumeration)
                         }
                     },
@@ -845,7 +974,13 @@ impl Program {
         let generics = self.generics(source, start, model)?
         match model.fields_kind {
             FieldsKind::Record => {},
-            _ => return fail(source, start, format!("expected a struct with named fields")),
+            _ => {
+                return fail(
+                    source,
+                    start,
+                    format!("expected a struct with named fields"),
+                )
+            },
         }
         var generics = generics
         let fields = self.fields_of(source, model.fields, name, start, mut generics)?
@@ -861,16 +996,20 @@ impl Program {
             output.fields.push(fields[i])
             i += 1
         }
-        output.models.push(Model {
-            name: model.name,
-            eip712: false,
-            skip_unknown: false,
-            source,
-            offset: start,
-            is_record: true,
-            generics: Run { start: first_generic, len: generics.len() },
-            members: Run { start: first_field, len: fields.len() },
-        })
+        output
+            .models
+            .push(
+                Model {
+                    name: model.name,
+                    eip712: false,
+                    skip_unknown: false,
+                    source,
+                    offset: start,
+                    is_record: true,
+                    generics: Run { start: first_generic, len: generics.len() },
+                    members: Run { start: first_field, len: fields.len() },
+                },
+            )
         Result::Ok(())
     }
 
@@ -895,7 +1034,13 @@ impl Program {
             let attrs = member_attrs(file, source, field.attrs, true)?
             ids.push(attrs.id)
             if !visible(file, field.mods) || field.mods.is_unsafe {
-                return fail(source, field.start, format!("serializable fields must be `pub` or `pub(ingot)`, and safe"))
+                return fail(
+                    source,
+                    field.start,
+                    format!(
+                        "serializable fields must be `pub` or `pub(ingot)`, and safe",
+                    ),
+                )
             }
             // A field without a name is a syntax error, so a parsed field has one.
             let field_name = field.name.unwrap()
@@ -904,7 +1049,11 @@ impl Program {
             var d: usize = 0
             while d < fields.len() {
                 if same(file.token_text(fields[d].name), field_text) {
-                    return fail(source, field.start, format!("duplicate field '", field_text, "'"))
+                    return fail(
+                        source,
+                        field.start,
+                        format!("duplicate field '", field_text, "'"),
+                    )
                 }
                 d += 1
             }
@@ -928,7 +1077,11 @@ impl Program {
                             let length = array_len(file, field.ty)
                             self.nested_arrays(source, element, mut generics, site)?
                             let element_is_parameter = match ty_kind(file, element) {
-                                TyKind::Path => is_parameter(file, generics, ty_name(file, element)),
+                                TyKind::Path => is_parameter(
+                                    file,
+                                    generics,
+                                    ty_name(file, element),
+                                ),
                                 _ => false,
                             }
                             let copyness = self.copyness(source, element, generics)
@@ -938,14 +1091,21 @@ impl Program {
                                     if length == 0 {
                                         unroll = true
                                     } else {
-                                        unroll = !element_is_parameter && copyness != COPY_YES
+                                        unroll = !element_is_parameter
+                                            && copyness != COPY_YES
                                             && length <= MAX_UNROLLED_ELEMENTS
                                     }
                                 },
                                 Option::None => {},
                             }
                             if !unroll {
-                                self.array_element(source, element, STORE_ARRAY, mut generics, site)?
+                                self.array_element(
+                                    source,
+                                    element,
+                                    STORE_ARRAY,
+                                    mut generics,
+                                    site,
+                                )?
                             } else {
                                 unrolled = true
                                 unrolled_element = element
@@ -959,21 +1119,24 @@ impl Program {
                     }
                 }
             }
-            fields.push(Field {
-                name: field_name,
-                ty: field.ty,
-                optional,
-                id: 0,
-                unrolled,
-                unrolled_element,
-                unrolled_length,
-                codec: attrs.with,
-                codec_ty: match payload {
-                    Option::Some(inner) => inner,
-                    Option::None => field.ty,
-                },
-                offset: field.start,
-            })
+            fields
+                .push(
+                    Field {
+                        name: field_name,
+                        ty: field.ty,
+                        optional,
+                        id: 0,
+                        unrolled,
+                        unrolled_element,
+                        unrolled_length,
+                        codec: attrs.with,
+                        codec_ty: match payload {
+                            Option::Some(inner) => inner,
+                            Option::None => field.ty,
+                        },
+                        offset: field.start,
+                    },
+                )
         }
         let resolved = resolve_ids(source, ids, 1, owner)?
         var i: usize = 0
@@ -1023,7 +1186,11 @@ impl Program {
             var d: usize = 0
             while d < variants.len() {
                 if same(file.token_text(variants[d].name), variant_name) {
-                    return fail(source, variant.start, format!("duplicate variant '", variant_name, "'"))
+                    return fail(
+                        source,
+                        variant.start,
+                        format!("duplicate variant '", variant_name, "'"),
+                    )
                 }
                 d += 1
             }
@@ -1034,7 +1201,11 @@ impl Program {
                 VariantKind::Unit => {},
                 VariantKind::Tuple => {
                     if variant.elems.len == 0 {
-                        return fail(source, variant.start, format!("tuple variants need at least one element"))
+                        return fail(
+                            source,
+                            variant.start,
+                            format!("tuple variants need at least one element"),
+                        )
                     }
                     // Core decodes an element as it does a tuple's, so each is nested.
                     var e: usize = 0
@@ -1054,10 +1225,20 @@ impl Program {
                         return fail(
                             source,
                             variant.start,
-                            format!("this variant generates a type named '", marker, "', which another type has"),
+                            format!(
+                                "this variant generates a type named '",
+                                marker,
+                                "', which another type has",
+                            ),
                         )
                     }
-                    let found = self.fields_of(source, variant.fields, name, variant.start, mut generics)?
+                    let found = self.fields_of(
+                        source,
+                        variant.fields,
+                        name,
+                        variant.start,
+                        mut generics,
+                    )?
                     fields = Run { start: output.fields.len(), len: found.len() }
                     var f: usize = 0
                     while f < found.len() {
@@ -1067,7 +1248,9 @@ impl Program {
                     payload = Payload::Record
                 },
             }
-            variants.push(Variant { name: variant.name, id: 0, payload, elems, fields })
+            variants.push(
+                    Variant { name: variant.name, id: 0, payload, elems, fields },
+                )
         }
         if variants.len() == 0 {
             return fail(source, start, format!("empty enums are unsupported"))
@@ -1081,16 +1264,20 @@ impl Program {
             output.variants.push(variant)
             i += 1
         }
-        output.models.push(Model {
-            name: model.name,
-            eip712: false,
-            skip_unknown: false,
-            source,
-            offset: start,
-            is_record: false,
-            generics: Run { start: 0, len: 0 },
-            members: Run { start: first_variant, len: variants.len() },
-        })
+        output
+            .models
+            .push(
+                Model {
+                    name: model.name,
+                    eip712: false,
+                    skip_unknown: false,
+                    source,
+                    offset: start,
+                    is_record: false,
+                    generics: Run { start: 0, len: 0 },
+                    members: Run { start: first_variant, len: variants.len() },
+                },
+            )
         Result::Ok(())
     }
 
@@ -1110,7 +1297,13 @@ impl Program {
                 v += 1
                 match variant.payload {
                     Payload::Record => {
-                        if same(marker_name(file.token_text(model.name), file.token_text(variant.name)), name) {
+                        if same(
+                            marker_name(
+                                file.token_text(model.name),
+                                file.token_text(variant.name),
+                            ),
+                            name,
+                        ) {
                             return true
                         }
                     },
@@ -1121,21 +1314,27 @@ impl Program {
         false
     }
 
-    fn header(
-        self,
-        _ source: usize,
-        _ start: usize,
-        _ mods: Modifiers,
-        _ name: usize,
-    ) -> Result<Diagnostic, ()> {
+    fn header(self, _ source: usize, _ start: usize, _ mods: Modifiers, _ name: usize) -> Result<
+        Diagnostic,
+        (),
+    > {
         let file = ref self.files[source]
         if !visible(file, mods) || mods.is_unsafe {
-            return fail(source, start, format!("serializable declarations must be `pub` or `pub(ingot)`, and safe"))
+            return fail(
+                source,
+                start,
+                format!(
+                    "serializable declarations must be `pub` or `pub(ingot)`, and safe",
+                ),
+            )
         }
         check_name(file, source, name, start)
     }
 
-    fn generics(self, _ source: usize, _ start: usize, _ model: fe_syntax::StructItem) -> Result<Diagnostic, MemVec<Generic>> {
+    fn generics(self, _ source: usize, _ start: usize, _ model: fe_syntax::StructItem) -> Result<
+        Diagnostic,
+        MemVec<Generic>,
+    > {
         let file = ref self.files[source]
         match model.where_token {
             Option::Some(token) => {
@@ -1159,33 +1358,41 @@ impl Program {
                         // without a type, is a syntax error, so a parsed one has them.
                         let token = parameter.name.unwrap()
                         let text = file.token_text(token)
-                        if text == "CodecEncoder" || text == "CodecDecoder" || text == "CodecDescriber" {
+                        if text == "CodecEncoder"
+                            || text == "CodecDecoder"
+                            || text == "CodecDescriber" {
                             return fail(
                                 source,
                                 parameter.start,
                                 format!("this parameter name is reserved for generated code"),
                             )
                         }
-                        generics.push(Generic {
-                            is_const: false,
-                            name: token,
-                            bounds: parameter.bounds,
-                            ty: Option::None,
-                            copy: false,
-                        })
+                        generics
+                            .push(
+                                Generic {
+                                    is_const: false,
+                                    name: token,
+                                    bounds: parameter.bounds,
+                                    ty: Option::None,
+                                    copy: false,
+                                },
+                            )
                         continue
                     }
                 },
                 GenericKind::Const => {
                     if !parameter.has_default {
                         let token = parameter.name.unwrap()
-                        generics.push(Generic {
-                            is_const: true,
-                            name: token,
-                            bounds: Option::None,
-                            ty: parameter.ty,
-                            copy: false,
-                        })
+                        generics
+                            .push(
+                                Generic {
+                                    is_const: true,
+                                    name: token,
+                                    bounds: Option::None,
+                                    ty: parameter.ty,
+                                    copy: false,
+                                },
+                            )
                         continue
                     }
                 },
@@ -1194,7 +1401,9 @@ impl Program {
             return fail(
                 source,
                 parameter.start,
-                format!("only type and const generic parameters without defaults are supported"),
+                format!(
+                    "only type and const generic parameters without defaults are supported",
+                ),
             )
         }
         Result::Ok(generics)
@@ -1218,7 +1427,11 @@ impl Program {
                     return fail(
                         source,
                         site,
-                        format!("'", name, "' has a different width on each target; use a fixed-width integer"),
+                        format!(
+                            "'",
+                            name,
+                            "' has a different width on each target; use a fixed-width integer",
+                        ),
                     )
                 }
                 match option_payload(file, ty) {
@@ -1229,7 +1442,9 @@ impl Program {
                                     return fail(
                                         source,
                                         site,
-                                        format!("Option<Option<T>> cannot round-trip: Some(None) and None encode alike"),
+                                        format!(
+                                            "Option<Option<T>> cannot round-trip: Some(None) and None encode alike",
+                                        ),
                                     )
                                 }
                             },
@@ -1244,7 +1459,13 @@ impl Program {
                             return fail(
                                 source,
                                 site,
-                                format!("'", name, "' is used by '", model, "' but is not #[serializable]"),
+                                format!(
+                                    "'",
+                                    name,
+                                    "' is used by '",
+                                    model,
+                                    "' but is not #[serializable]",
+                                ),
                             )
                         }
                     },
@@ -1264,7 +1485,9 @@ impl Program {
                             return fail(
                                 source,
                                 site,
-                                format!("map keys must be unsigned integers, Text<N>, Address or PackedBytes<N>"),
+                                format!(
+                                    "map keys must be unsigned integers, Text<N>, Address or PackedBytes<N>",
+                                ),
                             )
                         }
                     },
@@ -1280,7 +1503,9 @@ impl Program {
                                 return fail(
                                     source,
                                     site,
-                                    format!("an empty array decodes only as a field's whole type; core cannot decode one inside another type"),
+                                    format!(
+                                        "an empty array decodes only as a field's whole type; core cannot decode one inside another type",
+                                    ),
                                 )
                             }
                         },
@@ -1291,12 +1516,23 @@ impl Program {
             },
             TyKind::Tuple => {
                 if tuple_len(file, ty) == 0 {
-                    return fail(source, site, format!("the unit type `()` has no wire form"))
+                    return fail(
+                        source,
+                        site,
+                        format!("the unit type `()` has no wire form"),
+                    )
                 }
                 // Core decodes a tuple's elements, so each is nested like an array's.
                 var i: usize = 0
                 while i < tuple_len(file, ty) {
-                    self.check(source, tuple_elem(file, ty, i), model, site, generics, true)?
+                    self.check(
+                        source,
+                        tuple_elem(file, ty, i),
+                        model,
+                        site,
+                        generics,
+                        true,
+                    )?
                     i += 1
                 }
                 Result::Ok(())
@@ -1315,9 +1551,17 @@ impl Program {
             TyKind::Path => {
                 let name = ty_name(file, ty)
                 let last = last_segment(name)
-                if last == "bool" || last == "i8" || last == "i16" || last == "i32" || last == "i64"
-                    || last == "i128" || last == "i256" || last == "BoundedBuffer" || last == "List"
-                    || last == "Map" || is_option(name) {
+                if last == "bool"
+                    || last == "i8"
+                    || last == "i16"
+                    || last == "i32"
+                    || last == "i64"
+                    || last == "i128"
+                    || last == "i256"
+                    || last == "BoundedBuffer"
+                    || last == "List"
+                    || last == "Map"
+                    || is_option(name) {
                     return true
                 }
                 self.local(file, name).is_some()
@@ -1334,7 +1578,10 @@ impl Program {
             TyKind::Path => {
                 let name = ty_name(file, ty)
                 let last = last_segment(name)
-                if is_primitive(last) || last == "Text" || last == "BoundedBuffer" || last == "PackedBytes"
+                if is_primitive(last)
+                    || last == "Text"
+                    || last == "BoundedBuffer"
+                    || last == "PackedBytes"
                     || last == "Address" {
                     return COPY_YES
                 }
@@ -1376,11 +1623,7 @@ impl Program {
                 }
                 match self.local(file, name) {
                     Option::Some(local) => {
-                        if local.copy {
-                            COPY_YES
-                        } else {
-                            COPY_NO
-                        }
+                        if local.copy { COPY_YES } else { COPY_NO }
                     },
                     Option::None => COPY_UNKNOWN,
                 }
@@ -1436,20 +1679,26 @@ impl Program {
                 return fail(
                     source,
                     site,
-                    format!("a list stores copies of its elements; implement Copy for the element type"),
+                    format!(
+                        "a list stores copies of its elements; implement Copy for the element type",
+                    ),
                 )
             }
             if store == STORE_MAP {
                 return fail(
                     source,
                     site,
-                    format!("a map stores copies of its values; implement Copy for the value type"),
+                    format!(
+                        "a map stores copies of its values; implement Copy for the value type",
+                    ),
                 )
             }
             return fail(
                 source,
                 site,
-                format!("decoding this array builds it from copies of its first element; implement Copy for the element type"),
+                format!(
+                    "decoding this array builds it from copies of its first element; implement Copy for the element type",
+                ),
             )
         }
         Result::Ok(())
@@ -1467,7 +1716,13 @@ impl Program {
         match ty_kind(file, ty) {
             TyKind::Path => {
                 match list_element(file, ty) {
-                    Option::Some(element) => self.array_element(source, element, STORE_LIST, mut generics, site)?,
+                    Option::Some(element) => self.array_element(
+                        source,
+                        element,
+                        STORE_LIST,
+                        mut generics,
+                        site,
+                    )?,
                     Option::None => {},
                 }
                 match map_parts(file, ty) {

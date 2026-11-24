@@ -42,7 +42,9 @@ fn same<const N: usize>(_ got: MemBuffer, _ want: [u8; N]) -> bool {
 
 #[test]
 fn item_starts_at_first_attribute_or_doc() {
-    let file = parsed("/// doc\n// plain\n\n#[serializable]\n// plain\npub enum E {}")
+    let file = parsed(
+        "/// doc\n// plain\n\n#[serializable]\n// plain\npub enum E {}",
+    )
     assert!(file.items.len() == 1)
     assert!(file.items[0].start == 0)
     let file = parsed("// plain\n\n  #[a]\npub struct S { pub x: u8 }")
@@ -53,7 +55,9 @@ fn item_starts_at_first_attribute_or_doc() {
 
 #[test]
 fn parses_struct_fields_and_attributes() {
-    let file = parsed("#[serializable]\npub struct S<T: A + B, const N: usize = 4> {\n    /// d\n    #[codec_id = 0x10]\n    pub a: [u8; 3],\n    b: Option<Text<8>>,\n}")
+    let file = parsed(
+        "#[serializable]\npub struct S<T: A + B, const N: usize = 4> {\n    /// d\n    #[codec_id = 0x10]\n    pub a: [u8; 3],\n    b: Option<Text<8>>,\n}",
+    )
     assert!(file.items.len() == 1)
     let model = file.structs[file.items[0].detail]
     assert!(model.mods.is_pub)
@@ -141,7 +145,9 @@ fn tuple_elem(_ file: File, _ ty: usize, _ index: usize) -> usize {
 
 #[test]
 fn records_tuple_element_types() {
-    let file = parsed("struct S { a: (), b: (u8), c: (u8,), d: (u8, [u16; 2]), e: ((u8, u16), Option<(u8,)>), f: Option<(u8, u8)>, g: [(u8, u8); 3] }")
+    let file = parsed(
+        "struct S { a: (), b: (u8), c: (u8,), d: (u8, [u16; 2]), e: ((u8, u16), Option<(u8,)>), f: Option<(u8, u8)>, g: [(u8, u8); 3] }",
+    )
     let model = file.structs[file.items[0].detail]
     assert!(model.fields.len == 7)
     let a = file.fields[model.fields.start].ty
@@ -182,40 +188,71 @@ fn records_tuple_element_types() {
     let element = file.types[g].elem.unwrap()
     assert!(tuple_len(file, element) == 2)
     // Other types have no elements.
-    assert!(file.types[file.fields[model.fields.start].ty].elems.len == 0)
-    assert!(tuple_len(file, element) == 2 && file.types[g].elems.len == 0)
+    assert!(
+        file.types[file.fields[model.fields.start].ty].elems.len == 0,
+    )
+    assert!(
+        tuple_len(file, element) == 2 && file.types[g].elems.len == 0,
+    )
 }
 
 #[test]
 fn records_tuple_variant_elements_and_record_variant_fields() {
-    let file = parsed("enum E {\n    A,\n    B(),\n    C(u8),\n    D(u8, [u16; 2], (bool, Option<u8>),),\n    F { x: u8, y: (u8, u8) },\n    G(Text<8>),\n}")
+    let file = parsed(
+        "enum E {\n    A,\n    B(),\n    C(u8),\n    D(u8, [u16; 2], (bool, Option<u8>),),\n    F { x: u8, y: (u8, u8) },\n    G(Text<8>),\n}",
+    )
     let model = file.enums[file.items[0].detail]
     assert!(model.variants.len == 6)
     let start = model.variants.start
     // Only a tuple variant has elements, and only a record variant has fields.
-    assert!(file.variants[start].elems.len == 0 && file.variants[start].fields.len == 0)
+    assert!(
+        file.variants[start].elems.len == 0 && file.variants[start].fields.len == 0,
+    )
     assert!(file.variants[start + 1].elems.len == 0)
     match file.variants[start + 1].kind {
         VariantKind::Tuple => {},
         _ => assert!(false),
     }
     assert!(file.variants[start + 2].elems.len == 1)
-    assert!(same(file.type_text(file.elems[file.variants[start + 2].elems.start]), "u8"))
+    assert!(
+        same(
+            file.type_text(file.elems[file.variants[start + 2].elems.start]),
+            "u8",
+        ),
+    )
     let triple = file.variants[start + 3].elems
-    assert!(triple.len == 3 && file.variants[start + 3].fields.len == 0)
+    assert!(
+        triple.len == 3 && file.variants[start + 3].fields.len == 0,
+    )
     assert!(same(file.type_text(file.elems[triple.start]), "u8"))
-    assert!(same(file.type_text(file.elems[triple.start + 1]), "[u16; 2]"))
+    assert!(
+        same(file.type_text(file.elems[triple.start + 1]), "[u16; 2]"),
+    )
     // A tuple element keeps its own elements, which come after the variant's own.
     let nested = file.elems[triple.start + 2]
     assert!(tuple_len(file, nested) == 2)
-    assert!(same(file.type_text(tuple_elem(file, nested, 1)), "Option<u8>"))
+    assert!(
+        same(file.type_text(tuple_elem(file, nested, 1)), "Option<u8>"),
+    )
     // A record variant's fields are fields, with types and no elements.
     let record = file.variants[start + 4]
     assert!(record.elems.len == 0 && record.fields.len == 2)
-    assert!(same(file.token_text(file.fields[record.fields.start + 1].name.unwrap()), "y"))
-    assert!(tuple_len(file, file.fields[record.fields.start + 1].ty) == 2)
+    assert!(
+        same(
+            file.token_text(file.fields[record.fields.start + 1].name.unwrap()),
+            "y",
+        ),
+    )
+    assert!(
+        tuple_len(file, file.fields[record.fields.start + 1].ty) == 2,
+    )
     // Elements are per variant, in declaration order.
-    assert!(same(file.type_text(file.elems[file.variants[start + 5].elems.start]), "Text<8>"))
+    assert!(
+        same(
+            file.type_text(file.elems[file.variants[start + 5].elems.start]),
+            "Text<8>",
+        ),
+    )
 }
 
 #[test]
@@ -236,7 +273,9 @@ fn rejects_malformed_tuple_types() {
 
 #[test]
 fn skips_other_items_and_reads_impl_headers() {
-    let file = parsed("fn f<const N: usize>(x: [u8; N]) -> u8 where N > 0 {\n    if x { 1 } else { 2 }\n}\nconst X: u8 =\n    1 + 2\nimpl<T> Eq for Foo<T> where T: Eq {}\nimpl Foo {}\nstruct S { a: u8 }")
+    let file = parsed(
+        "fn f<const N: usize>(x: [u8; N]) -> u8 where N > 0 {\n    if x { 1 } else { 2 }\n}\nconst X: u8 =\n    1 + 2\nimpl<T> Eq for Foo<T> where T: Eq {}\nimpl Foo {}\nstruct S { a: u8 }",
+    )
     assert!(file.items.len() == 5)
     match file.items[0].kind {
         ItemKind::Other => {},
@@ -264,7 +303,9 @@ fn skips_other_items_and_reads_impl_headers() {
 
 #[test]
 fn parses_enums_and_use_trees() {
-    let file = parsed("use a::{b, c as d, *}\nenum E {\n    A,\n    /// doc\n    B(u8),\n    C { x: u8 },\n}")
+    let file = parsed(
+        "use a::{b, c as d, *}\nenum E {\n    A,\n    /// doc\n    B(u8),\n    C { x: u8 },\n}",
+    )
     assert!(file.items.len() == 2)
     let tree = file.use_items[file.items[0].detail].tree
     assert!(same(file.compact(tree), "a::{b, c as d, *}"))
@@ -280,9 +321,13 @@ fn reports_syntax_errors_where_fe_check_does() {
     // An attribute followed by its field on the same line: right after the attribute.
     assert!(error_offset("struct S {\n    #[a] pub x: u8,\n}") == 19)
     // A plain comment between a field's attribute and the field.
-    assert!(error_offset("struct S {\n    #[a]\n    // c\n    pub x: u8,\n}") == 20)
+    assert!(
+        error_offset("struct S {\n    #[a]\n    // c\n    pub x: u8,\n}") == 20,
+    )
     // Fields need commas.
-    assert!(error_offset("struct S {\n    pub a: u8\n    pub b: u8,\n}") == 24)
+    assert!(
+        error_offset("struct S {\n    pub a: u8\n    pub b: u8,\n}") == 24,
+    )
     // The type is missing: right after the colon.
     assert!(error_offset("struct S {\n    pub id: ,\n}") == 22)
     // The name is missing: right after `struct`.
@@ -331,10 +376,18 @@ fn accepts_newlines_where_fe_parser_does() {
     // After a field's colon, after `[` of an array type, after a bound's colon, after a const
     // parameter's colon, and after `#[`.
     assert!(error_offset("pub struct A { pub x:\nu8 }") == 999999)
-    assert!(error_offset("pub struct A { pub x: [\nu8; 2] }") == 999999)
-    assert!(error_offset("pub struct A<T:\nCopy> { pub x: T }") == 999999)
-    assert!(error_offset("pub struct A<const N:\nusize> { pub x: [u8; N] }") == 999999)
-    assert!(error_offset("#[\nserializable]\npub struct A { pub x: u8 }") == 999999)
+    assert!(
+        error_offset("pub struct A { pub x: [\nu8; 2] }") == 999999,
+    )
+    assert!(
+        error_offset("pub struct A<T:\nCopy> { pub x: T }") == 999999,
+    )
+    assert!(
+        error_offset("pub struct A<const N:\nusize> { pub x: [u8; N] }") == 999999,
+    )
+    assert!(
+        error_offset("#[\nserializable]\npub struct A { pub x: u8 }") == 999999,
+    )
     // Not trivia: before a field's colon, after `;` in an array type, after `use a::`.
     assert!(error_offset("pub struct A { pub x\n: u8 }") == 20)
     assert!(error_offset("pub struct A { pub x: [u8;\n2] }") == 26)

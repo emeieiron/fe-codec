@@ -40,9 +40,10 @@ pub const I128_MIN: i128 = -0x7fffffffffffffffffffffffffffffff - 1
 
 /// Encodes `value`, decodes it and encodes the result again. The encodings must be
 /// identical, which checks that decoding lost nothing the format writes.
-pub fn stable<T: Serialize + Deserialize, F: Format, const N: usize>(_ format: F, _ value: T) -> CodecResult<
-    T,
-> {
+pub fn stable<T: Serialize + Deserialize, F: Format, const N: usize>(
+    _ format: F,
+    _ value: T,
+) -> CodecResult<T> {
     let first = format.encode<T, N>(value)?
     let decoded = format.decode<T, N>(first)?
     let second = format.encode<T, N>(decoded)?
@@ -65,58 +66,94 @@ pub fn conformance<F: Format>(_ format: F) -> u32 {
 fn run<F: Format>(_ format: F, _ step: mut u32) -> CodecResult<u32> {
     // Scalars at the root.
     step = 1
-    if stable<bool, F, 8>(format, true)? != true { return Result::Ok(1) }
+    if stable<bool, F, 8>(format, true)? != true {
+        return Result::Ok(1)
+    }
     step = 2
-    if stable<u8, F, 8>(format, 255)? != 255 { return Result::Ok(2) }
+    if stable<u8, F, 8>(format, 255)? != 255 {
+        return Result::Ok(2)
+    }
     step = 3
-    if stable<i8, F, 8>(format, -128)? != -128 { return Result::Ok(3) }
+    if stable<i8, F, 8>(format, -128)? != -128 {
+        return Result::Ok(3)
+    }
     step = 4
-    if stable<u64, F, 32>(format, 0xffffffffffffffff)? != 0xffffffffffffffff { return Result::Ok(4) }
+    if stable<u64, F, 32>(format, 0xffffffffffffffff)? != 0xffffffffffffffff {
+        return Result::Ok(4)
+    }
     step = 5
-    if stable<i64, F, 32>(format, -0x7fffffffffffffff - 1)? != -0x7fffffffffffffff - 1 { return Result::Ok(5) }
+    if stable<i64, F, 32>(format, -0x7fffffffffffffff - 1)? != -0x7fffffffffffffff - 1 {
+        return Result::Ok(5)
+    }
     step = 6
-    if stable<u128, F, 64>(format, U128_MAX)? != U128_MAX { return Result::Ok(6) }
+    if stable<u128, F, 64>(format, U128_MAX)? != U128_MAX {
+        return Result::Ok(6)
+    }
     step = 7
-    if stable<i128, F, 64>(format, I128_MIN)? != I128_MIN { return Result::Ok(7) }
+    if stable<i128, F, 64>(format, I128_MIN)? != I128_MIN {
+        return Result::Ok(7)
+    }
     step = 8
-    if stable<u256, F, 96>(format, U256_MAX)? != U256_MAX { return Result::Ok(8) }
+    if stable<u256, F, 96>(format, U256_MAX)? != U256_MAX {
+        return Result::Ok(8)
+    }
     step = 9
-    if stable<i256, F, 96>(format, I256_MIN)? != I256_MIN { return Result::Ok(9) }
+    if stable<i256, F, 96>(format, I256_MIN)? != I256_MIN {
+        return Result::Ok(9)
+    }
     let boundary: u256 = 0x10000000000000000
     step = 10
-    if stable<u256, F, 96>(format, boundary)? != boundary { return Result::Ok(10) }
+    if stable<u256, F, 96>(format, boundary)? != boundary {
+        return Result::Ok(10)
+    }
     let below: i256 = -0x10000000000000001
     step = 11
-    if stable<i256, F, 96>(format, below)? != below { return Result::Ok(11) }
+    if stable<i256, F, 96>(format, below)? != below {
+        return Result::Ok(11)
+    }
     step = 12
-    if stable<Option<u8>, F, 8>(format, Option::None)?.is_some() { return Result::Ok(12) }
+    if stable<Option<u8>, F, 8>(format, Option::None)?.is_some() {
+        return Result::Ok(12)
+    }
     step = 13
-    if stable<Option<u8>, F, 8>(format, Option::Some(7))? != Option::Some(7) { return Result::Ok(13) }
+    if stable<Option<u8>, F, 8>(format, Option::Some(7))? != Option::Some(7) {
+        return Result::Ok(13)
+    }
 
     // Text, including NUL and a four-byte sequence.
     let text = emoji()?
     step = 14
-    if !stable<Text<8>, F, 32>(format, text)?.equals(text) { return Result::Ok(14) }
+    if !stable<Text<8>, F, 32>(format, text)?.equals(text) {
+        return Result::Ok(14)
+    }
 
     // Enums with declaration-order and explicit IDs.
     step = 15
     match stable<Status, F, 16>(format, Status::Sent)? {
         Status::Sent => {},
-        _ => { return Result::Ok(15) },
+        _ => {
+            return Result::Ok(15)
+        },
     }
     step = 16
     match stable<StableStatus, F, 16>(format, StableStatus::Ready)? {
         StableStatus::Ready => {},
-        _ => { return Result::Ok(16) },
+        _ => {
+            return Result::Ok(16)
+        },
     }
 
     // Records with optional fields absent and present.
     step = 17
     let empty = stable<Sample, F, 32>(format, Sample { value: 24, note: Option::None })?
-    if empty.value != 24 || empty.note.is_some() { return Result::Ok(17) }
+    if empty.value != 24 || empty.note.is_some() {
+        return Result::Ok(17)
+    }
     step = 18
     let noted = stable<Sample, F, 48>(format, Sample { value: 255, note: Option::Some(text) })?
-    if noted.value != 255 || !noted.note.unwrap().equals(text) { return Result::Ok(18) }
+    if noted.value != 255 || !noted.note.unwrap().equals(text) {
+        return Result::Ok(18)
+    }
 
     // Nested records, arrays and an empty array.
     step = 19
@@ -125,7 +162,9 @@ fn run<F: Format>(_ format: F, _ step: mut u32) -> CodecResult<u32> {
     if transfer.amount != 0xffffffffffffffff || transfer.delta != -0x7fffffffffffffff - 1 {
         return Result::Ok(19)
     }
-    if transfer.hops != [1, 255] || transfer.nonce != Option::Some(9) || !transfer.recipient.active {
+    if transfer.hops != [1, 255]
+        || transfer.nonce != Option::Some(9)
+        || !transfer.recipient.active {
         return Result::Ok(20)
     }
 
@@ -135,7 +174,10 @@ fn run<F: Format>(_ format: F, _ step: mut u32) -> CodecResult<u32> {
         format,
         Wide { big: U256_MAX, signed: I256_MIN, mid: U128_MAX, small: I128_MIN },
     )?
-    if wide.big != U256_MAX || wide.signed != I256_MIN || wide.mid != U128_MAX || wide.small != I128_MIN {
+    if wide.big != U256_MAX
+        || wide.signed != I256_MIN
+        || wide.mid != U128_MAX
+        || wide.small != I128_MIN {
         return Result::Ok(21)
     }
 
@@ -148,7 +190,9 @@ fn run<F: Format>(_ format: F, _ step: mut u32) -> CodecResult<u32> {
     if wallet.hash.to_array() != [0xde, 0xad, 0xbe, 0xef] || wallet.memo.len() != 3 {
         return Result::Ok(23)
     }
-    if wallet.tag.unwrap().to_array() != [0, 1] { return Result::Ok(24) }
+    if wallet.tag.unwrap().to_array() != [0, 1] {
+        return Result::Ok(24)
+    }
     let untagged = Wallet {
         owner: Address::zero(),
         hash: PackedBytes<4>::from_array([0, 0, 0, 0]),
@@ -156,7 +200,9 @@ fn run<F: Format>(_ format: F, _ step: mut u32) -> CodecResult<u32> {
         tag: Option::None,
     }
     step = 25
-    if stable<Wallet, F, 128>(format, untagged)?.tag.is_some() { return Result::Ok(25) }
+    if stable<Wallet, F, 128>(format, untagged)?.tag.is_some() {
+        return Result::Ok(25)
+    }
 
     // A generic record, optional sequence elements and a handwritten field type.
     step = 26
@@ -164,20 +210,37 @@ fn run<F: Format>(_ format: F, _ step: mut u32) -> CodecResult<u32> {
         format,
         Page<u16, 3> { items: [1, 2, 65535], next: Option::Some(7) },
     )?
-    if page.items != [1, 2, 65535] || page.next != Option::Some(7) { return Result::Ok(26) }
+    if page.items != [1, 2, 65535] || page.next != Option::Some(7) {
+        return Result::Ok(26)
+    }
     step = 27
-    let slots = stable<Slots, F, 64>(format, Slots { values: [Option::Some(1), Option::None, Option::Some(255)] })?
-    if slots.values != [Option::Some(1), Option::None, Option::Some(255)] { return Result::Ok(27) }
+    let slots = stable<Slots, F, 64>(
+        format,
+        Slots { values: [Option::Some(1), Option::None, Option::Some(255)] },
+    )?
+    if slots.values != [Option::Some(1), Option::None, Option::Some(255)] {
+        return Result::Ok(27)
+    }
     step = 28
-    let reading = stable<Reading, F, 64>(format, Reading { at: 5, temperature: Celsius { tenths: -125 } })?
-    if reading.at != 5 || reading.temperature.tenths != -125 { return Result::Ok(28) }
+    let reading = stable<Reading, F, 64>(
+        format,
+        Reading { at: 5, temperature: Celsius { tenths: -125 } },
+    )?
+    if reading.at != 5 || reading.temperature.tenths != -125 {
+        return Result::Ok(28)
+    }
 
     // A handwritten record and an evolved one.
     step = 29
     let point = stable<Point, F, 64>(format, Point { x: -1, y: -0x7fffffffffffffff - 1 })?
-    if point.x != -1 || point.y != -0x7fffffffffffffff - 1 { return Result::Ok(29) }
+    if point.x != -1 || point.y != -0x7fffffffffffffff - 1 {
+        return Result::Ok(29)
+    }
     step = 30
-    let account = stable<AccountV2, F, 64>(format, AccountV2 { owner: 1, balance: 2, label: Option::Some(text) })?
+    let account = stable<AccountV2, F, 64>(
+        format,
+        AccountV2 { owner: 1, balance: 2, label: Option::Some(text) },
+    )?
     if account.owner != 1 || account.balance != 2 || !account.label.unwrap().equals(text) {
         return Result::Ok(30)
     }
@@ -185,7 +248,9 @@ fn run<F: Format>(_ format: F, _ step: mut u32) -> CodecResult<u32> {
     // Tuples at the root and as fields: nested, in an array and in an option.
     step = 31
     let pair = stable<(u8, Text<8>), F, 48>(format, (255, text))?
-    if pair.0 != 255 || !pair.1.equals(text) { return Result::Ok(31) }
+    if pair.0 != 255 || !pair.1.equals(text) {
+        return Result::Ok(31)
+    }
     step = 32
     let waypoint = stable<Waypoint, F, 192>(
         format,
@@ -200,8 +265,12 @@ fn run<F: Format>(_ format: F, _ step: mut u32) -> CodecResult<u32> {
     if waypoint.at.0 != 7 || !waypoint.at.1.equals(text) || waypoint.bounds != ((-1, 2), (3, -4)) {
         return Result::Ok(32)
     }
-    if waypoint.legs != [(1, true), (2, false)] || waypoint.tag != (5,) { return Result::Ok(33) }
-    if waypoint.next != Option::Some((300, 0xffffffffffffffff)) { return Result::Ok(34) }
+    if waypoint.legs != [(1, true), (2, false)] || waypoint.tag != (5,) {
+        return Result::Ok(33)
+    }
+    if waypoint.next != Option::Some((300, 0xffffffffffffffff)) {
+        return Result::Ok(34)
+    }
     step = 35
     let bare = Waypoint {
         at: (0, text),
@@ -210,21 +279,34 @@ fn run<F: Format>(_ format: F, _ step: mut u32) -> CodecResult<u32> {
         next: Option::None,
         tag: (0,),
     }
-    if stable<Waypoint, F, 192>(format, bare)?.next.is_some() { return Result::Ok(35) }
+    if stable<Waypoint, F, 192>(format, bare)?.next.is_some() {
+        return Result::Ok(35)
+    }
 
     // Fields written by a codec, present and absent, and a codec that changes a record's shape.
     step = 36
     let payment = stable<Payment, F, 128>(
         format,
-        Payment { id: 7, amount: 0xffffffffffffffff, tip: Option::Some(0), hash: [0xde, 0xad, 0xbe, 0xef] },
+        Payment {
+            id: 7,
+            amount: 0xffffffffffffffff,
+            tip: Option::Some(0),
+            hash: [0xde, 0xad, 0xbe, 0xef],
+        },
     )?
-    if payment.id != 7 || payment.amount != 0xffffffffffffffff || payment.hash != [0xde, 0xad, 0xbe, 0xef] {
+    if payment.id != 7
+        || payment.amount != 0xffffffffffffffff
+        || payment.hash != [0xde, 0xad, 0xbe, 0xef] {
         return Result::Ok(36)
     }
-    if payment.tip != Option::Some(0) { return Result::Ok(37) }
+    if payment.tip != Option::Some(0) {
+        return Result::Ok(37)
+    }
     step = 38
     let unpaid = Payment { id: 0, amount: 0, tip: Option::None, hash: [0, 0, 0, 0] }
-    if stable<Payment, F, 128>(format, unpaid)?.tip.is_some() { return Result::Ok(38) }
+    if stable<Payment, F, 128>(format, unpaid)?.tip.is_some() {
+        return Result::Ok(38)
+    }
     step = 39
     let booking = stable<Booking, F, 128>(
         format,
@@ -233,16 +315,24 @@ fn run<F: Format>(_ format: F, _ step: mut u32) -> CodecResult<u32> {
             companion: Option::Some(Recipient { active: false, label: label()? }),
         },
     )?
-    if !booking.guest.active || !booking.guest.label.equals(text) { return Result::Ok(39) }
+    if !booking.guest.active || !booking.guest.label.equals(text) {
+        return Result::Ok(39)
+    }
     match booking.companion {
         Option::Some(ref companion) => {
-            if companion.active || !companion.label.equals(label()?) { return Result::Ok(40) }
+            if companion.active || !companion.label.equals(label()?) {
+                return Result::Ok(40)
+            }
         },
-        Option::None => { return Result::Ok(40) },
+        Option::None => {
+            return Result::Ok(40)
+        },
     }
     step = 41
     let alone = Booking { guest: Recipient { active: false, label: text }, companion: Option::None }
-    if stable<Booking, F, 128>(format, alone)?.companion.is_some() { return Result::Ok(41) }
+    if stable<Booking, F, 128>(format, alone)?.companion.is_some() {
+        return Result::Ok(41)
+    }
     Result::Ok(0)
 }
 

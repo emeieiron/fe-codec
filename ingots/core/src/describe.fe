@@ -254,13 +254,13 @@ impl<T0: Describe, T1: Describe, T2: Describe, T3: Describe> Describe for (T0, T
     }
 }
 
-impl<
-    T0: Describe,
-    T1: Describe,
-    T2: Describe,
-    T3: Describe,
-    T4: Describe,
-> Describe for (T0, T1, T2, T3, T4) {
+impl<T0: Describe, T1: Describe, T2: Describe, T3: Describe, T4: Describe> Describe for (
+    T0,
+    T1,
+    T2,
+    T3,
+    T4,
+) {
     fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
         describer.begin_tuple(5)?
         T0::describe(mut describer)?

@@ -12,9 +12,63 @@ const PAYMENT_JSON: [u8; 53] = "{\"id\":7,\"amount\":\"ff\",\"tip\":\"1000\",\"h
 const PAYMENT_NO_TIP_JSON: [u8; 39] = "{\"id\":7,\"amount\":\"0\",\"hash\":\"00000000\"}"
 const BOOKING_JSON: [u8; 45] = "{\"guest\":[true,\"hi\"],\"companion\":[false,\"x\"]}"
 const BOOKING_ALONE_JSON: [u8; 21] = "{\"guest\":[true,\"hi\"]}"
-const PAYMENT_CBOR: [u8; 23] = [0xa4, 0x01, 0x07, 0x02, 0x62, 0x66, 0x66, 0x03, 0x64, 0x31, 0x30, 0x30, 0x30, 0x04, 0x68, 0x64, 0x65, 0x61, 0x64, 0x62, 0x65, 0x65, 0x66]
-const PAYMENT_NO_TIP_CBOR: [u8; 16] = [0xa3, 0x01, 0x07, 0x02, 0x61, 0x30, 0x04, 0x68, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30]
-const BOOKING_CBOR: [u8; 12] = [0xa2, 0x01, 0x82, 0xf5, 0x62, 0x68, 0x69, 0x02, 0x82, 0xf4, 0x61, 0x78]
+const PAYMENT_CBOR: [u8; 23] = [
+    0xa4,
+    0x01,
+    0x07,
+    0x02,
+    0x62,
+    0x66,
+    0x66,
+    0x03,
+    0x64,
+    0x31,
+    0x30,
+    0x30,
+    0x30,
+    0x04,
+    0x68,
+    0x64,
+    0x65,
+    0x61,
+    0x64,
+    0x62,
+    0x65,
+    0x65,
+    0x66,
+]
+const PAYMENT_NO_TIP_CBOR: [u8; 16] = [
+    0xa3,
+    0x01,
+    0x07,
+    0x02,
+    0x61,
+    0x30,
+    0x04,
+    0x68,
+    0x30,
+    0x30,
+    0x30,
+    0x30,
+    0x30,
+    0x30,
+    0x30,
+    0x30,
+]
+const BOOKING_CBOR: [u8; 12] = [
+    0xa2,
+    0x01,
+    0x82,
+    0xf5,
+    0x62,
+    0x68,
+    0x69,
+    0x02,
+    0x82,
+    0xf4,
+    0x61,
+    0x78,
+]
 const BOOKING_ALONE_CBOR: [u8; 7] = [0xa1, 0x01, 0x82, 0xf5, 0x62, 0x68, 0x69]
 
 fn payment(_ tip: Option<u64>) -> Payment {
@@ -22,7 +76,9 @@ fn payment(_ tip: Option<u64>) -> Payment {
 }
 
 fn check_payment(_ value: Payment, _ amount: u64, _ tip: Option<u64>) {
-    assert!(value.id == 7 && value.amount == amount && value.tip == tip)
+    assert!(
+        value.id == 7 && value.amount == amount && value.tip == tip,
+    )
 }
 
 fn booking(_ companion: own Option<Recipient>) -> Booking {
@@ -48,18 +104,39 @@ fn json_writes_codec_fields_through_their_codecs() {
     let json = Json::new()
     // A codec replaces the field type's form, and the optional field's codec sees only the payload.
     assert!(encodes(json, payment(Option::Some(4096)), PAYMENT_JSON))
-    check_payment(must(decodes<Payment, Json, 53>(json, PAYMENT_JSON)), 255, Option::Some(4096))
+    check_payment(
+        must(decodes<Payment, Json, 53>(json, PAYMENT_JSON)),
+        255,
+        Option::Some(4096),
+    )
     // `None` is left out like any other optional field, and `null` is also accepted.
     let bare = Payment { id: 7, amount: 0, tip: Option::None, hash: [0, 0, 0, 0] }
     assert!(encodes(json, bare, PAYMENT_NO_TIP_JSON))
-    check_payment(must(decodes<Payment, Json, 39>(json, PAYMENT_NO_TIP_JSON)), 0, Option::None)
+    check_payment(
+        must(decodes<Payment, Json, 39>(json, PAYMENT_NO_TIP_JSON)),
+        0,
+        Option::None,
+    )
     let null_tip: [u8; 50] = "{\"id\":7,\"amount\":\"1\",\"tip\":null,\"hash\":\"00000000\"}"
-    check_payment(must(decodes<Payment, Json, 50>(json, null_tip)), 1, Option::None)
+    check_payment(
+        must(decodes<Payment, Json, 50>(json, null_tip)),
+        1,
+        Option::None,
+    )
     // Zero is one digit, not none, and the largest amount is sixteen.
-    let zero_tip = Payment { id: 7, amount: 0xffffffffffffffff, tip: Option::Some(0), hash: [0, 0, 0, 0] }
+    let zero_tip = Payment {
+        id: 7,
+        amount: 0xffffffffffffffff,
+        tip: Option::Some(0),
+        hash: [0, 0, 0, 0],
+    }
     let zero_tip_json: [u8; 64] = "{\"id\":7,\"amount\":\"ffffffffffffffff\",\"tip\":\"0\",\"hash\":\"00000000\"}"
     assert!(encodes(json, zero_tip, zero_tip_json))
-    check_payment(must(decodes<Payment, Json, 64>(json, zero_tip_json)), 0xffffffffffffffff, Option::Some(0))
+    check_payment(
+        must(decodes<Payment, Json, 64>(json, zero_tip_json)),
+        0xffffffffffffffff,
+        Option::Some(0),
+    )
     // The same keys in another order decode the same.
     let reordered: [u8; 53] = "{\"hash\":\"deadbeef\",\"tip\":\"1000\",\"amount\":\"ff\",\"id\":7}"
     let decoded = must(decodes<Payment, Json, 53>(json, reordered))
@@ -70,76 +147,395 @@ fn json_writes_codec_fields_through_their_codecs() {
 #[test]
 fn json_reports_codec_errors_with_the_field_name() {
     let json = Json::new()
-    expect_field(decodes<Payment, Json, 40>(json, "{\"id\":7,\"amount\":\"FF\",\"hash\":\"00000000\"}"), ErrorKind::InvalidSyntax, 17, "amount")
-    expect_field(decodes<Payment, Json, 40>(json, "{\"id\":7,\"amount\":\"0f\",\"hash\":\"00000000\"}"), ErrorKind::InvalidSyntax, 17, "amount")
-    expect_field(decodes<Payment, Json, 38>(json, "{\"id\":7,\"amount\":\"\",\"hash\":\"00000000\"}"), ErrorKind::InvalidSyntax, 17, "amount")
-    expect_field(decodes<Payment, Json, 39>(json, "{\"id\":7,\"amount\":\"g\",\"hash\":\"00000000\"}"), ErrorKind::InvalidSyntax, 17, "amount")
-    expect_field(decodes<Payment, Json, 55>(json, "{\"id\":7,\"amount\":\"10000000000000000\",\"hash\":\"00000000\"}"), ErrorKind::CapacityExceeded, 34, "amount")
-    expect_field(decodes<Payment, Json, 39>(json, "{\"id\":7,\"amount\":255,\"hash\":\"00000000\"}"), ErrorKind::TypeMismatch, 17, "amount")
-    expect_field(decodes<Payment, Json, 51>(json, "{\"id\":7,\"amount\":\"1\",\"tip\":\"xyz\",\"hash\":\"00000000\"}"), ErrorKind::InvalidSyntax, 27, "tip")
-    expect_field(decodes<Payment, Json, 35>(json, "{\"id\":7,\"amount\":\"0\",\"hash\":\"dead\"}"), ErrorKind::InvalidLength, 28, "hash")
-    expect_field(decodes<Payment, Json, 39>(json, "{\"id\":7,\"amount\":\"0\",\"hash\":\"DEADBEEF\"}"), ErrorKind::InvalidSyntax, 28, "hash")
-    expect_field(decodes<Payment, Json, 47>(json, "{\"id\":7,\"amount\":\"1\",\"tip\":5,\"hash\":\"00000000\"}"), ErrorKind::TypeMismatch, 27, "tip")
-    expect_field(decodes<Payment, Json, 26>(json, "{\"id\":7,\"hash\":\"00000000\"}"), ErrorKind::MissingField, 26, "amount")
+    expect_field(
+        decodes<Payment, Json, 40>(
+            json,
+            "{\"id\":7,\"amount\":\"FF\",\"hash\":\"00000000\"}",
+        ),
+        ErrorKind::InvalidSyntax,
+        17,
+        "amount",
+    )
+    expect_field(
+        decodes<Payment, Json, 40>(
+            json,
+            "{\"id\":7,\"amount\":\"0f\",\"hash\":\"00000000\"}",
+        ),
+        ErrorKind::InvalidSyntax,
+        17,
+        "amount",
+    )
+    expect_field(
+        decodes<Payment, Json, 38>(json, "{\"id\":7,\"amount\":\"\",\"hash\":\"00000000\"}"),
+        ErrorKind::InvalidSyntax,
+        17,
+        "amount",
+    )
+    expect_field(
+        decodes<Payment, Json, 39>(json, "{\"id\":7,\"amount\":\"g\",\"hash\":\"00000000\"}"),
+        ErrorKind::InvalidSyntax,
+        17,
+        "amount",
+    )
+    expect_field(
+        decodes<Payment, Json, 55>(
+            json,
+            "{\"id\":7,\"amount\":\"10000000000000000\",\"hash\":\"00000000\"}",
+        ),
+        ErrorKind::CapacityExceeded,
+        34,
+        "amount",
+    )
+    expect_field(
+        decodes<Payment, Json, 39>(json, "{\"id\":7,\"amount\":255,\"hash\":\"00000000\"}"),
+        ErrorKind::TypeMismatch,
+        17,
+        "amount",
+    )
+    expect_field(
+        decodes<Payment, Json, 51>(
+            json,
+            "{\"id\":7,\"amount\":\"1\",\"tip\":\"xyz\",\"hash\":\"00000000\"}",
+        ),
+        ErrorKind::InvalidSyntax,
+        27,
+        "tip",
+    )
+    expect_field(
+        decodes<Payment, Json, 35>(json, "{\"id\":7,\"amount\":\"0\",\"hash\":\"dead\"}"),
+        ErrorKind::InvalidLength,
+        28,
+        "hash",
+    )
+    expect_field(
+        decodes<Payment, Json, 39>(json, "{\"id\":7,\"amount\":\"0\",\"hash\":\"DEADBEEF\"}"),
+        ErrorKind::InvalidSyntax,
+        28,
+        "hash",
+    )
+    expect_field(
+        decodes<Payment, Json, 47>(
+            json,
+            "{\"id\":7,\"amount\":\"1\",\"tip\":5,\"hash\":\"00000000\"}",
+        ),
+        ErrorKind::TypeMismatch,
+        27,
+        "tip",
+    )
+    expect_field(
+        decodes<Payment, Json, 26>(json, "{\"id\":7,\"hash\":\"00000000\"}"),
+        ErrorKind::MissingField,
+        26,
+        "amount",
+    )
 }
 
 #[test]
 fn json_rejects_a_repeated_codec_field_even_when_the_first_was_null() {
     let json = Json::new()
-    expect_field(decodes<Payment, Json, 52>(json, "{\"id\":7,\"amount\":\"1\",\"amount\":\"2\",\"hash\":\"00000000\"}"), ErrorKind::DuplicateField, 21, "amount")
-    expect_field(decodes<Payment, Json, 60>(json, "{\"id\":7,\"amount\":\"1\",\"tip\":\"1\",\"tip\":null,\"hash\":\"00000000\"}"), ErrorKind::DuplicateField, 31, "tip")
+    expect_field(
+        decodes<Payment, Json, 52>(
+            json,
+            "{\"id\":7,\"amount\":\"1\",\"amount\":\"2\",\"hash\":\"00000000\"}",
+        ),
+        ErrorKind::DuplicateField,
+        21,
+        "amount",
+    )
+    expect_field(
+        decodes<Payment, Json, 60>(
+            json,
+            "{\"id\":7,\"amount\":\"1\",\"tip\":\"1\",\"tip\":null,\"hash\":\"00000000\"}",
+        ),
+        ErrorKind::DuplicateField,
+        31,
+        "tip",
+    )
 }
 
 #[test]
 fn json_writes_a_codec_that_changes_a_records_shape() {
     let json = Json::new()
     let companion = Recipient { active: false, label: x() }
-    assert!(encodes(json, booking(Option::Some(companion)), BOOKING_JSON))
+    assert!(
+        encodes(json, booking(Option::Some(companion)), BOOKING_JSON),
+    )
     check_booking(must(decodes<Booking, Json, 45>(json, BOOKING_JSON)), true)
     assert!(encodes(json, booking(Option::None), BOOKING_ALONE_JSON))
-    check_booking(must(decodes<Booking, Json, 21>(json, BOOKING_ALONE_JSON)), false)
+    check_booking(
+        must(decodes<Booking, Json, 21>(json, BOOKING_ALONE_JSON)),
+        false,
+    )
     let null_companion: [u8; 38] = "{\"guest\":[true,\"hi\"],\"companion\":null}"
-    check_booking(must(decodes<Booking, Json, 38>(json, null_companion)), false)
+    check_booking(
+        must(decodes<Booking, Json, 38>(json, null_companion)),
+        false,
+    )
 }
 
 #[test]
 fn json_reports_errors_inside_a_shape_changing_codec() {
     let json = Json::new()
-    expect_field(decodes<Booking, Json, 16>(json, "{\"guest\":[true]}"), ErrorKind::InvalidLength, 14, "guest")
-    expect_field(decodes<Booking, Json, 25>(json, "{\"guest\":[true,\"hi\",\"x\"]}"), ErrorKind::InvalidLength, 19, "guest")
-    expect_field(decodes<Booking, Json, 38>(json, "{\"guest\":{\"active\":true,\"label\":\"hi\"}}"), ErrorKind::TypeMismatch, 9, "guest")
-    expect_field(decodes<Booking, Json, 18>(json, "{\"guest\":[1,\"hi\"]}"), ErrorKind::TypeMismatch, 10, "guest")
-    expect_field(decodes<Booking, Json, 42>(json, "{\"guest\":[true,\"hi\"],\"companion\":[true,5]}"), ErrorKind::TypeMismatch, 39, "companion")
-    expect_field(decodes<Booking, Json, 55>(json, "{\"guest\":[true,\"hi\"],\"companion\":null,\"companion\":null}"), ErrorKind::DuplicateField, 38, "companion")
+    expect_field(
+        decodes<Booking, Json, 16>(json, "{\"guest\":[true]}"),
+        ErrorKind::InvalidLength,
+        14,
+        "guest",
+    )
+    expect_field(
+        decodes<Booking, Json, 25>(json, "{\"guest\":[true,\"hi\",\"x\"]}"),
+        ErrorKind::InvalidLength,
+        19,
+        "guest",
+    )
+    expect_field(
+        decodes<Booking, Json, 38>(json, "{\"guest\":{\"active\":true,\"label\":\"hi\"}}"),
+        ErrorKind::TypeMismatch,
+        9,
+        "guest",
+    )
+    expect_field(
+        decodes<Booking, Json, 18>(json, "{\"guest\":[1,\"hi\"]}"),
+        ErrorKind::TypeMismatch,
+        10,
+        "guest",
+    )
+    expect_field(
+        decodes<Booking, Json, 42>(json, "{\"guest\":[true,\"hi\"],\"companion\":[true,5]}"),
+        ErrorKind::TypeMismatch,
+        39,
+        "companion",
+    )
+    expect_field(
+        decodes<Booking, Json, 55>(
+            json,
+            "{\"guest\":[true,\"hi\"],\"companion\":null,\"companion\":null}",
+        ),
+        ErrorKind::DuplicateField,
+        38,
+        "companion",
+    )
 }
 
 #[test]
 fn cbor_writes_codec_fields_through_their_codecs() {
     let cbor = Cbor::new()
     assert!(encodes(cbor, payment(Option::Some(4096)), PAYMENT_CBOR))
-    check_payment(must(decodes<Payment, Cbor, 23>(cbor, PAYMENT_CBOR)), 255, Option::Some(4096))
+    check_payment(
+        must(decodes<Payment, Cbor, 23>(cbor, PAYMENT_CBOR)),
+        255,
+        Option::Some(4096),
+    )
     let bare = Payment { id: 7, amount: 0, tip: Option::None, hash: [0, 0, 0, 0] }
     assert!(encodes(cbor, bare, PAYMENT_NO_TIP_CBOR))
-    check_payment(must(decodes<Payment, Cbor, 16>(cbor, PAYMENT_NO_TIP_CBOR)), 0, Option::None)
+    check_payment(
+        must(decodes<Payment, Cbor, 16>(cbor, PAYMENT_NO_TIP_CBOR)),
+        0,
+        Option::None,
+    )
     // An explicit null is also accepted for the optional field.
-    check_payment(must(decodes<Payment, Cbor, 18>(cbor, [0xa4, 0x01, 0x07, 0x02, 0x61, 0x31, 0x03, 0xf6, 0x04, 0x68, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30])), 1, Option::None)
-    assert!(encodes(cbor, booking(Option::Some(Recipient { active: false, label: x() })), BOOKING_CBOR))
+    check_payment(
+        must(
+            decodes<Payment, Cbor, 18>(
+                cbor,
+                [
+                    0xa4,
+                    0x01,
+                    0x07,
+                    0x02,
+                    0x61,
+                    0x31,
+                    0x03,
+                    0xf6,
+                    0x04,
+                    0x68,
+                    0x30,
+                    0x30,
+                    0x30,
+                    0x30,
+                    0x30,
+                    0x30,
+                    0x30,
+                    0x30,
+                ],
+            ),
+        ),
+        1,
+        Option::None,
+    )
+    assert!(
+        encodes(
+            cbor,
+            booking(Option::Some(Recipient { active: false, label: x() })),
+            BOOKING_CBOR,
+        ),
+    )
     check_booking(must(decodes<Booking, Cbor, 12>(cbor, BOOKING_CBOR)), true)
     assert!(encodes(cbor, booking(Option::None), BOOKING_ALONE_CBOR))
-    check_booking(must(decodes<Booking, Cbor, 7>(cbor, BOOKING_ALONE_CBOR)), false)
-    check_booking(must(decodes<Booking, Cbor, 9>(cbor, [0xa2, 0x01, 0x82, 0xf5, 0x62, 0x68, 0x69, 0x02, 0xf6])), false)
+    check_booking(
+        must(decodes<Booking, Cbor, 7>(cbor, BOOKING_ALONE_CBOR)),
+        false,
+    )
+    check_booking(
+        must(
+            decodes<Booking, Cbor, 9>(
+                cbor,
+                [0xa2, 0x01, 0x82, 0xf5, 0x62, 0x68, 0x69, 0x02, 0xf6],
+            ),
+        ),
+        false,
+    )
 }
 
 #[test]
 fn cbor_reports_codec_errors_with_the_field_name() {
     let cbor = Cbor::new()
-    expect_field(decodes<Payment, Cbor, 17>(cbor, [0xa3, 0x01, 0x07, 0x02, 0x62, 0x46, 0x46, 0x04, 0x68, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30]), ErrorKind::InvalidSyntax, 4, "amount")
-    expect_field(decodes<Payment, Cbor, 16>(cbor, [0xa3, 0x01, 0x07, 0x02, 0x18, 0xff, 0x04, 0x68, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30]), ErrorKind::TypeMismatch, 4, "amount")
-    expect_field(decodes<Payment, Cbor, 20>(cbor, [0xa4, 0x01, 0x07, 0x02, 0x61, 0x31, 0x03, 0x62, 0x30, 0x31, 0x04, 0x68, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30]), ErrorKind::InvalidSyntax, 7, "tip")
-    expect_field(decodes<Payment, Cbor, 12>(cbor, [0xa3, 0x01, 0x07, 0x02, 0x61, 0x30, 0x04, 0x64, 0x64, 0x65, 0x61, 0x64]), ErrorKind::InvalidLength, 7, "hash")
-    expect_field(decodes<Payment, Cbor, 19>(cbor, [0xa4, 0x01, 0x07, 0x02, 0x61, 0x30, 0x02, 0x61, 0x30, 0x04, 0x68, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30]), ErrorKind::DuplicateField, 6, "amount")
-    expect_field(decodes<Payment, Cbor, 13>(cbor, [0xa2, 0x01, 0x07, 0x04, 0x68, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30]), ErrorKind::MissingField, 13, "amount")
-    expect_field(decodes<Booking, Cbor, 4>(cbor, [0xa1, 0x01, 0x81, 0xf5]), ErrorKind::InvalidLength, 2, "guest")
-    expect_field(decodes<Booking, Cbor, 3>(cbor, [0xa1, 0x01, 0xa0]), ErrorKind::TypeMismatch, 2, "guest")
-    expect_field(decodes<Booking, Cbor, 7>(cbor, [0xa1, 0x01, 0x82, 0x01, 0x62, 0x68, 0x69]), ErrorKind::TypeMismatch, 3, "guest")
+    expect_field(
+        decodes<Payment, Cbor, 17>(
+            cbor,
+            [
+                0xa3,
+                0x01,
+                0x07,
+                0x02,
+                0x62,
+                0x46,
+                0x46,
+                0x04,
+                0x68,
+                0x30,
+                0x30,
+                0x30,
+                0x30,
+                0x30,
+                0x30,
+                0x30,
+                0x30,
+            ],
+        ),
+        ErrorKind::InvalidSyntax,
+        4,
+        "amount",
+    )
+    expect_field(
+        decodes<Payment, Cbor, 16>(
+            cbor,
+            [
+                0xa3,
+                0x01,
+                0x07,
+                0x02,
+                0x18,
+                0xff,
+                0x04,
+                0x68,
+                0x30,
+                0x30,
+                0x30,
+                0x30,
+                0x30,
+                0x30,
+                0x30,
+                0x30,
+            ],
+        ),
+        ErrorKind::TypeMismatch,
+        4,
+        "amount",
+    )
+    expect_field(
+        decodes<Payment, Cbor, 20>(
+            cbor,
+            [
+                0xa4,
+                0x01,
+                0x07,
+                0x02,
+                0x61,
+                0x31,
+                0x03,
+                0x62,
+                0x30,
+                0x31,
+                0x04,
+                0x68,
+                0x30,
+                0x30,
+                0x30,
+                0x30,
+                0x30,
+                0x30,
+                0x30,
+                0x30,
+            ],
+        ),
+        ErrorKind::InvalidSyntax,
+        7,
+        "tip",
+    )
+    expect_field(
+        decodes<Payment, Cbor, 12>(
+            cbor,
+            [0xa3, 0x01, 0x07, 0x02, 0x61, 0x30, 0x04, 0x64, 0x64, 0x65, 0x61, 0x64],
+        ),
+        ErrorKind::InvalidLength,
+        7,
+        "hash",
+    )
+    expect_field(
+        decodes<Payment, Cbor, 19>(
+            cbor,
+            [
+                0xa4,
+                0x01,
+                0x07,
+                0x02,
+                0x61,
+                0x30,
+                0x02,
+                0x61,
+                0x30,
+                0x04,
+                0x68,
+                0x30,
+                0x30,
+                0x30,
+                0x30,
+                0x30,
+                0x30,
+                0x30,
+                0x30,
+            ],
+        ),
+        ErrorKind::DuplicateField,
+        6,
+        "amount",
+    )
+    expect_field(
+        decodes<Payment, Cbor, 13>(
+            cbor,
+            [0xa2, 0x01, 0x07, 0x04, 0x68, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30],
+        ),
+        ErrorKind::MissingField,
+        13,
+        "amount",
+    )
+    expect_field(
+        decodes<Booking, Cbor, 4>(cbor, [0xa1, 0x01, 0x81, 0xf5]),
+        ErrorKind::InvalidLength,
+        2,
+        "guest",
+    )
+    expect_field(
+        decodes<Booking, Cbor, 3>(cbor, [0xa1, 0x01, 0xa0]),
+        ErrorKind::TypeMismatch,
+        2,
+        "guest",
+    )
+    expect_field(
+        decodes<Booking, Cbor, 7>(cbor, [0xa1, 0x01, 0x82, 0x01, 0x62, 0x68, 0x69]),
+        ErrorKind::TypeMismatch,
+        3,
+        "guest",
+    )
 }

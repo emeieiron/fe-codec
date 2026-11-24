@@ -190,7 +190,9 @@ impl<const N: usize> Encoder for CompactEncoder<N> {
             count += 1
         }
         if present != count {
-            return Result::Err(CodecError::at(kind: ErrorKind::InvalidState, offset: self.offset()))
+            return Result::Err(
+                CodecError::at(kind: ErrorKind::InvalidState, offset: self.offset()),
+            )
         }
         self.begin(present)
     }

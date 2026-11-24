@@ -96,9 +96,15 @@ fn kind<T>(_ result: own CodecResult<T>) -> u32 {
 
 #[test]
 fn integer_checks_accept_exactly_their_ranges() {
-    assert!(checked_unsigned(255, 8, 0).is_ok() && kind(checked_unsigned(256, 8, 0)) == 6)
-    assert!(checked_signed(-128, 8, 0).is_ok() && kind(checked_signed(128, 8, 0)) == 6)
-    assert!(kind(checked_unsigned(1, 7, 0)) == 16 && kind(checked_signed(1, 128, 0)) == 16)
+    assert!(
+        checked_unsigned(255, 8, 0).is_ok() && kind(checked_unsigned(256, 8, 0)) == 6,
+    )
+    assert!(
+        checked_signed(-128, 8, 0).is_ok() && kind(checked_signed(128, 8, 0)) == 6,
+    )
+    assert!(
+        kind(checked_unsigned(1, 7, 0)) == 16 && kind(checked_signed(1, 128, 0)) == 16,
+    )
     let u128_max: u256 = 0xffffffffffffffffffffffffffffffff
     assert!(checked_wide_unsigned(u128_max, 128, 0).is_ok())
     assert!(kind(checked_wide_unsigned(u128_max + 1, 128, 0)) == 6)
@@ -124,12 +130,17 @@ fn frames_count_entries_and_require_ascending_keys() {
 
 #[test]
 fn errors_keep_the_innermost_field() {
-    let inner = CodecError::at(kind: ErrorKind::InvalidUtf8, offset: 3).in_field(schema_name<5>("label"))
+    let inner = CodecError::at(kind: ErrorKind::InvalidUtf8, offset: 3)
+        .in_field(schema_name<5>("label"))
     let outer = inner.in_field(schema_name<9>("recipient"))
     let label: [u8; 5] = "label"
-    assert!(outer.field().unwrap().as_bytes().equals(BoundedBuffer<5>::from_array(label)))
+    assert!(
+        outer.field().unwrap().as_bytes().equals(BoundedBuffer<5>::from_array(label)),
+    )
     assert!(outer.offset == 3 && outer.kind == ErrorKind::InvalidUtf8)
-    assert!(CodecError::at(kind: ErrorKind::UnknownField, offset: 0).field().is_none())
+    assert!(
+        CodecError::at(kind: ErrorKind::UnknownField, offset: 0).field().is_none(),
+    )
 }
 
 /// Records the calls a description makes: 1 for `bool`, the width of an integer, 100 + the arity
@@ -306,10 +317,14 @@ impl Describer for NoTuples {
 fn tuples_describe_their_elements_in_order() {
     var one = Trace::new()
     assert!(<(u8,) as Describe>::describe(mut one).is_ok())
-    assert!(one.len == 3 && one.events[0] == 101 && one.events[1] == 8 && one.events[2] == 201)
+    assert!(
+        one.len == 3 && one.events[0] == 101 && one.events[1] == 8 && one.events[2] == 201,
+    )
 
     var nested = Trace::new()
-    assert!(<(u16, (bool, i32)) as Describe>::describe(mut nested).is_ok())
+    assert!(
+        <(u16, (bool, i32)) as Describe>::describe(mut nested).is_ok(),
+    )
     let expected: [usize; 7] = [102, 16, 102, 1, 32, 202, 202]
     var index: usize = 0
     while index < 7 {
@@ -319,7 +334,9 @@ fn tuples_describe_their_elements_in_order() {
     assert!(nested.len == 7)
 
     var eight = Trace::new()
-    assert!(<(u8, u16, u32, u64, i8, i16, i32, i64) as Describe>::describe(mut eight).is_ok())
+    assert!(
+        <(u8, u16, u32, u64, i8, i16, i32, i64) as Describe>::describe(mut eight).is_ok(),
+    )
     let order: [usize; 10] = [108, 8, 16, 32, 64, 8, 16, 32, 64, 208]
     index = 0
     while index < 10 {
@@ -335,7 +352,9 @@ fn describers_reject_tuples_unless_they_opt_in() {
     assert!(kind(plain.begin_tuple(2)) == 16)
     assert!(kind(plain.end_tuple(2)) == 16)
     assert!(kind(<(u8, bool) as Describe>::describe(mut plain)) == 16)
-    assert!(kind(<[(u8, u8); 2] as Describe>::describe(mut plain)) == 16)
+    assert!(
+        kind(<[(u8, u8); 2] as Describe>::describe(mut plain)) == 16,
+    )
 }
 
 /// A codec that writes a `u64` as eight bytes of text, and describes itself as that text.
@@ -371,23 +390,36 @@ impl FieldCodec<u64> for Silent {
 #[test]
 fn field_codecs_describe_themselves_inside_an_option() {
     var plain = Trace::new()
-    assert!(<Described as FieldCodec<u64>>::describe(mut plain).is_ok())
+    assert!(
+        <Described as FieldCodec<u64>>::describe(mut plain).is_ok(),
+    )
     assert!(plain.len == 1 && plain.events[0] == 508)
 
     var optional = Trace::new()
-    assert!(describe_optional_with<Described, u64, Trace>(mut optional).is_ok())
-    assert!(optional.len == 3 && optional.events[0] == 300 && optional.events[1] == 508 && optional.events[2] == 400)
+    assert!(
+        describe_optional_with<Described, u64, Trace>(mut optional).is_ok(),
+    )
+    assert!(
+        optional.len == 3
+            && optional.events[0] == 300
+            && optional.events[1] == 508
+            && optional.events[2] == 400,
+    )
 }
 
 #[test]
 fn field_codecs_do_not_describe_themselves_unless_they_opt_in() {
     var plain = Trace::new()
-    assert!(kind(<Silent as FieldCodec<u64>>::describe(mut plain)) == 16)
+    assert!(
+        kind(<Silent as FieldCodec<u64>>::describe(mut plain)) == 16,
+    )
     assert!(plain.len == 0)
 
     // The option is opened before the codec fails, and is not closed.
     var optional = Trace::new()
-    assert!(kind(describe_optional_with<Silent, u64, Trace>(mut optional)) == 16)
+    assert!(
+        kind(describe_optional_with<Silent, u64, Trace>(mut optional)) == 16,
+    )
     assert!(optional.len == 1 && optional.events[0] == 300)
 }
 
@@ -434,7 +466,11 @@ fn utf8_valid<const N: usize>(_ bytes: [u8; N]) -> bool {
 
 #[test]
 fn utf8_validates_text_that_is_not_stored() {
-    assert!(utf8_valid([0x61, 0xc3, 0xa9, 0xe2, 0x82, 0xac, 0xf0, 0x9f, 0x98, 0x80, 0x00]))
+    assert!(
+        utf8_valid(
+            [0x61, 0xc3, 0xa9, 0xe2, 0x82, 0xac, 0xf0, 0x9f, 0x98, 0x80, 0x00],
+        ),
+    )
     assert!(!utf8_valid([0xc3, 0x28]))
     assert!(!utf8_valid([0xc0, 0x80]))
     assert!(!utf8_valid([0xed, 0xa0, 0x80]))
@@ -461,25 +497,37 @@ fn lists_hold_up_to_their_capacity() {
     assert!(list.get(0).is_none())
     assert!(list.push(7).is_ok() && list.push(8).is_ok())
     assert!(!list.is_empty() && list.len() == 2)
-    assert!(list.get(0) == Option::Some(7) && list.get(1) == Option::Some(8))
+    assert!(
+        list.get(0) == Option::Some(7) && list.get(1) == Option::Some(8),
+    )
     assert!(list.get(2).is_none())
     assert!(list.push(9).is_ok() && list.len() == 3)
     // A full list rejects another element at offset N and keeps its contents.
     fails_with(list.push(10), ErrorKind::CapacityExceeded, 3)
-    assert!(list.len() == 3 && list.get(2) == Option::Some(9) && list.get(3).is_none())
+    assert!(
+        list.len() == 3 && list.get(2) == Option::Some(9) && list.get(3).is_none(),
+    )
 }
 
 #[test]
 fn lists_are_built_from_arrays_that_fit() {
     let partial = List<u8, 4>::from_array([1, 2]).unwrap()
-    assert!(partial.len() == 2 && partial.get(1) == Option::Some(2) && partial.get(2).is_none())
+    assert!(
+        partial.len() == 2 && partial.get(1) == Option::Some(2) && partial.get(2).is_none(),
+    )
     let full = List<u8, 2>::from_array([1, 2]).unwrap()
     assert!(full.len() == 2)
     let empty = List<u8, 2>::from_array([0; 0]).unwrap()
     assert!(empty.is_empty())
-    fails_with(List<u8, 2>::from_array([1, 2, 3]), ErrorKind::CapacityExceeded, 2)
+    fails_with(
+        List<u8, 2>::from_array([1, 2, 3]),
+        ErrorKind::CapacityExceeded,
+        2,
+    )
     // A list with no capacity holds nothing.
-    assert!(List<u8, 0>::new().is_empty() && List<u8, 0>::from_array([0; 0]).is_ok())
+    assert!(
+        List<u8, 0>::new().is_empty() && List<u8, 0>::from_array([0; 0]).is_ok(),
+    )
     fails_with(List<u8, 0>::new().push(1), ErrorKind::CapacityExceeded, 0)
 }
 
@@ -493,7 +541,9 @@ fn lists_compare_by_their_elements() {
     assert!(List<u32, 4>::new() == List<u32, 4>::new())
     // A list built by pushes equals one built from an array.
     var pushed = List<u32, 4>::new()
-    assert!(pushed.push(1).is_ok() && pushed.push(2).is_ok() && pushed.push(3).is_ok())
+    assert!(
+        pushed.push(1).is_ok() && pushed.push(2).is_ok() && pushed.push(3).is_ok(),
+    )
     assert!(pushed == a)
 }
 
@@ -509,10 +559,14 @@ fn lists_are_copied_by_value() {
 fn lists_describe_their_element_type_between_list_calls() {
     var flat = Trace::new()
     assert!(<List<u8, 5> as Describe>::describe(mut flat).is_ok())
-    assert!(flat.len == 3 && flat.events[0] == 605 && flat.events[1] == 8 && flat.events[2] == 705)
+    assert!(
+        flat.len == 3 && flat.events[0] == 605 && flat.events[1] == 8 && flat.events[2] == 705,
+    )
 
     var nested = Trace::new()
-    assert!(<List<(bool, u16), 2> as Describe>::describe(mut nested).is_ok())
+    assert!(
+        <List<(bool, u16), 2> as Describe>::describe(mut nested).is_ok(),
+    )
     let expected: [usize; 6] = [602, 102, 1, 16, 202, 702]
     var index: usize = 0
     while index < 6 {
@@ -528,7 +582,9 @@ fn describers_reject_lists_unless_they_opt_in() {
     assert!(kind(plain.begin_list(2)) == 16)
     assert!(kind(plain.end_list(2)) == 16)
     assert!(kind(<List<u8, 2> as Describe>::describe(mut plain)) == 16)
-    assert!(kind(<[List<u8, 2>; 2] as Describe>::describe(mut plain)) == 16)
+    assert!(
+        kind(<[List<u8, 2>; 2] as Describe>::describe(mut plain)) == 16,
+    )
 }
 
 /// An encoder that leaves `begin_list` at its default and records the length `begin_sequence`
@@ -572,7 +628,10 @@ impl Encoder for Counting {
         Result::Ok(())
     }
 
-    fn write_fixed_bytes<const N: usize>(mut self, _ value: core::bytes::PackedBytes<N>) -> CodecResult<()> {
+    fn write_fixed_bytes<const N: usize>(
+        mut self,
+        _ value: core::bytes::PackedBytes<N>,
+    ) -> CodecResult<()> {
         Result::Ok(())
     }
 
@@ -672,7 +731,9 @@ impl Decoder for NoLists {
     }
 
     fn read_address(mut self) -> CodecResult<std::evm::Address> {
-        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: self.at))
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.at),
+        )
     }
 
     fn read_some(mut self) -> CodecResult<bool> {
@@ -687,7 +748,9 @@ impl Decoder for NoLists {
         Result::Ok(Frame::new(0))
     }
 
-    fn next_field<R: Schema>(mut self, _ record: mut Frame) -> CodecResult<Option<ingot::FieldKey>> {
+    fn next_field<R: Schema>(mut self, _ record: mut Frame) -> CodecResult<
+        Option<ingot::FieldKey>,
+    > {
         Result::Ok(Option::None)
     }
 
@@ -713,8 +776,16 @@ fn decoders_reject_lists_unless_they_opt_in() {
     var decoder = NoLists { at: 6 }
     fails_with(decoder.begin_list(4), ErrorKind::Unsupported, 6)
     var sequence = Frame::new(0)
-    fails_with(decoder.next_element(mut sequence), ErrorKind::Unsupported, 6)
-    fails_with(List<u8, 4>::deserialize(mut decoder), ErrorKind::Unsupported, 6)
+    fails_with(
+        decoder.next_element(mut sequence),
+        ErrorKind::Unsupported,
+        6,
+    )
+    fails_with(
+        List<u8, 4>::deserialize(mut decoder),
+        ErrorKind::Unsupported,
+        6,
+    )
 }
 
 #[test]
@@ -725,29 +796,47 @@ fn maps_keep_entries_in_key_order() {
     assert!(map.insert(10, 1).unwrap().is_none())
     assert!(map.insert(20, 2).unwrap().is_none())
     assert!(map.len() == 3 && !map.is_empty())
-    assert!(map.key_at(0) == Option::Some(10) && map.value_at(0) == Option::Some(1))
-    assert!(map.key_at(1) == Option::Some(20) && map.value_at(1) == Option::Some(2))
-    assert!(map.key_at(2) == Option::Some(30) && map.value_at(2) == Option::Some(3))
+    assert!(
+        map.key_at(0) == Option::Some(10) && map.value_at(0) == Option::Some(1),
+    )
+    assert!(
+        map.key_at(1) == Option::Some(20) && map.value_at(1) == Option::Some(2),
+    )
+    assert!(
+        map.key_at(2) == Option::Some(30) && map.value_at(2) == Option::Some(3),
+    )
     assert!(map.key_at(3).is_none() && map.value_at(3).is_none())
-    assert!(map.get(20) == Option::Some(2) && map.get(25).is_none() && map.get(5).is_none())
+    assert!(
+        map.get(20) == Option::Some(2) && map.get(25).is_none() && map.get(5).is_none(),
+    )
     assert!(map.contains(30) && !map.contains(31))
 }
 
 #[test]
 fn maps_replace_and_remove_entries() {
     var map = Map<u8, u16, 3>::new()
-    assert!(map.insert(2, 20).is_ok() && map.insert(1, 10).is_ok() && map.insert(3, 30).is_ok())
+    assert!(
+        map.insert(2, 20).is_ok() && map.insert(1, 10).is_ok() && map.insert(3, 30).is_ok(),
+    )
     // A repeated key replaces the value, returns the old one, and works on a full map.
     assert!(map.insert(2, 21).unwrap() == Option::Some(20))
     assert!(map.len() == 3 && map.get(2) == Option::Some(21))
     assert!(map.remove(1) == Option::Some(10))
     assert!(map.len() == 2 && map.get(1).is_none())
-    assert!(map.key_at(0) == Option::Some(2) && map.key_at(1) == Option::Some(3) && map.key_at(2).is_none())
+    assert!(
+        map.key_at(0) == Option::Some(2)
+            && map.key_at(1) == Option::Some(3)
+            && map.key_at(2).is_none(),
+    )
     assert!(map.remove(1).is_none() && map.remove(9).is_none())
-    assert!(map.remove(3) == Option::Some(30) && map.remove(2) == Option::Some(21))
+    assert!(
+        map.remove(3) == Option::Some(30) && map.remove(2) == Option::Some(21),
+    )
     assert!(map.is_empty() && map.get(2).is_none())
     // A removed slot can be filled again.
-    assert!(map.insert(7, 70).is_ok() && map.get(7) == Option::Some(70))
+    assert!(
+        map.insert(7, 70).is_ok() && map.get(7) == Option::Some(70),
+    )
 }
 
 #[test]
@@ -755,8 +844,14 @@ fn maps_reject_a_new_key_when_full() {
     var map = Map<u8, u8, 2>::new()
     assert!(map.insert(2, 2).is_ok() && map.insert(1, 1).is_ok())
     fails_with(map.insert(3, 3), ErrorKind::CapacityExceeded, 2)
-    assert!(map.len() == 2 && map.get(3).is_none() && map.get(1) == Option::Some(1))
-    fails_with(Map<u8, u8, 0>::new().insert(1, 1), ErrorKind::CapacityExceeded, 0)
+    assert!(
+        map.len() == 2 && map.get(3).is_none() && map.get(1) == Option::Some(1),
+    )
+    fails_with(
+        Map<u8, u8, 0>::new().insert(1, 1),
+        ErrorKind::CapacityExceeded,
+        0,
+    )
     assert!(Map<u8, u8, 0>::new().is_empty())
 }
 
@@ -764,8 +859,12 @@ fn maps_reject_a_new_key_when_full() {
 fn maps_compare_by_their_entries_not_their_insertion_order() {
     var a = Map<u8, u8, 4>::new()
     var b = Map<u8, u8, 4>::new()
-    assert!(a.insert(1, 10).is_ok() && a.insert(2, 20).is_ok() && a.insert(3, 30).is_ok())
-    assert!(b.insert(3, 30).is_ok() && b.insert(1, 10).is_ok() && b.insert(2, 20).is_ok())
+    assert!(
+        a.insert(1, 10).is_ok() && a.insert(2, 20).is_ok() && a.insert(3, 30).is_ok(),
+    )
+    assert!(
+        b.insert(3, 30).is_ok() && b.insert(1, 10).is_ok() && b.insert(2, 20).is_ok(),
+    )
     assert!(a == b)
     assert!(b.insert(2, 21).is_ok())
     assert!(a != b)
@@ -787,8 +886,13 @@ fn maps_are_copied_by_value() {
 
 /// `low` sorts strictly before `high`, and neither key is the other.
 fn ascending<K: MapKey>(_ low: K, _ high: K) -> bool {
-    low.before(high) && !high.before(low) && !low.before(low) && !high.before(high)
-        && low.same(low) && !low.same(high) && !high.same(low)
+    low.before(high)
+        && !high.before(low)
+        && !low.before(low)
+        && !high.before(high)
+        && low.same(low)
+        && !low.same(high)
+        && !high.same(low)
 }
 
 #[test]
@@ -798,8 +902,18 @@ fn unsigned_keys_are_in_numeric_order() {
     assert!(ascending<u32>(65535, 65536))
     assert!(ascending<u64>(0xffffffff, 0x100000000))
     assert!(ascending<u128>(0xffffffffffffffff, 0x10000000000000000))
-    assert!(ascending<u256>(0xffffffffffffffffffffffffffffffff, 0x100000000000000000000000000000000))
-    assert!(ascending<u256>(0, 0x8000000000000000000000000000000000000000000000000000000000000000))
+    assert!(
+        ascending<u256>(
+            0xffffffffffffffffffffffffffffffff,
+            0x100000000000000000000000000000000,
+        ),
+    )
+    assert!(
+        ascending<u256>(
+            0,
+            0x8000000000000000000000000000000000000000000000000000000000000000,
+        ),
+    )
 }
 
 #[test]
@@ -808,25 +922,37 @@ fn text_keys_sort_by_length_then_bytes() {
     let b = Text<8>::from_array("b").unwrap()
     let aa = Text<8>::from_array("aa").unwrap()
     let empty = Text<8>::from_array([0; 0]).unwrap()
-    assert!(empty.before(a) && a.before(b) && b.before(aa) && !aa.before(b))
+    assert!(
+        empty.before(a) && a.before(b) && b.before(aa) && !aa.before(b),
+    )
     assert!(!a.before(a) && a.same(a) && !a.same(b) && !empty.same(a))
     // A multibyte character sorts by its bytes, after the shorter ASCII text.
     let accent = Text<8>::from_array([0xc3, 0xa9]).unwrap()
     assert!(b.before(accent) && aa.before(accent))
     // Text of different capacities in one map is a type error, so only equal ones compare.
     var map = Map<Text<8>, u8, 4>::new()
-    assert!(map.insert(aa, 1).is_ok() && map.insert(b, 2).is_ok() && map.insert(empty, 3).is_ok())
-    assert!(map.key_at(0).unwrap().same(empty) && map.key_at(1).unwrap().same(b) && map.key_at(2).unwrap().same(aa))
+    assert!(
+        map.insert(aa, 1).is_ok() && map.insert(b, 2).is_ok() && map.insert(empty, 3).is_ok(),
+    )
+    assert!(
+        map.key_at(0).unwrap().same(empty)
+            && map.key_at(1).unwrap().same(b)
+            && map.key_at(2).unwrap().same(aa),
+    )
 }
 
 #[test]
 fn address_and_byte_keys_sort_bytewise() {
     let low = std::evm::Address::new(1)
     let high = std::evm::Address::new(0x0100000000000000000000000000000000000000)
-    assert!(low.before(high) && !high.before(low) && low.same(low) && !low.same(high))
+    assert!(
+        low.before(high) && !high.before(low) && low.same(low) && !low.same(high),
+    )
     let x = core::bytes::PackedBytes<3>::from_array([1, 2, 3])
     let y = core::bytes::PackedBytes<3>::from_array([1, 3, 0])
-    assert!(x.before(y) && !y.before(x) && !x.before(x) && x.same(x) && !x.same(y))
+    assert!(
+        x.before(y) && !y.before(x) && !x.before(x) && x.same(x) && !x.same(y),
+    )
     // Keys of more than one word compare word by word.
     var first: [u8; 40] = [0; 40]
     var second: [u8; 40] = [0; 40]
@@ -843,10 +969,18 @@ fn address_and_byte_keys_sort_bytewise() {
 fn maps_describe_their_key_and_value_types_between_map_calls() {
     var flat = Trace::new()
     assert!(<Map<u8, bool, 5> as Describe>::describe(mut flat).is_ok())
-    assert!(flat.len == 4 && flat.events[0] == 805 && flat.events[1] == 8 && flat.events[2] == 1 && flat.events[3] == 905)
+    assert!(
+        flat.len == 4
+            && flat.events[0] == 805
+            && flat.events[1] == 8
+            && flat.events[2] == 1
+            && flat.events[3] == 905,
+    )
 
     var nested = Trace::new()
-    assert!(<Map<u16, List<u8, 2>, 3> as Describe>::describe(mut nested).is_ok())
+    assert!(
+        <Map<u16, List<u8, 2>, 3> as Describe>::describe(mut nested).is_ok(),
+    )
     let expected: [usize; 6] = [803, 16, 602, 8, 702, 903]
     var index: usize = 0
     while index < 6 {
@@ -861,7 +995,9 @@ fn describers_reject_maps_unless_they_opt_in() {
     var plain = NoTuples {}
     assert!(kind(plain.begin_map(2)) == 16)
     assert!(kind(plain.end_map(2)) == 16)
-    assert!(kind(<Map<u8, u8, 2> as Describe>::describe(mut plain)) == 16)
+    assert!(
+        kind(<Map<u8, u8, 2> as Describe>::describe(mut plain)) == 16,
+    )
 }
 
 /// Records the calls a map is written with: 1000 + the length for `begin_map`, 1 for
@@ -914,7 +1050,10 @@ impl Encoder for Recording {
         Result::Ok(())
     }
 
-    fn write_fixed_bytes<const N: usize>(mut self, _ value: core::bytes::PackedBytes<N>) -> CodecResult<()> {
+    fn write_fixed_bytes<const N: usize>(
+        mut self,
+        _ value: core::bytes::PackedBytes<N>,
+    ) -> CodecResult<()> {
         Result::Ok(())
     }
 
@@ -991,7 +1130,9 @@ fn maps_are_written_key_then_value_in_key_order() {
     assert!(encoder.len == 10)
     var empty = Recording { events: [0; 16], len: 0 }
     assert!(Map<u8, u8, 4>::new().serialize(mut empty).is_ok())
-    assert!(empty.len == 2 && empty.events[0] == 1000 && empty.events[1] == 3)
+    assert!(
+        empty.len == 2 && empty.events[0] == 1000 && empty.events[1] == 3,
+    )
 }
 
 #[test]
@@ -1049,7 +1190,9 @@ impl Decoder for Script {
     }
 
     fn read_address(mut self) -> CodecResult<std::evm::Address> {
-        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: self.at))
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.at),
+        )
     }
 
     fn read_some(mut self) -> CodecResult<bool> {
@@ -1064,7 +1207,9 @@ impl Decoder for Script {
         Result::Ok(Frame::new(0))
     }
 
-    fn next_field<R: Schema>(mut self, _ record: mut Frame) -> CodecResult<Option<ingot::FieldKey>> {
+    fn next_field<R: Schema>(mut self, _ record: mut Frame) -> CodecResult<
+        Option<ingot::FieldKey>,
+    > {
         Result::Ok(Option::None)
     }
 
@@ -1110,8 +1255,12 @@ fn maps_read_entries_in_any_order_and_sort_them() {
     var decoder = Script { values: [3, 30, 1, 10, 2, 20, 0, 0], at: 0, entries: 3, taken: 0 }
     let map = Map<u8, u8, 4>::deserialize(mut decoder).unwrap()
     assert!(map.len() == 3)
-    assert!(map.key_at(0) == Option::Some(1) && map.value_at(0) == Option::Some(10))
-    assert!(map.key_at(1) == Option::Some(2) && map.key_at(2) == Option::Some(3))
+    assert!(
+        map.key_at(0) == Option::Some(1) && map.value_at(0) == Option::Some(10),
+    )
+    assert!(
+        map.key_at(1) == Option::Some(2) && map.key_at(2) == Option::Some(3),
+    )
     var none = Script { values: [0; 8], at: 0, entries: 0, taken: 0 }
     assert!(Map<u8, u8, 4>::deserialize(mut none).unwrap().is_empty())
 }
@@ -1120,13 +1269,29 @@ fn maps_read_entries_in_any_order_and_sort_them() {
 fn maps_reject_repeated_keys_and_extra_entries_themselves() {
     // The repeated key is reported where it starts, after the first entry's two values.
     var repeated = Script { values: [3, 30, 3, 31, 0, 0, 0, 0], at: 0, entries: 2, taken: 0 }
-    fails_with(Map<u8, u8, 4>::deserialize(mut repeated), ErrorKind::DuplicateField, 2)
+    fails_with(
+        Map<u8, u8, 4>::deserialize(mut repeated),
+        ErrorKind::DuplicateField,
+        2,
+    )
     var late = Script { values: [1, 10, 2, 20, 1, 11, 0, 0], at: 0, entries: 3, taken: 0 }
-    fails_with(Map<u8, u8, 4>::deserialize(mut late), ErrorKind::DuplicateField, 4)
+    fails_with(
+        Map<u8, u8, 4>::deserialize(mut late),
+        ErrorKind::DuplicateField,
+        4,
+    )
     var crowded = Script { values: [1, 10, 2, 20, 0, 0, 0, 0], at: 0, entries: 2, taken: 0 }
-    fails_with(Map<u8, u8, 1>::deserialize(mut crowded), ErrorKind::CapacityExceeded, 2)
+    fails_with(
+        Map<u8, u8, 1>::deserialize(mut crowded),
+        ErrorKind::CapacityExceeded,
+        2,
+    )
     var wide = Script { values: [300, 1, 0, 0, 0, 0, 0, 0], at: 0, entries: 1, taken: 0 }
-    fails_with(Map<u8, u8, 1>::deserialize(mut wide), ErrorKind::IntegerOutOfRange, 1)
+    fails_with(
+        Map<u8, u8, 1>::deserialize(mut wide),
+        ErrorKind::IntegerOutOfRange,
+        1,
+    )
 }
 
 #[test]
@@ -1136,18 +1301,26 @@ fn decoders_reject_maps_unless_they_opt_in() {
     var state = Frame::new(0)
     fails_with(decoder.next_key(mut state), ErrorKind::Unsupported, 6)
     fails_with(decoder.map_value(mut state), ErrorKind::Unsupported, 6)
-    fails_with(Map<u8, u8, 4>::deserialize(mut decoder), ErrorKind::Unsupported, 6)
+    fails_with(
+        Map<u8, u8, 4>::deserialize(mut decoder),
+        ErrorKind::Unsupported,
+        6,
+    )
 }
 
 #[test]
 fn variant_keys_check_the_form_a_variant_was_written_in() {
     let bare = VariantKey { index: 2, payload: false, offset: 7 }
     let wrapped = VariantKey { index: 3, payload: true, offset: 9 }
-    assert!(bare.expect_unit().is_ok() && wrapped.expect_payload().is_ok())
+    assert!(
+        bare.expect_unit().is_ok() && wrapped.expect_payload().is_ok(),
+    )
     // The wrong form is reported where the variant starts.
     fails_with(wrapped.expect_unit(), ErrorKind::TypeMismatch, 9)
     fails_with(bare.expect_payload(), ErrorKind::TypeMismatch, 7)
-    assert!(bare.unknown().kind == ErrorKind::UnknownVariant && bare.unknown().offset == 7)
+    assert!(
+        bare.unknown().kind == ErrorKind::UnknownVariant && bare.unknown().offset == 7,
+    )
 }
 
 #[test]
@@ -1161,8 +1334,16 @@ fn describers_reject_unions_unless_they_opt_in() {
 #[test]
 fn encoders_reject_payload_variants_unless_they_opt_in() {
     var encoder = Counting { sequence_length: 99 }
-    fails_with(encoder.begin_variant<Marker>(1), ErrorKind::Unsupported, 0)
-    fails_with(encoder.end_variant(Frame::new(1)), ErrorKind::Unsupported, 0)
+    fails_with(
+        encoder.begin_variant<Marker>(1),
+        ErrorKind::Unsupported,
+        0,
+    )
+    fails_with(
+        encoder.end_variant(Frame::new(1)),
+        ErrorKind::Unsupported,
+        0,
+    )
 }
 
 #[test]

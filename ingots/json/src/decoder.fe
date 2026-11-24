@@ -314,7 +314,9 @@ impl<const N: usize> JsonDecoder<N> {
     }
 
     /// A member name. One longer than any schema name can hold is reported as `unknown`.
-    fn member_name(mut self, _ unknown: ErrorKind, _ offset: usize) -> CodecResult<Text<MAX_NAME_BYTES>> {
+    fn member_name(mut self, _ unknown: ErrorKind, _ offset: usize) -> CodecResult<
+        Text<MAX_NAME_BYTES>,
+    > {
         match self.string<MAX_NAME_BYTES>() {
             Result::Ok(name) => Result::Ok(name),
             Result::Err(error) => {
@@ -501,7 +503,11 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
         let offset = self.offset()
         self.value(offset)?
         let (negative, magnitude) = self.wide_integer()?
-        let limit = if negative { MAX_WIDE_SIGNED + 1 } else { MAX_WIDE_SIGNED }
+        let limit = if negative {
+            MAX_WIDE_SIGNED + 1
+        } else {
+            MAX_WIDE_SIGNED
+        }
         if magnitude > limit {
             return Result::Err(CodecError::at(kind: ErrorKind::IntegerOutOfRange, offset))
         }
@@ -542,7 +548,9 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
             }
             let low = self.hex_digit()?
             if output.write((high << 4) | low).is_err() {
-                return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: at))
+                return Result::Err(
+                    CodecError::at(kind: ErrorKind::CapacityExceeded, offset: at),
+                )
             }
         }
     }
@@ -551,7 +559,9 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
         let start = self.offset()
         match exact_bytes(self.read_bytes<M>()?) {
             Option::Some(bytes) => Result::Ok(bytes),
-            Option::None => Result::Err(CodecError::at(kind: ErrorKind::InvalidLength, offset: start)),
+            Option::None => Result::Err(
+                CodecError::at(kind: ErrorKind::InvalidLength, offset: start),
+            ),
         }
     }
 
@@ -619,7 +629,9 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
             }
             index += 1
         }
-        Result::Err(CodecError::at(kind: ErrorKind::UnknownVariant, offset: name_offset))
+        Result::Err(
+            CodecError::at(kind: ErrorKind::UnknownVariant, offset: name_offset),
+        )
     }
 
     /// The wrapper holds one member, so only its end may follow the payload.

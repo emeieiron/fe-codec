@@ -68,19 +68,12 @@ impl Eq for TokenKind {
 }
 
 /// A token: its kind and the byte range `start..end` (end exclusive) of its text.
-pub struct Token {
-    pub kind: TokenKind,
-    pub start: usize,
-    pub end: usize,
-}
+pub struct Token { pub kind: TokenKind, pub start: usize, pub end: usize }
 
 impl Copy for Token {}
 
 /// A lexed source: its bytes and its tokens, which cover every byte in order.
-pub struct Lexed {
-    pub source: MemBuffer,
-    pub tokens: MemVec<Token>,
-}
+pub struct Lexed { pub source: MemBuffer, pub tokens: MemVec<Token> }
 
 fn at(_ source: ref MemBuffer, _ index: usize) -> u8 {
     if index < source.len() {
@@ -161,23 +154,17 @@ fn int_end(_ source: ref MemBuffer, _ start: usize) -> usize {
             while i < len && (source[i] == b'0' || source[i] == b'1') {
                 i += 1
             }
-            if i > start + 2 {
-                return i
-            }
+            if i > start + 2 { return i }
         } else if next == b'o' || next == b'O' {
             while i < len && source[i] >= b'0' && source[i] <= b'7' {
                 i += 1
             }
-            if i > start + 2 {
-                return i
-            }
+            if i > start + 2 { return i }
         } else if next == b'x' || next == b'X' {
             while i < len && is_hex(source[i]) {
                 i += 1
             }
-            if i > start + 2 {
-                return i
-            }
+            if i > start + 2 { return i }
         }
     }
     var i = start
@@ -195,11 +182,31 @@ fn int_end(_ source: ref MemBuffer, _ start: usize) -> usize {
 }
 
 fn is_single_punct(_ b: u8) -> bool {
-    b == b'(' || b == b')' || b == b'{' || b == b'}' || b == b'[' || b == b']'
-        || b == b':' || b == b';' || b == b'.' || b == b',' || b == b'#'
-        || b == b'+' || b == b'-' || b == b'*' || b == b'/' || b == b'%'
-        || b == b'~' || b == b'!' || b == b'?' || b == b'^' || b == b'&'
-        || b == b'|' || b == b'<' || b == b'>' || b == b'='
+    b == b'('
+        || b == b')'
+        || b == b'{'
+        || b == b'}'
+        || b == b'['
+        || b == b']'
+        || b == b':'
+        || b == b';'
+        || b == b'.'
+        || b == b','
+        || b == b'#'
+        || b == b'+'
+        || b == b'-'
+        || b == b'*'
+        || b == b'/'
+        || b == b'%'
+        || b == b'~'
+        || b == b'!'
+        || b == b'?'
+        || b == b'^'
+        || b == b'&'
+        || b == b'|'
+        || b == b'<'
+        || b == b'>'
+        || b == b'='
 }
 
 /// Where the token starting at `start` ends, and its kind.
@@ -232,7 +239,9 @@ fn scan(_ source: ref MemBuffer, _ start: usize) -> (TokenKind, usize) {
     }
     if b == b'b' && next == b'\'' {
         match byte_literal_end(source, start) {
-            Option::Some(end) => return (TokenKind::Byte, end),
+            Option::Some(end) => {
+                return (TokenKind::Byte, end)
+            },
             Option::None => {},
         }
     }
@@ -247,8 +256,12 @@ fn scan(_ source: ref MemBuffer, _ start: usize) -> (TokenKind, usize) {
     }
     if b == b'"' {
         match string_end(source, start) {
-            Option::Some(end) => return (TokenKind::Str, end),
-            Option::None => return (TokenKind::Unknown, i),
+            Option::Some(end) => {
+                return (TokenKind::Str, end)
+            },
+            Option::None => {
+                return (TokenKind::Unknown, i)
+            },
         }
     }
     if b == b':' && next == b':' {
@@ -263,8 +276,11 @@ fn scan(_ source: ref MemBuffer, _ start: usize) -> (TokenKind, usize) {
     if b == b'.' && next == b'.' {
         return (TokenKind::DotDot, start + 2)
     }
-    if (b == b'*' && next == b'*') || (b == b'&' && next == b'&') || (b == b'|' && next == b'|')
-        || (b == b'=' && next == b'=') || (b == b'!' && next == b'=') {
+    if (b == b'*' && next == b'*')
+        || (b == b'&' && next == b'&')
+        || (b == b'|' && next == b'|')
+        || (b == b'=' && next == b'=')
+        || (b == b'!' && next == b'=') {
         return (TokenKind::Punct2, start + 2)
     }
     if is_single_punct(b) {
@@ -297,7 +313,9 @@ impl Lexed {
 
     /// The text of `token`, as a new buffer.
     pub fn text(self, _ token: Token) -> MemBuffer {
-        MemBuffer::from_span(self.source.slice(offset: token.start, len: token.end - token.start))
+        MemBuffer::from_span(
+            self.source.slice(offset: token.start, len: token.end - token.start),
+        )
     }
 
     /// Whether the text of `token` is exactly `word`.
@@ -415,8 +433,7 @@ impl Lexed {
         var i = first
         while i <= last && i < self.tokens.len() {
             let token = self.tokens[i]
-            if token.kind.is_comment() {
-            } else if token.kind.is_space() {
+            if token.kind.is_comment() {} else if token.kind.is_space() {
                 if out.len() > 0 {
                     pending = true
                 }
@@ -439,14 +456,44 @@ impl Lexed {
 
 /// Whether `word` is one of fe-parser's keyword tokens, which cannot be used as a name.
 pub fn is_keyword(_ word: MemSpan) -> bool {
-    word == "as" || word == "true" || word == "false" || word == "break" || word == "uses"
-        || word == "continue" || word == "contract" || word == "msg" || word == "fn"
-        || word == "mod" || word == "const" || word == "static_assert" || word == "if"
-        || word == "else" || word == "match" || word == "for" || word == "in"
-        || word == "where" || word == "while" || word == "loop" || word == "pub"
-        || word == "return" || word == "yield" || word == "self" || word == "Self"
-        || word == "struct" || word == "enum" || word == "trait" || word == "impl"
-        || word == "type" || word == "let" || word == "var" || word == "mut" || word == "ref"
-        || word == "own" || word == "use" || word == "extern" || word == "unsafe"
-        || word == "ingot" || word == "super"
+    word == "as"
+        || word == "true"
+        || word == "false"
+        || word == "break"
+        || word == "uses"
+        || word == "continue"
+        || word == "contract"
+        || word == "msg"
+        || word == "fn"
+        || word == "mod"
+        || word == "const"
+        || word == "static_assert"
+        || word == "if"
+        || word == "else"
+        || word == "match"
+        || word == "for"
+        || word == "in"
+        || word == "where"
+        || word == "while"
+        || word == "loop"
+        || word == "pub"
+        || word == "return"
+        || word == "yield"
+        || word == "self"
+        || word == "Self"
+        || word == "struct"
+        || word == "enum"
+        || word == "trait"
+        || word == "impl"
+        || word == "type"
+        || word == "let"
+        || word == "var"
+        || word == "mut"
+        || word == "ref"
+        || word == "own"
+        || word == "use"
+        || word == "extern"
+        || word == "unsafe"
+        || word == "ingot"
+        || word == "super"
 }

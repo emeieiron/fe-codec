@@ -239,7 +239,10 @@ pub enum Shape {
     Empty,
     Point(u64),
     Pair(u64, Text<8>),
-    Circle { pub radius: u64, pub label: Option<Text<8>> },
+    Circle {
+        pub radius: u64,
+        pub label: Option<Text<8>>,
+    },
 }
 
 impl Copy for Shape {}
@@ -284,7 +287,10 @@ pub enum Event {
 /// element, and an empty one. A variant of one such record.
 #[serializable]
 pub enum Layout {
-    Row { pub cells: [Recipient; 2], pub flags: [bool; 0] },
+    Row {
+        pub cells: [Recipient; 2],
+        pub flags: [bool; 0],
+    },
     Cell(Recipient),
 }
 
@@ -302,7 +308,10 @@ pub enum Parts {
 #[codec_skip_unknown]
 pub enum Tolerant {
     Gone,
-    Account { pub owner: u64, pub balance: u64 },
+    Account {
+        pub owner: u64,
+        pub balance: u64,
+    },
     Ping {},
     Plain(u64),
 }

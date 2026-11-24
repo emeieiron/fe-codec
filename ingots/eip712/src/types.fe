@@ -44,7 +44,13 @@ const UINT8: u256 = word_of("uint8")
 
 /// A struct type: its name, where its definition lies in the arena, the types it references
 /// directly (one bit per entry index), and its type hash.
-pub struct Entry { pub name: SchemaName, pub start: usize, pub len: usize, pub refs: u32, pub hash: u256 }
+pub struct Entry {
+    pub name: SchemaName,
+    pub start: usize,
+    pub len: usize,
+    pub refs: u32,
+    pub hash: u256,
+}
 impl Copy for Entry {}
 
 /// A record whose definition is being written: where it starts in the work buffer, the
@@ -221,9 +227,14 @@ impl TypeTable {
     fn copy_definition(mut self, _ index: usize, _ at: usize) -> CodecResult<usize> {
         let entry = self.entries[index]
         if at + entry.len > WORK_BYTES {
-            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: at))
+            return Result::Err(
+                CodecError::at(kind: ErrorKind::CapacityExceeded, offset: at),
+            )
         }
-        self.work.copy_from(dest_offset: at, self.arena.slice(offset: entry.start, len: entry.len))
+        self.work.copy_from(
+                dest_offset: at,
+                self.arena.slice(offset: entry.start, len: entry.len),
+            )
         Result::Ok(at + entry.len)
     }
 
@@ -242,7 +253,9 @@ impl TypeTable {
             }
         }
         if self.work_top + size > WORK_BYTES {
-            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: self.work_top))
+            return Result::Err(
+                CodecError::at(kind: ErrorKind::CapacityExceeded, offset: self.work_top),
+            )
         }
         self.work.write_word(offset: self.work_top, value: piece)
         self.work_top += size
@@ -266,7 +279,9 @@ impl TypeTable {
             digits = (digits >> 8) | ((b'0' as u256 + ((rest % 10) as u256)) << 248)
             count += 1
             rest /= 10
-            if rest == 0 || count == 32 { break }
+            if rest == 0 || count == 32 {
+                break
+            }
         }
         self.put_word(digits, count)
     }
@@ -295,7 +310,10 @@ impl TypeTable {
     fn close_member(mut self) -> CodecResult<()> {
         if let Option::Some(name) = self.open[self.depth - 1].pending {
             if name.len() < 32 {
-                return self.put_word(((b' ' as u256) << 248) | (name.packed() >> 8), name.len() + 1)
+                return self.put_word(
+                    ((b' ' as u256) << 248) | (name.packed() >> 8),
+                    name.len() + 1,
+                )
             }
             self.put(b' ')?
             self.put_name(name)?
@@ -433,7 +451,9 @@ impl Describer for TypeTable {
             return Result::Err(self.reject())
         }
         if self.depth == MAX_TYPES {
-            return Result::Err(CodecError::at(kind: ErrorKind::DepthLimit, offset: self.work_top))
+            return Result::Err(
+                CodecError::at(kind: ErrorKind::DepthLimit, offset: self.work_top),
+            )
         }
         // The struct's name is the type of the field that holds it.
         if self.depth > 0 {
@@ -495,13 +515,27 @@ impl Describer for TypeTable {
             },
             Option::None => {
                 if self.count == MAX_TYPES {
-                    return Result::Err(CodecError::at(kind: ErrorKind::CollectionLimit, offset: 0))
+                    return Result::Err(
+                        CodecError::at(kind: ErrorKind::CollectionLimit, offset: 0),
+                    )
                 }
                 if self.arena_top + len > ARENA_BYTES {
-                    return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: self.arena_top))
+                    return Result::Err(
+                        CodecError::at(kind: ErrorKind::CapacityExceeded, offset: self.arena_top),
+                    )
                 }
-                self.arena.copy_from(dest_offset: self.arena_top, self.work.slice(offset: open.start, len: len))
-                self.entries[self.count] = Entry { name, start: self.arena_top, len, refs: open.refs, hash: 0 }
+                self.arena
+                    .copy_from(
+                        dest_offset: self.arena_top,
+                        self.work.slice(offset: open.start, len: len),
+                    )
+                self.entries[self.count] = Entry {
+                    name,
+                    start: self.arena_top,
+                    len,
+                    refs: open.refs,
+                    hash: 0,
+                }
                 self.arena_top += len
                 self.count += 1
                 self.count - 1

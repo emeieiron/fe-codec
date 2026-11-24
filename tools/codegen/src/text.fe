@@ -21,9 +21,7 @@ pub fn contains<const N: usize>(_ text: ref MemBuffer, _ needle: [u8; N]) -> boo
         while i < N && text[start + i] == needle[i] {
             i += 1
         }
-        if i == N {
-            return true
-        }
+        if i == N { return true }
         start += 1
     }
     false
@@ -94,9 +92,7 @@ pub fn is_utf8(_ bytes: ref MemBuffer) -> bool {
             var high: u8 = 0xBF
             if b == 0xE0 {
                 low = 0xA0
-            } else if b == 0xED {
-                high = 0x9F
-            }
+            } else if b == 0xED { high = 0x9F }
             if b1 < low || b1 > high || !is_cont(bytes[i + 2]) {
                 return false
             }
@@ -110,9 +106,7 @@ pub fn is_utf8(_ bytes: ref MemBuffer) -> bool {
             var high: u8 = 0xBF
             if b == 0xF0 {
                 low = 0x90
-            } else if b == 0xF4 {
-                high = 0x8F
-            }
+            } else if b == 0xF4 { high = 0x8F }
             if b1 < low || b1 > high || !is_cont(bytes[i + 2]) || !is_cont(bytes[i + 3]) {
                 return false
             }

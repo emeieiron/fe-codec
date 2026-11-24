@@ -88,7 +88,9 @@ fn input<const N: usize>(_ text: HostText) -> CodecResult<BoundedBuffer<N>> {
     let bytes = owned(text)
     match BoundedBuffer<N>::from_span(bytes.span()) {
         Result::Ok(buffer) => Result::Ok(buffer),
-        Result::Err(_) => Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: N)),
+        Result::Err(_) => Result::Err(
+            CodecError::at(kind: ErrorKind::CapacityExceeded, offset: N),
+        ),
     }
 }
 
@@ -96,7 +98,9 @@ fn input<const N: usize>(_ text: HostText) -> CodecResult<BoundedBuffer<N>> {
 /// with `eip712` the EIP-712 module. Sends the module and replies 0, or sends the first error
 /// as `src/models.fe:line:column: error: message` and replies 1.
 #[unsafe(export)]
-pub fn generate_module(_ models: HostText, _ eip712: bool) -> Reply uses (log: mut Log) {
+pub fn generate_module(_ models: HostText, _ eip712: bool) -> Reply
+uses (log: mut Log)
+{
     var modules = MemVec<MemBuffer>::new()
     modules.push(format!("models"))
     var texts = MemVec<MemBuffer>::new()
@@ -107,7 +111,9 @@ pub fn generate_module(_ models: HostText, _ eip712: bool) -> Reply uses (log: m
             Reply::ok(0)
         },
         Result::Err(error) => {
-            send(diagnostic(format!("src/models.fe"), texts[error.source], error))
+            send(
+                diagnostic(format!("src/models.fe"), texts[error.source], error),
+            )
             Reply::ok(1)
         },
     }

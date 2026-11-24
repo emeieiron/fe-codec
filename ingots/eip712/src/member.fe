@@ -160,7 +160,10 @@ impl<T: Eip712Member + Copy, const N: usize> Eip712Member for List<T, N> {
         var buffer = MemBuffer::new(if length == 0 { 32 } else { length * 32 })
         var index: usize = 0
         while index < length {
-            buffer.write_word(offset: index * 32, value: self.get(index).unwrap().member())
+            buffer.write_word(
+                    offset: index * 32,
+                    value: self.get(index).unwrap().member(),
+                )
             index += 1
         }
         keccak256(buffer.slice(offset: 0, len: length * 32))

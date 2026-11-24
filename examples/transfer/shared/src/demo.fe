@@ -111,20 +111,25 @@ fn text_hash<const N: usize>(_ text: Text<N>) -> u256 {
 }
 
 fn person_hash(_ person: Person) -> u256 {
-    keccak_words([PERSON_TYPEHASH, text_hash(person.name), person.wallet.word()])
+    keccak_words(
+        [PERSON_TYPEHASH, text_hash(person.name), person.wallet.word()],
+    )
 }
 
 /// The same digest written by hand, the way a contract would without Fe Codec: constant
 /// type hashes, std's four-field domain, and each member encoded explicitly.
 pub fn manual_mail_signing_hash() -> CodecResult<u256> {
     let mail = reference_mail()?
-    let struct_hash = keccak_words([MAIL_TYPEHASH, person_hash(mail.from), person_hash(mail.to), text_hash(mail.contents)])
+    let struct_hash = keccak_words(
+        [MAIL_TYPEHASH, person_hash(mail.from), person_hash(mail.to), text_hash(mail.contents)],
+    )
     let separator = std::evm::eip712::domain_separator(
         name_hash: core::keccak("Ether Mail"),
         version_hash: core::keccak("1"),
         chain_id: 1,
         verifying_contract: Address::new(VERIFIER),
     )
-    Result::Ok(std::evm::eip712::digest(domain_separator: separator, struct_hash))
+    Result::Ok(
+        std::evm::eip712::digest(domain_separator: separator, struct_hash),
+    )
 }
-

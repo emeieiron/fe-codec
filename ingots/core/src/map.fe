@@ -94,9 +94,7 @@ impl<const N: usize> MapKey for Text<N> {
         while index < self.len() {
             let a = self.byte_at(index).unwrap()
             let b = other.byte_at(index).unwrap()
-            if a != b {
-                return a < b
-            }
+            if a != b { return a < b }
             index += 1
         }
         false
@@ -200,7 +198,9 @@ impl<K: MapKey, V: Copy, const N: usize> Map<K, V, N> {
             return Result::Ok(old)
         }
         if self.length == N {
-            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: N))
+            return Result::Err(
+                CodecError::at(kind: ErrorKind::CapacityExceeded, offset: N),
+            )
         }
         var index = self.length
         while index > at {

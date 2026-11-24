@@ -8,7 +8,9 @@ use std::env::Args
 use std::fs::Fs
 use std::io::{Stderr, Stdout}
 
-fn run(_ options: ref Options) -> Result<MemBuffer, ()> uses (out: mut Stdout, fs: mut Fs) {
+fn run(_ options: ref Options) -> Result<MemBuffer, ()>
+uses (out: mut Stdout, fs: mut Fs)
+{
     var modules = MemVec<MemBuffer>::new()
     var parent = MemBuffer::new(0)
     var i: usize = 0
@@ -19,7 +21,11 @@ fn run(_ options: ref Options) -> Result<MemBuffer, ()> uses (out: mut Stdout, f
         if i == 0 {
             parent = copy(dir)
         } else if !same(parent, dir) {
-            return Result::Err(format!("error: every --source must be in the same ingot's src directory"))
+            return Result::Err(
+                format!(
+                    "error: every --source must be in the same ingot's src directory",
+                ),
+            )
         }
         var m: usize = 0
         while m < modules.len() {
@@ -43,7 +49,11 @@ fn run(_ options: ref Options) -> Result<MemBuffer, ()> uses (out: mut Stdout, f
                 m += 1
             }
             if !same(parent, source_dir(path)?) || taken {
-                return Result::Err(format!("error: the output must be a different module beside the sources"))
+                return Result::Err(
+                    format!(
+                        "error: the output must be a different module beside the sources",
+                    ),
+                )
             }
         },
         Option::None => {},
@@ -55,10 +65,14 @@ fn run(_ options: ref Options) -> Result<MemBuffer, ()> uses (out: mut Stdout, f
         let path = ref options.sources[i]
         let bytes = match fs.read(path) {
             Result::Ok(bytes) => bytes,
-            Result::Err(error) => return Result::Err(at_path(path, error)),
+            Result::Err(error) => {
+                return Result::Err(at_path(path, error))
+            },
         }
         if !is_utf8(bytes) {
-            return Result::Err(format!(path, ": error: stream did not contain valid UTF-8"))
+            return Result::Err(
+                format!(path, ": error: stream did not contain valid UTF-8"),
+            )
         }
         texts.push(bytes)
         i += 1
@@ -66,12 +80,16 @@ fn run(_ options: ref Options) -> Result<MemBuffer, ()> uses (out: mut Stdout, f
     let output = match generate(modules, texts, options.eip712) {
         Result::Ok(output) => output,
         Result::Err(error) => {
-            return Result::Err(diagnostic(options.sources[error.source], texts[error.source], error))
+            return Result::Err(
+                diagnostic(options.sources[error.source], texts[error.source], error),
+            )
         },
     }
     if options.stdout {
         if !out.write_stdout(output.span()) {
-            return Result::Err(format!("cannot write generated source: failed writing to stdout"))
+            return Result::Err(
+                format!("cannot write generated source: failed writing to stdout"),
+            )
         }
         Result::Ok(())
     } else {
@@ -82,7 +100,9 @@ fn run(_ options: ref Options) -> Result<MemBuffer, ()> uses (out: mut Stdout, f
     }
 }
 
-pub fn main() -> i32 uses (out: mut Stdout, err: mut Stderr, args: Args, fs: mut Fs) {
+pub fn main() -> i32
+uses (out: mut Stdout, err: mut Stderr, args: Args, fs: mut Fs)
+{
     let options = match parse_args() {
         Result::Ok(options) => options,
         Result::Err(exit) => {

@@ -20,9 +20,11 @@ impl FieldKey {
 
     /// Decodes this field's value into `slot`. Fails with `DuplicateField` when `slot`
     /// already holds a value, and names this field in any error from the value.
-    pub fn read<T: Deserialize, D: Decoder>(self, _ decoder: mut D, _ slot: mut Option<T>) -> CodecResult<
-        (),
-    > {
+    pub fn read<T: Deserialize, D: Decoder>(
+        self,
+        _ decoder: mut D,
+        _ slot: mut Option<T>,
+    ) -> CodecResult<()> {
         if slot.is_some() {
             return Result::Err(self.duplicate())
         }
@@ -66,7 +68,9 @@ impl FieldKey {
         }
         let present = match decoder.read_some() {
             Result::Ok(present) => present,
-            Result::Err(error) => return Result::Err(error.in_field(self.name)),
+            Result::Err(error) => {
+                return Result::Err(error.in_field(self.name))
+            },
         }
         if !present {
             slot = Option::Some(Option::None)
@@ -110,7 +114,9 @@ impl VariantKey {
     /// none, so the wrapper is the wrong form.
     pub fn expect_unit(self) -> CodecResult<()> {
         if self.payload {
-            return Result::Err(CodecError::at(kind: ErrorKind::TypeMismatch, offset: self.offset))
+            return Result::Err(
+                CodecError::at(kind: ErrorKind::TypeMismatch, offset: self.offset),
+            )
         }
         Result::Ok(())
     }
@@ -119,7 +125,9 @@ impl VariantKey {
     /// one, so the bare form is the wrong one.
     pub fn expect_payload(self) -> CodecResult<()> {
         if !self.payload {
-            return Result::Err(CodecError::at(kind: ErrorKind::TypeMismatch, offset: self.offset))
+            return Result::Err(
+                CodecError::at(kind: ErrorKind::TypeMismatch, offset: self.offset),
+            )
         }
         Result::Ok(())
     }

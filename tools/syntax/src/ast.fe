@@ -3,24 +3,15 @@ use core::{MemBuffer, MemVec, Option}
 use ingot::lexer::{Lexed, TokenKind}
 
 /// A syntax error: the byte offset where it was found and a short message.
-pub struct SyntaxError {
-    pub offset: usize,
-    pub message: MemBuffer,
-}
+pub struct SyntaxError { pub offset: usize, pub message: MemBuffer }
 
 /// An inclusive range of token indices.
-pub struct Span {
-    pub first: usize,
-    pub last: usize,
-}
+pub struct Span { pub first: usize, pub last: usize }
 
 impl Copy for Span {}
 
 /// A range `start..start + len` of one of the `File` arenas.
-pub struct Run {
-    pub start: usize,
-    pub len: usize,
-}
+pub struct Run { pub start: usize, pub len: usize }
 
 impl Copy for Run {}
 
@@ -48,19 +39,13 @@ pub struct Item {
 impl Copy for Item {}
 
 /// A `use` item: the tokens of its use tree.
-pub struct UseItem {
-    pub tree: Span,
-}
+pub struct UseItem { pub tree: Span }
 
 impl Copy for UseItem {}
 
 /// `pub`, `pub(restriction)` and `unsafe` in front of an item, field or variant.
 /// `vis` spans the tokens after `pub(` up to and including `)`.
-pub struct Modifiers {
-    pub is_pub: bool,
-    pub vis: Option<Span>,
-    pub is_unsafe: bool,
-}
+pub struct Modifiers { pub is_pub: bool, pub vis: Option<Span>, pub is_unsafe: bool }
 
 impl Copy for Modifiers {}
 
@@ -101,10 +86,7 @@ pub struct EnumItem {
 impl Copy for EnumItem {}
 
 /// `impl Trait for Type`: the trait reference tokens and the type node (see `File::types`).
-pub struct ImplItem {
-    pub trait_ref: Span,
-    pub ty: usize,
-}
+pub struct ImplItem { pub trait_ref: Span, pub ty: usize }
 
 impl Copy for ImplItem {}
 
@@ -297,7 +279,9 @@ impl File {
         let node = self.types[ty]
         match node.kind {
             TypeKind::Path => {},
-            _ => return Option::None,
+            _ => {
+                return Option::None
+            },
         }
         if node.parent_args {
             return Option::None
@@ -319,7 +303,9 @@ impl File {
                         j += 1
                     }
                 },
-                Option::None => return Option::None,
+                Option::None => {
+                    return Option::None
+                },
             }
             i += 1
         }

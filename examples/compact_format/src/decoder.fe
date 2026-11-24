@@ -33,7 +33,9 @@ impl<const N: usize> CompactDecoder<N> {
     pub fn finish(self) -> CodecResult<()> {
         self.structure.finish(self.offset())?
         if self.input.remaining() != 0 {
-            return Result::Err(CodecError::at(kind: ErrorKind::TrailingData, offset: self.offset()))
+            return Result::Err(
+                CodecError::at(kind: ErrorKind::TrailingData, offset: self.offset()),
+            )
         }
         Result::Ok(())
     }
@@ -57,7 +59,8 @@ impl<const N: usize> CompactDecoder<N> {
         let raw = self.fixed(width)?
         let bits = (width * 8) as u256
         if bits < 256 && (raw >> (bits - 1)) != 0 {
-            let extended = raw | (0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff << bits)
+            let extended = raw
+                | (0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff << bits)
             return Result::Ok(extended.downcast_truncate())
         }
         Result::Ok(raw.downcast_truncate())

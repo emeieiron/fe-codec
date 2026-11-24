@@ -9,7 +9,51 @@ use ingot::store::store
 use ingot::temperature::Celsius
 
 const ORDER_JSON: [u8; 119] = "{\"id\":7,\"buyer\":\"0xd8da6bf26964af9d7eed9e03e53415d37aa96045\",\"total\":1000000000000000000,\"status\":\"Paid\",\"note\":\"gift\"}"
-const ORDER_CBOR: [u8; 43] = [0xa5, 0x01, 0x07, 0x02, 0x54, 0xd8, 0xda, 0x6b, 0xf2, 0x69, 0x64, 0xaf, 0x9d, 0x7e, 0xed, 0x9e, 0x03, 0xe5, 0x34, 0x15, 0xd3, 0x7a, 0xa9, 0x60, 0x45, 0x03, 0x1b, 0x0d, 0xe0, 0xb6, 0xb3, 0xa7, 0x64, 0x00, 0x00, 0x04, 0x01, 0x05, 0x64, 0x67, 0x69, 0x66, 0x74]
+const ORDER_CBOR: [u8; 43] = [
+    0xa5,
+    0x01,
+    0x07,
+    0x02,
+    0x54,
+    0xd8,
+    0xda,
+    0x6b,
+    0xf2,
+    0x69,
+    0x64,
+    0xaf,
+    0x9d,
+    0x7e,
+    0xed,
+    0x9e,
+    0x03,
+    0xe5,
+    0x34,
+    0x15,
+    0xd3,
+    0x7a,
+    0xa9,
+    0x60,
+    0x45,
+    0x03,
+    0x1b,
+    0x0d,
+    0xe0,
+    0xb6,
+    0xb3,
+    0xa7,
+    0x64,
+    0x00,
+    0x00,
+    0x04,
+    0x01,
+    0x05,
+    0x64,
+    0x67,
+    0x69,
+    0x66,
+    0x74,
+]
 
 fn order() -> CodecResult<Order> {
     Result::Ok(
@@ -30,7 +74,8 @@ fn encode_and_decode() -> CodecResult<bool> {
     let bytes: BoundedBuffer<192> = fe_codec_json::encode(order)?
     let back: Order = fe_codec_json::decode(bytes)?
     Result::Ok(
-        bytes.equals(BoundedBuffer<119>::from_array(ORDER_JSON)) && back.id == 7
+        bytes.equals(BoundedBuffer<119>::from_array(ORDER_JSON))
+            && back.id == 7
             && back.total == 1000000000000000000,
     )
 }
@@ -59,7 +104,9 @@ fn example_3_uses_a_custom_serializer() {
     let json = fe_codec_json::encode<Reading, 32>(reading).unwrap()
     let expected: [u8; 28] = "{\"at\":1,\"temperature\":\"21C\"}"
     assert!(json.equals(BoundedBuffer<28>::from_array(expected)))
-    let back = fe_codec_cbor::decode<Reading, 32>(fe_codec_cbor::encode<Reading, 32>(reading).unwrap())
+    let back = fe_codec_cbor::decode<Reading, 32>(
+        fe_codec_cbor::encode<Reading, 32>(reading).unwrap(),
+    )
     assert!(back.unwrap().temperature.degrees == 21)
 }
 
@@ -69,9 +116,13 @@ fn example_5_reports_typed_errors_with_field_names() {
     let input: [u8; 25] = "{\"id\":7,\"status\":\"Later\"}"
     match fe_codec_json::decode<Order, 25>(BoundedBuffer<25>::from_array(input)) {
         Result::Err(error) => {
-            assert!(error.kind == ErrorKind::UnknownVariant && error.offset == 17)
+            assert!(
+                error.kind == ErrorKind::UnknownVariant && error.offset == 17,
+            )
             let name: [u8; 6] = "status"
-            assert!(error.field().unwrap().as_bytes().equals(BoundedBuffer<6>::from_array(name)))
+            assert!(
+                error.field().unwrap().as_bytes().equals(BoundedBuffer<6>::from_array(name)),
+            )
         },
         Result::Ok(_) => assert!(false),
     }
@@ -80,7 +131,9 @@ fn example_5_reports_typed_errors_with_field_names() {
         Result::Err(error) => {
             assert!(error.kind == ErrorKind::MissingField && error.offset == 8)
             let name: [u8; 5] = "buyer"
-            assert!(error.field().unwrap().as_bytes().equals(BoundedBuffer<5>::from_array(name)))
+            assert!(
+                error.field().unwrap().as_bytes().equals(BoundedBuffer<5>::from_array(name)),
+            )
         },
         Result::Ok(_) => assert!(false),
     }

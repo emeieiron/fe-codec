@@ -3,7 +3,17 @@
 //! syntax error. `tests/parser_vs_fe.py` compares its errors with `fe check`'s.
 use core::{MemBuffer, Option, Result}
 use fe_syntax::{
-    ArgKind, File, FieldsKind, GenericKind, ItemKind, Modifiers, Run, Span, TypeKind, VariantKind, lex,
+    ArgKind,
+    File,
+    FieldsKind,
+    GenericKind,
+    ItemKind,
+    Modifiers,
+    Run,
+    Span,
+    TypeKind,
+    VariantKind,
+    lex,
     parse,
 }
 use std::env::Args
@@ -155,7 +165,11 @@ fn put_shape(_ out: mut MemBuffer, _ file: ref File, _ ty: usize) {
                                     },
                                     ArgKind::Const => {
                                         put(mut out, "const:")
-                                        put_literal(mut out, file, Span { first: arg.first, last: arg.last })
+                                        put_literal(
+                                            mut out,
+                                            file,
+                                            Span { first: arg.first, last: arg.last },
+                                        )
                                     },
                                     ArgKind::Other => out.push(b'x'),
                                 }
@@ -172,9 +186,7 @@ fn put_shape(_ out: mut MemBuffer, _ file: ref File, _ ty: usize) {
             put(mut out, "tuple(")
             var i: usize = 0
             while i < node.elems.len {
-                if i > 0 {
-                    out.push(b';')
-                }
+                if i > 0 { out.push(b';') }
                 put_shape(mut out, file, file.elems[node.elems.start + i])
                 i += 1
             }
@@ -354,7 +366,9 @@ fn dump_file(_ out: mut MemBuffer, _ file: ref File) {
     }
 }
 
-pub fn main() -> i32 uses (out: mut Stdout, err: mut Stderr, args: Args, fs: mut Fs) {
+pub fn main() -> i32
+uses (out: mut Stdout, err: mut Stderr, args: Args, fs: mut Fs)
+{
     var index: usize = 1
     var status: i32 = 0
     while index < args.count() {

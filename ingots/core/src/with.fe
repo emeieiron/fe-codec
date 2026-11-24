@@ -22,9 +22,10 @@ pub trait FieldCodec<T> {
 /// Writes an optional field through `C`: `None` as the format's absent value, and a present
 /// value as `write_some` followed by `C`'s serializer. Generated code calls it for
 /// `#[codec_with]` fields of type `Option<T>`.
-pub fn serialize_optional_with<C: FieldCodec<T>, T, E: Encoder>(_ value: Option<T>, _ encoder: mut E) -> CodecResult<
-    (),
-> {
+pub fn serialize_optional_with<C: FieldCodec<T>, T, E: Encoder>(
+    _ value: Option<T>,
+    _ encoder: mut E,
+) -> CodecResult<()> {
     match value {
         Option::Some(ref inner) => {
             encoder.write_some()?
@@ -35,7 +36,9 @@ pub fn serialize_optional_with<C: FieldCodec<T>, T, E: Encoder>(_ value: Option<
 }
 
 /// Describes an optional field through `C`: an option around `C`'s description of `T`.
-pub fn describe_optional_with<C: FieldCodec<T>, T, V: Describer>(_ describer: mut V) -> CodecResult<()> {
+pub fn describe_optional_with<C: FieldCodec<T>, T, V: Describer>(_ describer: mut V) -> CodecResult<
+    (),
+> {
     describer.begin_option()?
     <C as FieldCodec<T>>::describe(mut describer)?
     describer.end_option()

@@ -119,7 +119,9 @@ impl<const N: usize> TypedDataJsonEncoder<N> {
         self.byte(b'"')
     }
 
-    pub(ingot) fn quoted_hex<const M: usize>(mut self, _ value: BoundedBuffer<M>) -> CodecResult<()> {
+    pub(ingot) fn quoted_hex<const M: usize>(mut self, _ value: BoundedBuffer<M>) -> CodecResult<
+        (),
+    > {
         self.literal<3>("\"0x")?
         var index: usize = 0
         while index < value.len() {
@@ -220,11 +222,15 @@ impl<const N: usize> Encoder for TypedDataJsonEncoder<N> {
     }
 
     fn write_none(mut self) -> CodecResult<()> {
-        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: self.offset()))
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.offset()),
+        )
     }
 
     fn write_some(mut self) -> CodecResult<()> {
-        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: self.offset()))
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.offset()),
+        )
     }
 
     fn write_variant<V: Schema>(mut self, _ index: usize) -> CodecResult<()> {
@@ -256,9 +262,7 @@ impl<const N: usize> Encoder for TypedDataJsonEncoder<N> {
         let first = record.taken() == 0
         record.key(field.id, offset)?
         self.structure.member(offset)?
-        if !first {
-            self.byte(b',')?
-        }
+        if !first { self.byte(b',')? }
         self.quoted_name(field.name)?
         self.byte(b':')
     }
@@ -276,9 +280,7 @@ impl<const N: usize> Encoder for TypedDataJsonEncoder<N> {
         let first = sequence.taken() == 0
         sequence.take(offset)?
         self.structure.member(offset)?
-        if !first {
-            self.byte(b',')?
-        }
+        if !first { self.byte(b',')? }
         Result::Ok(())
     }
 
@@ -352,9 +354,7 @@ fn member<const N: usize, const A: usize, const B: usize>(
     _ name: [u8; A],
     _ ty: [u8; B],
 ) -> CodecResult<()> {
-    if !first {
-        out.byte(b',')?
-    }
+    if !first { out.byte(b',')? }
     first = false
     out.literal<9>("{\"name\":\"")?
     out.literal(name)?
@@ -365,7 +365,11 @@ fn member<const N: usize, const A: usize, const B: usize>(
 
 /// `,"Name":[{"name":..,"type":..},...]`, read back from the type's definition
 /// `Name(type name,type name)`.
-fn write_type<const N: usize>(_ out: mut TypedDataJsonEncoder<N>, _ table: TypeTable, _ index: usize) -> CodecResult<()> {
+fn write_type<const N: usize>(
+    _ out: mut TypedDataJsonEncoder<N>,
+    _ table: TypeTable,
+    _ index: usize,
+) -> CodecResult<()> {
     let entry = table.entry(index)
     out.byte(b',')?
     out.quoted_name(entry.name)?
@@ -374,9 +378,7 @@ fn write_type<const N: usize>(_ out: mut TypedDataJsonEncoder<N>, _ table: TypeT
     let end = entry.start + entry.len - 1
     var first = true
     while at < end {
-        if !first {
-            out.byte(b',')?
-        }
+        if !first { out.byte(b',')? }
         first = false
         // The type runs to the space, the name to the comma or the closing parenthesis.
         var type_end = at
@@ -406,7 +408,10 @@ fn write_type<const N: usize>(_ out: mut TypedDataJsonEncoder<N>, _ table: TypeT
 }
 
 /// `"domain":{...}` with the domain's set fields.
-pub(ingot) fn write_domain<const N: usize>(_ out: mut TypedDataJsonEncoder<N>, _ domain: Domain) -> CodecResult<()> {
+pub(ingot) fn write_domain<const N: usize>(
+    _ out: mut TypedDataJsonEncoder<N>,
+    _ domain: Domain,
+) -> CodecResult<()> {
     out.literal<10>("\"domain\":{")?
     var first = true
     // A wallet shows the name and version, so a domain set only by hashes has no request.
@@ -414,7 +419,9 @@ pub(ingot) fn write_domain<const N: usize>(_ out: mut TypedDataJsonEncoder<N>, _
         let name = match domain.name_text {
             Option::Some(name) => name,
             Option::None => {
-                return Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: out.offset()))
+                return Result::Err(
+                    CodecError::at(kind: ErrorKind::Unsupported, offset: out.offset()),
+                )
             },
         }
         key(mut out, mut first, "name")?
@@ -424,7 +431,9 @@ pub(ingot) fn write_domain<const N: usize>(_ out: mut TypedDataJsonEncoder<N>, _
         let version = match domain.version_text {
             Option::Some(version) => version,
             Option::None => {
-                return Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: out.offset()))
+                return Result::Err(
+                    CodecError::at(kind: ErrorKind::Unsupported, offset: out.offset()),
+                )
             },
         }
         key(mut out, mut first, "version")?
@@ -445,10 +454,12 @@ pub(ingot) fn write_domain<const N: usize>(_ out: mut TypedDataJsonEncoder<N>, _
     out.byte(b'}')
 }
 
-fn key<const N: usize, const A: usize>(_ out: mut TypedDataJsonEncoder<N>, _ first: mut bool, _ name: [u8; A]) -> CodecResult<()> {
-    if !first {
-        out.byte(b',')?
-    }
+fn key<const N: usize, const A: usize>(
+    _ out: mut TypedDataJsonEncoder<N>,
+    _ first: mut bool,
+    _ name: [u8; A],
+) -> CodecResult<()> {
+    if !first { out.byte(b',')? }
     first = false
     out.byte(b'"')?
     out.literal(name)?

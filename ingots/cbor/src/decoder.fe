@@ -194,8 +194,12 @@ impl<const N: usize> CborDecoder<N> {
         }
         match self.compare_keys(previous, previous_end, key, key_end) {
             KeyOrder::Ascending => Result::Ok(()),
-            KeyOrder::Equal => Result::Err(CodecError::at(kind: ErrorKind::DuplicateField, offset: key)),
-            KeyOrder::Descending => Result::Err(CodecError::at(kind: ErrorKind::NonCanonical, offset: key)),
+            KeyOrder::Equal => Result::Err(
+                CodecError::at(kind: ErrorKind::DuplicateField, offset: key),
+            ),
+            KeyOrder::Descending => Result::Err(
+                CodecError::at(kind: ErrorKind::NonCanonical, offset: key),
+            ),
         }
     }
 
@@ -338,7 +342,9 @@ impl<const N: usize> Decoder for CborDecoder<N> {
         let start = self.offset()
         match exact_bytes(self.read_bytes<M>()?) {
             Option::Some(bytes) => Result::Ok(bytes),
-            Option::None => Result::Err(CodecError::at(kind: ErrorKind::InvalidLength, offset: start)),
+            Option::None => Result::Err(
+                CodecError::at(kind: ErrorKind::InvalidLength, offset: start),
+            ),
         }
     }
 
@@ -402,7 +408,9 @@ impl<const N: usize> Decoder for CborDecoder<N> {
             }
             index += 1
         }
-        Result::Err(CodecError::at(kind: ErrorKind::UnknownVariant, offset: id_offset))
+        Result::Err(
+            CodecError::at(kind: ErrorKind::UnknownVariant, offset: id_offset),
+        )
     }
 
     /// The wrapper's one entry is the payload, so nothing follows it.
@@ -586,7 +594,13 @@ impl<const N: usize> Decoder for CborDecoder<N> {
     /// a key out of order `NonCanonical`, both at the key.
     fn map_value(mut self, _ map: mut Sequence) -> CodecResult<()> {
         let key_end = self.offset()
-        self.check_key_order(map.frame.taken() == 1, map.previous, map.previous_end, map.key, key_end)?
+        self.check_key_order(
+            map.frame.taken() == 1,
+            map.previous,
+            map.previous_end,
+            map.key,
+            key_end,
+        )?
         map.previous = map.key
         map.previous_end = key_end
         self.structure.member(key_end)

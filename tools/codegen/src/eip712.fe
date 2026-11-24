@@ -7,28 +7,31 @@ use core::{MemBuffer, MemVec, Option, Result}
 use fe_syntax::{ArgKind, File, Span}
 use ingot::render::{header, imports}
 use ingot::schema::{
-    Diagnostic, Model, Output, Payload, Program, TyKind, array_elem, array_len, arg_run, arg_ty, list_element,
-    ty_kind, ty_name,
+    Diagnostic,
+    Model,
+    Output,
+    Payload,
+    Program,
+    TyKind,
+    array_elem,
+    array_len,
+    arg_run,
+    arg_ty,
+    list_element,
+    ty_kind,
+    ty_name,
 }
 use ingot::text::{copy, is_text, part, same}
 
 /// A struct's `Name(type name,...)` text and the structs its members name, directly, sorted.
-struct Definition {
-    model: usize,
-    text: MemBuffer,
-    dependencies: MemVec<MemBuffer>,
-}
+struct Definition { model: usize, text: MemBuffer, dependencies: MemVec<MemBuffer> }
 
 /// Byte-wise lexicographic comparison: -1, 0 or 1.
 fn compare(_ a: ref MemBuffer, _ b: ref MemBuffer) -> i32 {
     var i: usize = 0
     while i < a.len() && i < b.len() {
-        if a[i] < b[i] {
-            return -1
-        }
-        if a[i] > b[i] {
-            return 1
-        }
+        if a[i] < b[i] { return -1 }
+        if a[i] > b[i] { return 1 }
         i += 1
     }
     if a.len() < b.len() {
@@ -45,12 +48,8 @@ fn insert(_ set: mut MemVec<MemBuffer>, _ name: ref MemBuffer) -> bool {
     var at: usize = 0
     while at < set.len() {
         let order = compare(set[at], name)
-        if order == 0 {
-            return false
-        }
-        if order > 0 {
-            break
-        }
+        if order == 0 { return false }
+        if order > 0 { break }
         at += 1
     }
     set.push(copy(name))
@@ -73,7 +72,9 @@ fn contains(_ set: ref MemVec<MemBuffer>, _ name: ref MemBuffer) -> bool {
     false
 }
 
-fn find_model(_ program: ref Program, _ output: ref Output, _ name: ref MemBuffer) -> Option<usize> {
+fn find_model(_ program: ref Program, _ output: ref Output, _ name: ref MemBuffer) -> Option<
+    usize,
+> {
     var i: usize = 0
     while i < output.models.len() {
         let model = output.models[i]
@@ -85,7 +86,12 @@ fn find_model(_ program: ref Program, _ output: ref Output, _ name: ref MemBuffe
     Option::None
 }
 
-fn find_definition(_ structs: ref MemVec<Definition>, _ name: ref MemBuffer, _ program: ref Program, _ output: ref Output) -> Option<usize> {
+fn find_definition(
+    _ structs: ref MemVec<Definition>,
+    _ name: ref MemBuffer,
+    _ program: ref Program,
+    _ output: ref Output,
+) -> Option<usize> {
     var i: usize = 0
     while i < structs.len() {
         let model = output.models[structs[i].model]
@@ -104,7 +110,12 @@ fn integer(_ name: ref MemBuffer) -> Option<MemBuffer> {
         return Option::None
     }
     let bits = part(name, 1, name.len())
-    if !(bits == "8" || bits == "16" || bits == "32" || bits == "64" || bits == "128" || bits == "256") {
+    if !(bits == "8"
+        || bits == "16"
+        || bits == "32"
+        || bits == "64"
+        || bits == "128"
+        || bits == "256") {
         return Option::None
     }
     if name[0] == b'u' {
@@ -126,10 +137,19 @@ fn eip712_type(
     let file = ref program.files[model.source]
     match ty_kind(file, ty) {
         TyKind::Array => {
-            let element = eip712_type(program, output, model, array_elem(file, ty), mut dependencies, mut enums)?
+            let element = eip712_type(
+                program,
+                output,
+                model,
+                array_elem(file, ty),
+                mut dependencies,
+                mut enums,
+            )?
             match array_len(file, ty) {
                 Option::Some(length) => Result::Ok(format!(element, "[", length, "]")),
-                Option::None => Result::Err(format!("EIP-712 array lengths must be integer literals")),
+                Option::None => Result::Err(
+                    format!("EIP-712 array lengths must be integer literals"),
+                ),
             }
         },
         TyKind::Path => {
@@ -148,24 +168,28 @@ fn eip712_type(
                         match variant.payload {
                             Payload::Unit => {},
                             _ => {
-                                return Result::Err(format!(
-                                    "enum '",
-                                    name,
-                                    "' has variant '",
-                                    target_file.token_text(variant.name),
-                                    "' with a payload, and EIP-712 has no union types",
-                                ))
+                                return Result::Err(
+                                    format!(
+                                        "enum '",
+                                        name,
+                                        "' has variant '",
+                                        target_file.token_text(variant.name),
+                                        "' with a payload, and EIP-712 has no union types",
+                                    ),
+                                )
                             },
                         }
                         if variant.id > 255 {
-                            return Result::Err(format!(
-                                "enum '",
-                                name,
-                                "' is a uint8 in EIP-712, but variant '",
-                                target_file.token_text(variant.name),
-                                "' has ID ",
-                                variant.id,
-                            ))
+                            return Result::Err(
+                                format!(
+                                    "enum '",
+                                    name,
+                                    "' is a uint8 in EIP-712, but variant '",
+                                    target_file.token_text(variant.name),
+                                    "' has ID ",
+                                    variant.id,
+                                ),
+                            )
                         }
                         v += 1
                     }
@@ -187,14 +211,25 @@ fn eip712_type(
             if last == "List" {
                 return match list_element(file, ty) {
                     Option::Some(element) => {
-                        let inner = eip712_type(program, output, model, element, mut dependencies, mut enums)?
+                        let inner = eip712_type(
+                            program,
+                            output,
+                            model,
+                            element,
+                            mut dependencies,
+                            mut enums,
+                        )?
                         Result::Ok(format!(inner, "[]"))
                     },
-                    Option::None => Result::Err(format!("List<T, N> is T[] in EIP-712, so T must be a type")),
+                    Option::None => Result::Err(
+                        format!("List<T, N> is T[] in EIP-712, so T must be a type"),
+                    ),
                 }
             }
             match integer(last) {
-                Option::Some(integer) => return Result::Ok(integer),
+                Option::Some(integer) => {
+                    return Result::Ok(integer)
+                },
                 Option::None => {},
             }
             if last == "bool" {
@@ -210,7 +245,8 @@ fn eip712_type(
                 if arg_run(file, ty).len > 0 {
                     let arg = file.args[arg_run(file, ty).start]
                     match arg.kind {
-                        ArgKind::Const => length = file.literal_u64(Span { first: arg.first, last: arg.last }),
+                        ArgKind::Const => length = file
+                            .literal_u64(Span { first: arg.first, last: arg.last }),
                         _ => {},
                     }
                 }
@@ -222,17 +258,23 @@ fn eip712_type(
                     },
                     Option::None => {},
                 }
-                Result::Err(format!("PackedBytes<N> is bytesN in EIP-712, so N must be a literal from 1 to 32"))
+                Result::Err(
+                    format!(
+                        "PackedBytes<N> is bytesN in EIP-712, so N must be a literal from 1 to 32",
+                    ),
+                )
             } else if last == "Option" {
                 Result::Err(format!("EIP-712 has no optional types"))
             } else if last == "Map" {
                 Result::Err(format!("EIP-712 has no map types"))
             } else {
-                Result::Err(format!(
-                    "the generator cannot see type '",
-                    name,
-                    "'; pass its module with --source, or hash it with the generic path",
-                ))
+                Result::Err(
+                    format!(
+                        "the generator cannot see type '",
+                        name,
+                        "'; pass its module with --source, or hash it with the generic path",
+                    ),
+                )
             }
         },
         TyKind::Tuple | TyKind::Other => Result::Err(format!("this type has no EIP-712 form")),
@@ -266,7 +308,11 @@ fn define(
         )
     }
     if name == "EIP712Domain" {
-        return error(model, model.offset, format!("EIP712Domain is reserved for the domain"))
+        return error(
+            model,
+            model.offset,
+            format!("EIP712Domain is reserved for the domain"),
+        )
     }
     var dependencies = MemVec<MemBuffer>::new()
     var text = format!(name, "(")
@@ -284,15 +330,24 @@ fn define(
                 ),
             )
         }
-        match eip712_type(program, output, model, field.ty, mut dependencies, mut enums) {
+        match eip712_type(
+            program,
+            output,
+            model,
+            field.ty,
+            mut dependencies,
+            mut enums,
+        ) {
             Result::Ok(ty) => {
-                if f > 0 {
-                    text.push(b',')
-                }
+                if f > 0 { text.push(b',') }
                 write!(mut text, ty, " ", file.token_text(field.name))
             },
             Result::Err(message) => {
-                return error(model, field.offset, format!("field '", file.token_text(field.name), "': ", message))
+                return error(
+                    model,
+                    field.offset,
+                    format!("field '", file.token_text(field.name), "': ", message),
+                )
             },
         }
         f += 1
@@ -355,7 +410,9 @@ pub fn render(_ program: ref Program, _ output: ref Output) -> Result<Diagnostic
         m += 1
     }
     if roots.len() == 0 {
-        return Result::Err(Diagnostic { source: 0, offset: 0, message: format!("no #[eip712] struct found") })
+        return Result::Err(
+            Diagnostic { source: 0, offset: 0, message: format!("no #[eip712] struct found") },
+        )
     }
 
     // Every struct and enum the roots reach, with each struct's members and direct struct
@@ -366,7 +423,13 @@ pub fn render(_ program: ref Program, _ output: ref Output) -> Result<Diagnostic
     while pending.len() > 0 {
         let index = pending.pop().unwrap()
         let model = output.models[index]
-        if find_definition(structs, program.files[model.source].token_text(model.name), program, output).is_some() {
+        if find_definition(
+            structs,
+            program.files[model.source].token_text(model.name),
+            program,
+            output,
+        )
+            .is_some() {
             continue
         }
         let definition = define(program, output, index, mut enums)?
@@ -390,10 +453,23 @@ pub fn render(_ program: ref Program, _ output: ref Output) -> Result<Diagnostic
         let name = file.token_text(model.name)
         match find_definition(structs, name, program, output) {
             Option::Some(at) => {
-                write!(mut out, "\nimpl fe_codec_eip712::Eip712Struct for ", name, " {\n")
-                write!(mut out, "    const TYPE_HASH: u256 = core::keccak(\"", encode_type(program, output, structs, at), "\")\n")
+                write!(
+                    mut out,
+                    "\nimpl fe_codec_eip712::Eip712Struct for ",
+                    name,
+                    " {\n",
+                )
+                write!(
+                    mut out,
+                    "    const TYPE_HASH: u256 = core::keccak(\"",
+                    encode_type(program, output, structs, at),
+                    "\")\n",
+                )
                 write!(mut out, "\n    fn hash_struct(self) -> u256 {\n")
-                write!(mut out, "        std::evm::crypto::keccak_words([\n            Self::TYPE_HASH,\n")
+                write!(
+                    mut out,
+                    "        std::evm::crypto::keccak_words([\n            Self::TYPE_HASH,\n",
+                )
                 var f: usize = 0
                 while f < model.members.len {
                     let field = output.fields[model.members.start + f]
@@ -408,7 +484,12 @@ pub fn render(_ program: ref Program, _ output: ref Output) -> Result<Diagnostic
                     f += 1
                 }
                 write!(mut out, "        ])\n    }\n}\n")
-                write!(mut out, "\nimpl fe_codec_eip712::Eip712Member for ", name, " {\n")
+                write!(
+                    mut out,
+                    "\nimpl fe_codec_eip712::Eip712Member for ",
+                    name,
+                    " {\n",
+                )
                 write!(
                     mut out,
                     "    fn member(self) -> u256 {\n        <Self as fe_codec_eip712::Eip712Struct>::hash_struct(self)\n    }\n}\n",
@@ -416,12 +497,29 @@ pub fn render(_ program: ref Program, _ output: ref Output) -> Result<Diagnostic
             },
             Option::None => {
                 if contains(enums, name) {
-                    write!(mut out, "\nimpl fe_codec_eip712::Eip712Member for ", name, " {\n")
-                    write!(mut out, "    fn member(self) -> u256 {\n        match self {\n")
+                    write!(
+                        mut out,
+                        "\nimpl fe_codec_eip712::Eip712Member for ",
+                        name,
+                        " {\n",
+                    )
+                    write!(
+                        mut out,
+                        "    fn member(self) -> u256 {\n        match self {\n",
+                    )
                     var v: usize = 0
                     while v < model.members.len {
                         let variant = output.variants[model.members.start + v]
-                        write!(mut out, "            ", name, "::", file.token_text(variant.name), " => ", variant.id, ",\n")
+                        write!(
+                            mut out,
+                            "            ",
+                            name,
+                            "::",
+                            file.token_text(variant.name),
+                            " => ",
+                            variant.id,
+                            ",\n",
+                        )
                         v += 1
                     }
                     write!(mut out, "        }\n    }\n}\n")

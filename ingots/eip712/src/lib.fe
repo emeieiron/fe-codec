@@ -75,9 +75,15 @@ impl Eip712 {
 
     /// `keccak256("\x19\x01" ‖ domainSeparator ‖ hashStruct(message))`, the digest a wallet
     /// signs and a contract passes to `ecrecover`.
-    pub fn signing_hash<T: Serialize + Describe>(self, _ domain: Domain, _ message: T) -> CodecResult<u256> {
+    pub fn signing_hash<T: Serialize + Describe>(
+        self,
+        _ domain: Domain,
+        _ message: T,
+    ) -> CodecResult<u256> {
         let struct_hash = self.hash_struct(message)?
-        Result::Ok(std::evm::eip712::digest(domain_separator: domain.separator(), struct_hash))
+        Result::Ok(
+            std::evm::eip712::digest(domain_separator: domain.separator(), struct_hash),
+        )
     }
 
     /// The `eth_signTypedData_v4` request for `message` in `domain`, as compact JSON.
@@ -119,8 +125,9 @@ pub fn signing_hash<T: Serialize + Describe>(_ domain: Domain, _ message: T) -> 
     Eip712::new().signing_hash(domain, message)
 }
 
-pub fn typed_data_json<T: Serialize + Describe, const N: usize>(_ domain: Domain, _ message: T) -> CodecResult<
-    BoundedBuffer<N>,
-> {
+pub fn typed_data_json<T: Serialize + Describe, const N: usize>(
+    _ domain: Domain,
+    _ message: T,
+) -> CodecResult<BoundedBuffer<N>> {
     Eip712::new().typed_data_json<T, N>(domain, message)
 }

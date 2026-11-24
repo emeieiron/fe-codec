@@ -23,7 +23,16 @@ use fe_codec_json::Json
 use codec_compact::Compact
 use std::abi::Sol
 use std::evm::Address
-use ingot::conformance::{I128_MIN, I256_MIN, U128_MAX, U256_MAX, conformance, emoji, label, sample_wallet}
+use ingot::conformance::{
+    I128_MIN,
+    I256_MIN,
+    U128_MAX,
+    U256_MAX,
+    conformance,
+    emoji,
+    label,
+    sample_wallet,
+}
 use ingot::custom::{Broken, Celsius, Disordered, Point, Short}
 use ingot::demo::verify_formats
 use ingot::testkit::{decodes, encodes, expect_error, expect_field, hi, must}
@@ -98,9 +107,160 @@ const BATCH_CBOR: [u8; 42] = [
 ]
 
 const WIDE_JSON: [u8; 269] = "{\"big\":115792089237316195423570985008687907853269984665640564039457584007913129639935,\"signed\":-57896044618658097711785492504343953926634992332820282019728792003956564819968,\"mid\":340282366920938463463374607431768211455,\"small\":-170141183460469231731687303715884105728}"
-const WIDE_CBOR: [u8; 111] = [0xa4, 0x01, 0xc2, 0x58, 0x20, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0xc3, 0x58, 0x20, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x03, 0xc2, 0x50, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x04, 0xc3, 0x50, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]
+const WIDE_CBOR: [u8; 111] = [
+    0xa4,
+    0x01,
+    0xc2,
+    0x58,
+    0x20,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0x02,
+    0xc3,
+    0x58,
+    0x20,
+    0x7f,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0x03,
+    0xc2,
+    0x50,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0x04,
+    0xc3,
+    0x50,
+    0x7f,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+]
 const WALLET_JSON: [u8; 107] = "{\"owner\":\"0xd8da6bf26964af9d7eed9e03e53415d37aa96045\",\"hash\":\"0xdeadbeef\",\"memo\":\"0x010203\",\"tag\":\"0x0001\"}"
-const WALLET_CBOR: [u8; 38] = [0xa4, 0x01, 0x54, 0xd8, 0xda, 0x6b, 0xf2, 0x69, 0x64, 0xaf, 0x9d, 0x7e, 0xed, 0x9e, 0x03, 0xe5, 0x34, 0x15, 0xd3, 0x7a, 0xa9, 0x60, 0x45, 0x02, 0x44, 0xde, 0xad, 0xbe, 0xef, 0x03, 0x43, 0x01, 0x02, 0x03, 0x04, 0x42, 0x00, 0x01]
+const WALLET_CBOR: [u8; 38] = [
+    0xa4,
+    0x01,
+    0x54,
+    0xd8,
+    0xda,
+    0x6b,
+    0xf2,
+    0x69,
+    0x64,
+    0xaf,
+    0x9d,
+    0x7e,
+    0xed,
+    0x9e,
+    0x03,
+    0xe5,
+    0x34,
+    0x15,
+    0xd3,
+    0x7a,
+    0xa9,
+    0x60,
+    0x45,
+    0x02,
+    0x44,
+    0xde,
+    0xad,
+    0xbe,
+    0xef,
+    0x03,
+    0x43,
+    0x01,
+    0x02,
+    0x03,
+    0x04,
+    0x42,
+    0x00,
+    0x01,
+]
 const PAGE_JSON: [u8; 30] = "{\"items\":[1,2,65535],\"next\":7}"
 const PAGE_CBOR: [u8; 10] = [0xa2, 0x01, 0x83, 0x01, 0x02, 0x19, 0xff, 0xff, 0x02, 0x07]
 const SLOTS_JSON: [u8; 23] = "{\"values\":[1,null,255]}"
@@ -112,12 +272,86 @@ const PAIRS_CBOR: [u8; 5] = [0xa2, 0x01, 0x02, 0x03, 0x04]
 const TUPLE_JSON: [u8; 8] = "[7,\"hi\"]"
 const TUPLE_CBOR: [u8; 5] = [0x82, 0x07, 0x62, 0x68, 0x69]
 const WAYPOINT_JSON: [u8; 112] = "{\"at\":[7,\"hi\"],\"bounds\":[[-1,2],[3,-4]],\"legs\":[[1,true],[2,false]],\"next\":[300,18446744073709551615],\"tag\":[5]}"
-const WAYPOINT_CBOR: [u8; 40] = [0xa5, 0x01, 0x82, 0x07, 0x62, 0x68, 0x69, 0x02, 0x82, 0x82, 0x20, 0x02, 0x82, 0x03, 0x23, 0x03, 0x82, 0x82, 0x01, 0xf5, 0x82, 0x02, 0xf4, 0x04, 0x82, 0x19, 0x01, 0x2c, 0x1b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x05, 0x81, 0x05]
+const WAYPOINT_CBOR: [u8; 40] = [
+    0xa5,
+    0x01,
+    0x82,
+    0x07,
+    0x62,
+    0x68,
+    0x69,
+    0x02,
+    0x82,
+    0x82,
+    0x20,
+    0x02,
+    0x82,
+    0x03,
+    0x23,
+    0x03,
+    0x82,
+    0x82,
+    0x01,
+    0xf5,
+    0x82,
+    0x02,
+    0xf4,
+    0x04,
+    0x82,
+    0x19,
+    0x01,
+    0x2c,
+    0x1b,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0x05,
+    0x81,
+    0x05,
+]
 const WAYPOINT_NO_NEXT_JSON: [u8; 78] = "{\"at\":[7,\"hi\"],\"bounds\":[[-1,2],[3,-4]],\"legs\":[[1,true],[2,false]],\"tag\":[5]}"
-const WAYPOINT_NO_NEXT_CBOR: [u8; 26] = [0xa4, 0x01, 0x82, 0x07, 0x62, 0x68, 0x69, 0x02, 0x82, 0x82, 0x20, 0x02, 0x82, 0x03, 0x23, 0x03, 0x82, 0x82, 0x01, 0xf5, 0x82, 0x02, 0xf4, 0x05, 0x81, 0x05]
+const WAYPOINT_NO_NEXT_CBOR: [u8; 26] = [
+    0xa4,
+    0x01,
+    0x82,
+    0x07,
+    0x62,
+    0x68,
+    0x69,
+    0x02,
+    0x82,
+    0x82,
+    0x20,
+    0x02,
+    0x82,
+    0x03,
+    0x23,
+    0x03,
+    0x82,
+    0x82,
+    0x01,
+    0xf5,
+    0x82,
+    0x02,
+    0xf4,
+    0x05,
+    0x81,
+    0x05,
+]
 
 fn waypoint(_ next: Option<(u16, u64)>) -> Waypoint {
-    Waypoint { at: (7, hi()), bounds: ((-1, 2), (3, -4)), legs: [(1, true), (2, false)], next, tag: (5,) }
+    Waypoint {
+        at: (7, hi()),
+        bounds: ((-1, 2), (3, -4)),
+        legs: [(1, true), (2, false)],
+        next,
+        tag: (5,),
+    }
 }
 
 fn check_waypoint(_ value: Waypoint, _ next: Option<(u16, u64)>) {
@@ -173,7 +407,11 @@ fn vector<T: Serialize + Deserialize + Eq, F: Format, const M: usize>(
 }
 
 /// Text `value` encodes as `expected` and decodes back to the same bytes.
-fn text_vector<F: Format, const N: usize, const M: usize>(_ format: F, _ value: [u8; N], _ expected: [u8; M]) -> bool {
+fn text_vector<F: Format, const N: usize, const M: usize>(
+    _ format: F,
+    _ value: [u8; N],
+    _ expected: [u8; M],
+) -> bool {
     let text = must(Text<8>::from_array(value))
     if !encodes(format, text, expected) {
         return false
@@ -223,13 +461,21 @@ fn schemas_list_fields_by_ascending_id() {
     assert!(validate_schema<Booking>())
     let first = StableTransfer::field(0).unwrap()
     let second = StableTransfer::field(1).unwrap()
-    assert!(first.id == 2 && second.id == 9 && StableTransfer::field(2).is_none())
+    assert!(
+        first.id == 2 && second.id == 9 && StableTransfer::field(2).is_none(),
+    )
     let name: [u8; 6] = "status"
-    assert!(first.name.as_bytes().equals(BoundedBuffer<6>::from_array(name)))
+    assert!(
+        first.name.as_bytes().equals(BoundedBuffer<6>::from_array(name)),
+    )
     assert!(Sample::field(1).unwrap().optional)
     // A codec does not change a field's schema: the field is still optional, with its own ID.
-    assert!(Payment::field(2).unwrap().optional && Payment::field(2).unwrap().id == 3)
-    assert!(!Payment::field(1).unwrap().optional && Booking::field(1).unwrap().optional)
+    assert!(
+        Payment::field(2).unwrap().optional && Payment::field(2).unwrap().id == 3,
+    )
+    assert!(
+        !Payment::field(1).unwrap().optional && Booking::field(1).unwrap().optional,
+    )
     assert!(StableStatus::variant(0).unwrap().id == 62)
 }
 
@@ -245,15 +491,49 @@ fn json_matches_golden_and_decodes_every_field() {
 #[test]
 fn json_writes_wide_integers_bytes_and_composed_types() {
     let json = Json::new()
-    assert!(encodes(json, Wide { big: U256_MAX, signed: I256_MIN, mid: U128_MAX, small: I128_MIN }, WIDE_JSON))
+    assert!(
+        encodes(
+            json,
+            Wide { big: U256_MAX, signed: I256_MIN, mid: U128_MAX, small: I128_MIN },
+            WIDE_JSON,
+        ),
+    )
     let wide = must(decodes<Wide, Json, 269>(json, WIDE_JSON))
-    assert!(wide.big == U256_MAX && wide.signed == I256_MIN && wide.mid == U128_MAX && wide.small == I128_MIN)
+    assert!(
+        wide.big == U256_MAX
+            && wide.signed == I256_MIN
+            && wide.mid == U128_MAX
+            && wide.small == I128_MIN,
+    )
     assert!(encodes(json, sample_wallet(), WALLET_JSON))
-    assert!(must(decodes<Wallet, Json, 107>(json, WALLET_JSON)).owner.word() == 0xd8da6bf26964af9d7eed9e03e53415d37aa96045)
-    assert!(encodes(json, Page<u16, 3> { items: [1, 2, 65535], next: Option::Some(7) }, PAGE_JSON))
-    assert!(encodes(json, Slots { values: [Option::Some(1), Option::None, Option::Some(255)] }, SLOTS_JSON))
-    assert!(encodes(json, Reading { at: 5, temperature: Celsius { tenths: -125 } }, READING_JSON))
-    assert!(must(decodes<Reading, Json, 30>(json, READING_JSON)).temperature.tenths == -125)
+    assert!(
+        must(decodes<Wallet, Json, 107>(json, WALLET_JSON)).owner.word()
+            == 0xd8da6bf26964af9d7eed9e03e53415d37aa96045,
+    )
+    assert!(
+        encodes(
+            json,
+            Page<u16, 3> { items: [1, 2, 65535], next: Option::Some(7) },
+            PAGE_JSON,
+        ),
+    )
+    assert!(
+        encodes(
+            json,
+            Slots { values: [Option::Some(1), Option::None, Option::Some(255)] },
+            SLOTS_JSON,
+        ),
+    )
+    assert!(
+        encodes(
+            json,
+            Reading { at: 5, temperature: Celsius { tenths: -125 } },
+            READING_JSON,
+        ),
+    )
+    assert!(
+        must(decodes<Reading, Json, 30>(json, READING_JSON)).temperature.tenths == -125,
+    )
     assert!(encodes(json, Pairs { first: 2, second: 4 }, PAIRS_JSON))
 }
 
@@ -273,48 +553,127 @@ fn json_accepts_reordered_escaped_keys_explicit_null_and_hex_case() {
     let present: [u8; 33] = "{\"value\":255,\"note\":\"\\u0000😀\"}"
     assert!(encodes(Json::new(), decoded, present))
     let upper: [u8; 12] = "\"0xDEADbeef\""
-    assert!(must(decodes<PackedBytes<4>, Json, 12>(Json::new(), upper)).to_array() == [0xde, 0xad, 0xbe, 0xef])
+    assert!(
+        must(decodes<PackedBytes<4>, Json, 12>(Json::new(), upper)).to_array()
+            == [0xde, 0xad, 0xbe, 0xef],
+    )
 }
 
 #[test]
 fn json_reports_bad_syntax_and_numeric_ranges() {
     let limits = Limits::standard()
-    expect_error(json_sample<9>("{\"value\":", limits), ErrorKind::UnexpectedEnd, 9)
-    expect_error(json_sample<11>("{\"value\" 1}", limits), ErrorKind::InvalidSyntax, 9)
-    expect_error(json_sample<12>("{\"value\":01}", limits), ErrorKind::InvalidSyntax, 10)
-    expect_error(json_sample<13>("{\"value\":1.0}", limits), ErrorKind::Unsupported, 10)
-    expect_error(json_sample<13>("{\"value\":1e0}", limits), ErrorKind::Unsupported, 10)
-    expect_error(json_sample<13>("{\"value\":256}", limits), ErrorKind::IntegerOutOfRange, 9)
-    expect_error(json_sample<17>("{\"value\":1} false", limits), ErrorKind::TrailingData, 12)
+    expect_error(
+        json_sample<9>("{\"value\":", limits),
+        ErrorKind::UnexpectedEnd,
+        9,
+    )
+    expect_error(
+        json_sample<11>("{\"value\" 1}", limits),
+        ErrorKind::InvalidSyntax,
+        9,
+    )
+    expect_error(
+        json_sample<12>("{\"value\":01}", limits),
+        ErrorKind::InvalidSyntax,
+        10,
+    )
+    expect_error(
+        json_sample<13>("{\"value\":1.0}", limits),
+        ErrorKind::Unsupported,
+        10,
+    )
+    expect_error(
+        json_sample<13>("{\"value\":1e0}", limits),
+        ErrorKind::Unsupported,
+        10,
+    )
+    expect_error(
+        json_sample<13>("{\"value\":256}", limits),
+        ErrorKind::IntegerOutOfRange,
+        9,
+    )
+    expect_error(
+        json_sample<17>("{\"value\":1} false", limits),
+        ErrorKind::TrailingData,
+        12,
+    )
     let overflow: [u8; 20] = "18446744073709551616"
-    expect_error(decodes<u64, Json, 20>(Json::new(), overflow), ErrorKind::IntegerOutOfRange, 19)
+    expect_error(
+        decodes<u64, Json, 20>(Json::new(), overflow),
+        ErrorKind::IntegerOutOfRange,
+        19,
+    )
 }
 
 #[test]
 fn json_reports_wide_integer_and_byte_string_errors() {
     let json = Json::new()
     let u128_over: [u8; 39] = "340282366920938463463374607431768211456"
-    expect_error(decodes<u128, Json, 39>(json, u128_over), ErrorKind::IntegerOutOfRange, 0)
+    expect_error(
+        decodes<u128, Json, 39>(json, u128_over),
+        ErrorKind::IntegerOutOfRange,
+        0,
+    )
     let u256_over: [u8; 78] = "115792089237316195423570985008687907853269984665640564039457584007913129639936"
-    expect_error(decodes<u256, Json, 78>(json, u256_over), ErrorKind::IntegerOutOfRange, 77)
+    expect_error(
+        decodes<u256, Json, 78>(json, u256_over),
+        ErrorKind::IntegerOutOfRange,
+        77,
+    )
     let i256_under: [u8; 78] = "-57896044618658097711785492504343953926634992332820282019728792003956564819969"
-    expect_error(decodes<i256, Json, 78>(json, i256_under), ErrorKind::IntegerOutOfRange, 0)
+    expect_error(
+        decodes<i256, Json, 78>(json, i256_under),
+        ErrorKind::IntegerOutOfRange,
+        0,
+    )
     let negative: [u8; 2] = "-1"
-    expect_error(decodes<u128, Json, 2>(json, negative), ErrorKind::IntegerOutOfRange, 0)
+    expect_error(
+        decodes<u128, Json, 2>(json, negative),
+        ErrorKind::IntegerOutOfRange,
+        0,
+    )
     let no_prefix: [u8; 6] = "\"0102\""
-    expect_error(decodes<BoundedBuffer<4>, Json, 6>(json, no_prefix), ErrorKind::InvalidSyntax, 2)
+    expect_error(
+        decodes<BoundedBuffer<4>, Json, 6>(json, no_prefix),
+        ErrorKind::InvalidSyntax,
+        2,
+    )
     let capital: [u8; 6] = "\"0X01\""
-    expect_error(decodes<BoundedBuffer<4>, Json, 6>(json, capital), ErrorKind::InvalidSyntax, 2)
+    expect_error(
+        decodes<BoundedBuffer<4>, Json, 6>(json, capital),
+        ErrorKind::InvalidSyntax,
+        2,
+    )
     let odd: [u8; 7] = "\"0x123\""
-    expect_error(decodes<BoundedBuffer<4>, Json, 7>(json, odd), ErrorKind::InvalidSyntax, 6)
+    expect_error(
+        decodes<BoundedBuffer<4>, Json, 7>(json, odd),
+        ErrorKind::InvalidSyntax,
+        6,
+    )
     let not_hex: [u8; 6] = "\"0x0g\""
-    expect_error(decodes<BoundedBuffer<4>, Json, 6>(json, not_hex), ErrorKind::InvalidSyntax, 4)
+    expect_error(
+        decodes<BoundedBuffer<4>, Json, 6>(json, not_hex),
+        ErrorKind::InvalidSyntax,
+        4,
+    )
     let long: [u8; 8] = "\"0x0102\""
-    expect_error(decodes<BoundedBuffer<1>, Json, 8>(json, long), ErrorKind::CapacityExceeded, 5)
+    expect_error(
+        decodes<BoundedBuffer<1>, Json, 8>(json, long),
+        ErrorKind::CapacityExceeded,
+        5,
+    )
     let number: [u8; 2] = "12"
-    expect_error(decodes<BoundedBuffer<1>, Json, 2>(json, number), ErrorKind::TypeMismatch, 0)
+    expect_error(
+        decodes<BoundedBuffer<1>, Json, 2>(json, number),
+        ErrorKind::TypeMismatch,
+        0,
+    )
     let short_hash: [u8; 8] = "\"0x0102\""
-    expect_error(decodes<PackedBytes<4>, Json, 8>(json, short_hash), ErrorKind::InvalidLength, 0)
+    expect_error(
+        decodes<PackedBytes<4>, Json, 8>(json, short_hash),
+        ErrorKind::InvalidLength,
+        0,
+    )
 }
 
 #[test]
@@ -326,14 +685,26 @@ fn json_reports_schema_and_text_errors_with_field_names() {
         11,
         "value",
     )
-    expect_error(json_sample<11>("{\"other\":1}", limits), ErrorKind::UnknownField, 1)
+    expect_error(
+        json_sample<11>("{\"other\":1}", limits),
+        ErrorKind::UnknownField,
+        1,
+    )
     // A key longer than any schema name can hold cannot match a field.
     expect_error(
-        json_sample<50>("{\"value\":1,\"a_key_longer_than_thirty_one_bytes\":1}", limits),
+        json_sample<50>(
+            "{\"value\":1,\"a_key_longer_than_thirty_one_bytes\":1}",
+            limits,
+        ),
         ErrorKind::UnknownField,
         11,
     )
-    expect_field(json_sample<2>("{}", limits), ErrorKind::MissingField, 2, "value")
+    expect_field(
+        json_sample<2>("{}", limits),
+        ErrorKind::MissingField,
+        2,
+        "value",
+    )
     expect_field(
         json_sample<30>("{\"value\":1,\"note\":\"123456789\"}", limits),
         ErrorKind::CapacityExceeded,
@@ -346,11 +717,26 @@ fn json_reports_schema_and_text_errors_with_field_names() {
         19,
         "note",
     )
-    expect_field(json_sample<13>("{\"value\":256}", limits), ErrorKind::IntegerOutOfRange, 9, "value")
+    expect_field(
+        json_sample<13>("{\"value\":256}", limits),
+        ErrorKind::IntegerOutOfRange,
+        9,
+        "value",
+    )
     let reading: [u8; 27] = "{\"at\":5,\"temperature\":\"12\"}"
-    expect_field(decodes<Reading, Json, 27>(Json::new(), reading), ErrorKind::InvalidSyntax, 22, "temperature")
+    expect_field(
+        decodes<Reading, Json, 27>(Json::new(), reading),
+        ErrorKind::InvalidSyntax,
+        22,
+        "temperature",
+    )
     let nested: [u8; 76] = "{\"transfers\":[{\"recipient\":{\"active\":true},\"amount\":1,\"delta\":0,\"hops\":[]}]}"
-    expect_field(decodes<Batch, Json, 76>(Json::new(), nested), ErrorKind::MissingField, 42, "label")
+    expect_field(
+        decodes<Batch, Json, 76>(Json::new(), nested),
+        ErrorKind::MissingField,
+        42,
+        "label",
+    )
 }
 
 #[test]
@@ -362,12 +748,23 @@ fn json_writes_tuples_as_arrays() {
     assert!(decoded.0 == 7 && decoded.1.equals(hi()))
     let full = Option::Some((300, 18446744073709551615))
     assert!(encodes(json, waypoint(full), WAYPOINT_JSON))
-    check_waypoint(must(decodes<Waypoint, Json, 112>(json, WAYPOINT_JSON)), full)
+    check_waypoint(
+        must(decodes<Waypoint, Json, 112>(json, WAYPOINT_JSON)),
+        full,
+    )
     // A `None` tuple is left out like any other optional field, and `null` is also accepted.
-    assert!(encodes(json, waypoint(Option::None), WAYPOINT_NO_NEXT_JSON))
-    check_waypoint(must(decodes<Waypoint, Json, 78>(json, WAYPOINT_NO_NEXT_JSON)), Option::None)
+    assert!(
+        encodes(json, waypoint(Option::None), WAYPOINT_NO_NEXT_JSON),
+    )
+    check_waypoint(
+        must(decodes<Waypoint, Json, 78>(json, WAYPOINT_NO_NEXT_JSON)),
+        Option::None,
+    )
     let null_next: [u8; 90] = "{\"at\":[7,\"hi\"],\"bounds\":[[-1,2],[3,-4]],\"legs\":[[1,true],[2,false]],\"next\":null,\"tag\":[5]}"
-    check_waypoint(must(decodes<Waypoint, Json, 90>(json, null_next)), Option::None)
+    check_waypoint(
+        must(decodes<Waypoint, Json, 90>(json, null_next)),
+        Option::None,
+    )
 }
 
 #[test]
@@ -376,38 +773,91 @@ fn json_writes_tuples_of_every_arity_nested_and_at_the_root() {
     assert!(vector<(u8,), Json, 3>(json, (1,), "[1]"))
     assert!(vector<(u8, u8), Json, 5>(json, (1, 2), "[1,2]"))
     assert!(vector<(u8, u8, u8), Json, 7>(json, (1, 2, 3), "[1,2,3]"))
-    assert!(vector<(u8, u8, u8, u8), Json, 9>(json, (1, 2, 3, 4), "[1,2,3,4]"))
-    assert!(vector<(u8, u8, u8, u8, u8), Json, 11>(json, (1, 2, 3, 4, 5), "[1,2,3,4,5]"))
-    assert!(vector<(u8, u8, u8, u8, u8, u8), Json, 13>(json, (1, 2, 3, 4, 5, 6), "[1,2,3,4,5,6]"))
+    assert!(
+        vector<(u8, u8, u8, u8), Json, 9>(json, (1, 2, 3, 4), "[1,2,3,4]"),
+    )
+    assert!(
+        vector<(u8, u8, u8, u8, u8), Json, 11>(json, (1, 2, 3, 4, 5), "[1,2,3,4,5]"),
+    )
+    assert!(
+        vector<(u8, u8, u8, u8, u8, u8), Json, 13>(json, (1, 2, 3, 4, 5, 6), "[1,2,3,4,5,6]"),
+    )
     // Core implements `Eq` for tuples of up to six elements, so the larger ones are compared by element.
     let seven: (u8, u8, u8, u8, u8, u8, u8) = (1, 2, 3, 4, 5, 6, 7)
     assert!(encodes(json, seven, "[1,2,3,4,5,6,7]"))
-    let back7 = must(decodes<(u8, u8, u8, u8, u8, u8, u8), Json, 15>(json, "[1,2,3,4,5,6,7]"))
+    let back7 = must(
+        decodes<(u8, u8, u8, u8, u8, u8, u8), Json, 15>(json, "[1,2,3,4,5,6,7]"),
+    )
     assert!(back7.0 == 1 && back7.3 == 4 && back7.6 == 7)
     let eight: (u8, u8, u8, u8, u8, u8, u8, u8) = (1, 2, 3, 4, 5, 6, 7, 8)
     assert!(encodes(json, eight, "[1,2,3,4,5,6,7,8]"))
-    let back8 = must(decodes<(u8, u8, u8, u8, u8, u8, u8, u8), Json, 17>(json, "[1,2,3,4,5,6,7,8]"))
+    let back8 = must(
+        decodes<(u8, u8, u8, u8, u8, u8, u8, u8), Json, 17>(json, "[1,2,3,4,5,6,7,8]"),
+    )
     assert!(back8.0 == 1 && back8.4 == 5 && back8.7 == 8)
-    assert!(vector<(bool, i8, u16), Json, 15>(json, (true, -1, 65535), "[true,-1,65535]"))
-    assert!(vector<((u8, u8), (u8,)), Json, 11>(json, ((1, 2), (3,)), "[[1,2],[3]]"))
-    assert!(vector<Option<(u8, u8)>, Json, 5>(json, Option::Some((1, 2)), "[1,2]"))
-    assert!(vector<Option<(u8, u8)>, Json, 4>(json, Option::None, "null"))
-    assert!(vector<[(u8, bool); 2], Json, 20>(json, [(1, true), (2, false)], "[[1,true],[2,false]]"))
+    assert!(
+        vector<(bool, i8, u16), Json, 15>(json, (true, -1, 65535), "[true,-1,65535]"),
+    )
+    assert!(
+        vector<((u8, u8), (u8,)), Json, 11>(json, ((1, 2), (3,)), "[[1,2],[3]]"),
+    )
+    assert!(
+        vector<Option<(u8, u8)>, Json, 5>(json, Option::Some((1, 2)), "[1,2]"),
+    )
+    assert!(
+        vector<Option<(u8, u8)>, Json, 4>(json, Option::None, "null"),
+    )
+    assert!(
+        vector<[(u8, bool); 2], Json, 20>(json, [(1, true), (2, false)], "[[1,true],[2,false]]"),
+    )
 }
 
 #[test]
 fn json_rejects_tuples_of_the_wrong_length_or_shape() {
     let json = Json::new()
-    expect_error(decodes<(u8, u8), Json, 3>(json, "[1]"), ErrorKind::InvalidLength, 2)
-    expect_error(decodes<(u8, u8), Json, 7>(json, "[1,2,3]"), ErrorKind::InvalidLength, 4)
-    expect_error(decodes<(u8, u8), Json, 2>(json, "[]"), ErrorKind::InvalidLength, 1)
-    expect_error(decodes<(u8, u8), Json, 2>(json, "{}"), ErrorKind::TypeMismatch, 0)
-    expect_error(decodes<(u8, u8), Json, 1>(json, "1"), ErrorKind::TypeMismatch, 0)
+    expect_error(
+        decodes<(u8, u8), Json, 3>(json, "[1]"),
+        ErrorKind::InvalidLength,
+        2,
+    )
+    expect_error(
+        decodes<(u8, u8), Json, 7>(json, "[1,2,3]"),
+        ErrorKind::InvalidLength,
+        4,
+    )
+    expect_error(
+        decodes<(u8, u8), Json, 2>(json, "[]"),
+        ErrorKind::InvalidLength,
+        1,
+    )
+    expect_error(
+        decodes<(u8, u8), Json, 2>(json, "{}"),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        decodes<(u8, u8), Json, 1>(json, "1"),
+        ErrorKind::TypeMismatch,
+        0,
+    )
     // An element of the wrong type is reported at the element.
-    expect_error(decodes<(u8, bool), Json, 7>(json, "[1,\"a\"]"), ErrorKind::TypeMismatch, 3)
-    expect_error(decodes<(u8, u8), Json, 7>(json, "[1,256]"), ErrorKind::IntegerOutOfRange, 3)
+    expect_error(
+        decodes<(u8, bool), Json, 7>(json, "[1,\"a\"]"),
+        ErrorKind::TypeMismatch,
+        3,
+    )
+    expect_error(
+        decodes<(u8, u8), Json, 7>(json, "[1,256]"),
+        ErrorKind::IntegerOutOfRange,
+        3,
+    )
     let short: [u8; 85] = "{\"at\":[7],\"bounds\":[[-1,2],[3,-4]],\"legs\":[[1,true],[2,false]],\"next\":null,\"tag\":[5]}"
-    expect_field(decodes<Waypoint, Json, 85>(json, short), ErrorKind::InvalidLength, 8, "at")
+    expect_field(
+        decodes<Waypoint, Json, 85>(json, short),
+        ErrorKind::InvalidLength,
+        8,
+        "at",
+    )
 }
 
 // CBOR.
@@ -421,54 +871,190 @@ fn cbor_writes_tuples_as_arrays() {
     assert!(decoded.0 == 7 && decoded.1.equals(hi()))
     let full = Option::Some((300, 18446744073709551615))
     assert!(encodes(cbor, waypoint(full), WAYPOINT_CBOR))
-    check_waypoint(must(decodes<Waypoint, Cbor, 40>(cbor, WAYPOINT_CBOR)), full)
-    assert!(encodes(cbor, waypoint(Option::None), WAYPOINT_NO_NEXT_CBOR))
-    check_waypoint(must(decodes<Waypoint, Cbor, 26>(cbor, WAYPOINT_NO_NEXT_CBOR)), Option::None)
+    check_waypoint(
+        must(decodes<Waypoint, Cbor, 40>(cbor, WAYPOINT_CBOR)),
+        full,
+    )
+    assert!(
+        encodes(cbor, waypoint(Option::None), WAYPOINT_NO_NEXT_CBOR),
+    )
+    check_waypoint(
+        must(decodes<Waypoint, Cbor, 26>(cbor, WAYPOINT_NO_NEXT_CBOR)),
+        Option::None,
+    )
     let null_next = [
-        0xa5, 0x01, 0x82, 0x07, 0x62, 0x68, 0x69, 0x02, 0x82, 0x82, 0x20, 0x02, 0x82, 0x03, 0x23, 0x03, 0x82, 0x82,
-        0x01, 0xf5, 0x82, 0x02, 0xf4, 0x04, 0xf6, 0x05, 0x81, 0x05,
+        0xa5,
+        0x01,
+        0x82,
+        0x07,
+        0x62,
+        0x68,
+        0x69,
+        0x02,
+        0x82,
+        0x82,
+        0x20,
+        0x02,
+        0x82,
+        0x03,
+        0x23,
+        0x03,
+        0x82,
+        0x82,
+        0x01,
+        0xf5,
+        0x82,
+        0x02,
+        0xf4,
+        0x04,
+        0xf6,
+        0x05,
+        0x81,
+        0x05,
     ]
-    check_waypoint(must(decodes<Waypoint, Cbor, 28>(cbor, null_next)), Option::None)
+    check_waypoint(
+        must(decodes<Waypoint, Cbor, 28>(cbor, null_next)),
+        Option::None,
+    )
 }
 
 #[test]
 fn cbor_writes_tuples_of_every_arity_nested_and_at_the_root() {
     let cbor = Cbor::new()
     assert!(vector<(u8,), Cbor, 2>(cbor, (1,), [0x81, 0x01]))
-    assert!(vector<(u8, u8), Cbor, 3>(cbor, (1, 2), [0x82, 0x01, 0x02]))
-    assert!(vector<(u8, u8, u8), Cbor, 4>(cbor, (1, 2, 3), [0x83, 0x01, 0x02, 0x03]))
-    assert!(vector<(u8, u8, u8, u8), Cbor, 5>(cbor, (1, 2, 3, 4), [0x84, 0x01, 0x02, 0x03, 0x04]))
-    assert!(vector<(u8, u8, u8, u8, u8), Cbor, 6>(cbor, (1, 2, 3, 4, 5), [0x85, 0x01, 0x02, 0x03, 0x04, 0x05]))
-    assert!(vector<(u8, u8, u8, u8, u8, u8), Cbor, 7>(cbor, (1, 2, 3, 4, 5, 6), [0x86, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06]))
+    assert!(
+        vector<(u8, u8), Cbor, 3>(cbor, (1, 2), [0x82, 0x01, 0x02]),
+    )
+    assert!(
+        vector<(u8, u8, u8), Cbor, 4>(cbor, (1, 2, 3), [0x83, 0x01, 0x02, 0x03]),
+    )
+    assert!(
+        vector<(u8, u8, u8, u8), Cbor, 5>(cbor, (1, 2, 3, 4), [0x84, 0x01, 0x02, 0x03, 0x04]),
+    )
+    assert!(
+        vector<(u8, u8, u8, u8, u8), Cbor, 6>(
+            cbor,
+            (1, 2, 3, 4, 5),
+            [0x85, 0x01, 0x02, 0x03, 0x04, 0x05],
+        ),
+    )
+    assert!(
+        vector<(u8, u8, u8, u8, u8, u8), Cbor, 7>(
+            cbor,
+            (1, 2, 3, 4, 5, 6),
+            [0x86, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
+        ),
+    )
     let seven: (u8, u8, u8, u8, u8, u8, u8) = (1, 2, 3, 4, 5, 6, 7)
-    assert!(encodes(cbor, seven, [0x87, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]))
-    let back7 = must(decodes<(u8, u8, u8, u8, u8, u8, u8), Cbor, 8>(cbor, [0x87, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]))
+    assert!(
+        encodes(
+            cbor,
+            seven,
+            [0x87, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07],
+        ),
+    )
+    let back7 = must(
+        decodes<(u8, u8, u8, u8, u8, u8, u8), Cbor, 8>(
+            cbor,
+            [0x87, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07],
+        ),
+    )
     assert!(back7.0 == 1 && back7.3 == 4 && back7.6 == 7)
     let eight: (u8, u8, u8, u8, u8, u8, u8, u8) = (1, 2, 3, 4, 5, 6, 7, 8)
-    assert!(encodes(cbor, eight, [0x88, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]))
-    let back8 = must(decodes<(u8, u8, u8, u8, u8, u8, u8, u8), Cbor, 9>(cbor, [0x88, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]))
+    assert!(
+        encodes(
+            cbor,
+            eight,
+            [0x88, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
+        ),
+    )
+    let back8 = must(
+        decodes<(u8, u8, u8, u8, u8, u8, u8, u8), Cbor, 9>(
+            cbor,
+            [0x88, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
+        ),
+    )
     assert!(back8.0 == 1 && back8.4 == 5 && back8.7 == 8)
-    assert!(vector<(bool, i8, u16), Cbor, 6>(cbor, (true, -1, 65535), [0x83, 0xf5, 0x20, 0x19, 0xff, 0xff]))
-    assert!(vector<((u8, u8), (u8,)), Cbor, 6>(cbor, ((1, 2), (3,)), [0x82, 0x82, 0x01, 0x02, 0x81, 0x03]))
-    assert!(vector<Option<(u8, u8)>, Cbor, 3>(cbor, Option::Some((1, 2)), [0x82, 0x01, 0x02]))
-    assert!(vector<Option<(u8, u8)>, Cbor, 1>(cbor, Option::None, [0xf6]))
-    assert!(vector<[(u8, bool); 2], Cbor, 7>(cbor, [(1, true), (2, false)], [0x82, 0x82, 0x01, 0xf5, 0x82, 0x02, 0xf4]))
+    assert!(
+        vector<(bool, i8, u16), Cbor, 6>(
+            cbor,
+            (true, -1, 65535),
+            [0x83, 0xf5, 0x20, 0x19, 0xff, 0xff],
+        ),
+    )
+    assert!(
+        vector<((u8, u8), (u8,)), Cbor, 6>(
+            cbor,
+            ((1, 2), (3,)),
+            [0x82, 0x82, 0x01, 0x02, 0x81, 0x03],
+        ),
+    )
+    assert!(
+        vector<Option<(u8, u8)>, Cbor, 3>(cbor, Option::Some((1, 2)), [0x82, 0x01, 0x02]),
+    )
+    assert!(
+        vector<Option<(u8, u8)>, Cbor, 1>(cbor, Option::None, [0xf6]),
+    )
+    assert!(
+        vector<[(u8, bool); 2], Cbor, 7>(
+            cbor,
+            [(1, true), (2, false)],
+            [0x82, 0x82, 0x01, 0xf5, 0x82, 0x02, 0xf4],
+        ),
+    )
 }
 
 #[test]
 fn cbor_rejects_tuples_of_the_wrong_length_or_shape() {
     let cbor = Cbor::new()
-    expect_error(decodes<(u8, u8), Cbor, 2>(cbor, [0x81, 0x01]), ErrorKind::InvalidLength, 0)
-    expect_error(decodes<(u8, u8), Cbor, 4>(cbor, [0x83, 0x01, 0x02, 0x03]), ErrorKind::InvalidLength, 0)
-    expect_error(decodes<(u8, u8), Cbor, 1>(cbor, [0x80]), ErrorKind::InvalidLength, 0)
-    expect_error(decodes<(u8, u8), Cbor, 1>(cbor, [0xa0]), ErrorKind::TypeMismatch, 0)
+    expect_error(
+        decodes<(u8, u8), Cbor, 2>(cbor, [0x81, 0x01]),
+        ErrorKind::InvalidLength,
+        0,
+    )
+    expect_error(
+        decodes<(u8, u8), Cbor, 4>(cbor, [0x83, 0x01, 0x02, 0x03]),
+        ErrorKind::InvalidLength,
+        0,
+    )
+    expect_error(
+        decodes<(u8, u8), Cbor, 1>(cbor, [0x80]),
+        ErrorKind::InvalidLength,
+        0,
+    )
+    expect_error(
+        decodes<(u8, u8), Cbor, 1>(cbor, [0xa0]),
+        ErrorKind::TypeMismatch,
+        0,
+    )
     // Tuples are definite-length, in their shortest head.
-    expect_error(decodes<(u8, u8), Cbor, 4>(cbor, [0x9f, 0x01, 0x02, 0xff]), ErrorKind::NonCanonical, 0)
-    expect_error(decodes<(u8, u8), Cbor, 4>(cbor, [0x98, 0x02, 0x01, 0x02]), ErrorKind::NonCanonical, 0)
-    expect_error(decodes<(u8, bool), Cbor, 3>(cbor, [0x82, 0x01, 0x02]), ErrorKind::TypeMismatch, 2)
-    expect_error(decodes<(u8, u8), Cbor, 4>(cbor, [0x82, 0x01, 0x02, 0x00]), ErrorKind::TrailingData, 3)
+    expect_error(
+        decodes<(u8, u8), Cbor, 4>(cbor, [0x9f, 0x01, 0x02, 0xff]),
+        ErrorKind::NonCanonical,
+        0,
+    )
+    expect_error(
+        decodes<(u8, u8), Cbor, 4>(cbor, [0x98, 0x02, 0x01, 0x02]),
+        ErrorKind::NonCanonical,
+        0,
+    )
+    expect_error(
+        decodes<(u8, bool), Cbor, 3>(cbor, [0x82, 0x01, 0x02]),
+        ErrorKind::TypeMismatch,
+        2,
+    )
+    expect_error(
+        decodes<(u8, u8), Cbor, 4>(cbor, [0x82, 0x01, 0x02, 0x00]),
+        ErrorKind::TrailingData,
+        3,
+    )
     let short = [0xa5, 0x01, 0x81, 0x07]
-    expect_field(decodes<Waypoint, Cbor, 4>(cbor, short), ErrorKind::InvalidLength, 2, "at")
+    expect_field(
+        decodes<Waypoint, Cbor, 4>(cbor, short),
+        ErrorKind::InvalidLength,
+        2,
+        "at",
+    )
 }
 
 #[test]
@@ -489,12 +1075,44 @@ fn cbor_matches_rfc_8949_appendix_a() {
     assert!(vector<u64, Cbor, 2>(cbor, 25, [0x18, 0x19]))
     assert!(vector<u64, Cbor, 2>(cbor, 100, [0x18, 0x64]))
     assert!(vector<u64, Cbor, 3>(cbor, 1000, [0x19, 0x03, 0xe8]))
-    assert!(vector<u64, Cbor, 5>(cbor, 1000000, [0x1a, 0x00, 0x0f, 0x42, 0x40]))
-    assert!(vector<u64, Cbor, 9>(cbor, 1000000000000, [0x1b, 0x00, 0x00, 0x00, 0xe8, 0xd4, 0xa5, 0x10, 0x00]))
-    assert!(vector<u64, Cbor, 9>(cbor, 18446744073709551615, [0x1b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]))
-    assert!(vector<u128, Cbor, 11>(cbor, 18446744073709551616, [0xc2, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]))
-    assert!(vector<i128, Cbor, 9>(cbor, -18446744073709551616, [0x3b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]))
-    assert!(vector<i128, Cbor, 11>(cbor, -18446744073709551617, [0xc3, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]))
+    assert!(
+        vector<u64, Cbor, 5>(cbor, 1000000, [0x1a, 0x00, 0x0f, 0x42, 0x40]),
+    )
+    assert!(
+        vector<u64, Cbor, 9>(
+            cbor,
+            1000000000000,
+            [0x1b, 0x00, 0x00, 0x00, 0xe8, 0xd4, 0xa5, 0x10, 0x00],
+        ),
+    )
+    assert!(
+        vector<u64, Cbor, 9>(
+            cbor,
+            18446744073709551615,
+            [0x1b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+        ),
+    )
+    assert!(
+        vector<u128, Cbor, 11>(
+            cbor,
+            18446744073709551616,
+            [0xc2, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+        ),
+    )
+    assert!(
+        vector<i128, Cbor, 9>(
+            cbor,
+            -18446744073709551616,
+            [0x3b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+        ),
+    )
+    assert!(
+        vector<i128, Cbor, 11>(
+            cbor,
+            -18446744073709551617,
+            [0xc3, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+        ),
+    )
     assert!(vector<i64, Cbor, 1>(cbor, -1, [0x20]))
     assert!(vector<i64, Cbor, 1>(cbor, -10, [0x29]))
     assert!(vector<i64, Cbor, 2>(cbor, -100, [0x38, 0x63]))
@@ -505,19 +1123,41 @@ fn cbor_matches_rfc_8949_appendix_a() {
     let empty: [u8; 0] = []
     assert!(text_vector(cbor, empty, [0x60]))
     assert!(text_vector(cbor, [0x61], [0x61, 0x61]))
-    assert!(text_vector(cbor, [0x49, 0x45, 0x54, 0x46], [0x64, 0x49, 0x45, 0x54, 0x46]))
+    assert!(
+        text_vector(
+            cbor,
+            [0x49, 0x45, 0x54, 0x46],
+            [0x64, 0x49, 0x45, 0x54, 0x46],
+        ),
+    )
     assert!(text_vector(cbor, [0x22, 0x5c], [0x62, 0x22, 0x5c]))
     assert!(text_vector(cbor, [0xc3, 0xbc], [0x62, 0xc3, 0xbc]))
-    assert!(text_vector(cbor, [0xe6, 0xb0, 0xb4], [0x63, 0xe6, 0xb0, 0xb4]))
-    assert!(text_vector(cbor, [0xf0, 0x90, 0x85, 0x91], [0x64, 0xf0, 0x90, 0x85, 0x91]))
+    assert!(
+        text_vector(cbor, [0xe6, 0xb0, 0xb4], [0x63, 0xe6, 0xb0, 0xb4]),
+    )
+    assert!(
+        text_vector(
+            cbor,
+            [0xf0, 0x90, 0x85, 0x91],
+            [0x64, 0xf0, 0x90, 0x85, 0x91],
+        ),
+    )
     assert!(encodes(cbor, BoundedBuffer<4>::empty(), [0x40]))
-    assert!(must(decodes<BoundedBuffer<4>, Cbor, 1>(cbor, [0x40])).len() == 0)
+    assert!(
+        must(decodes<BoundedBuffer<4>, Cbor, 1>(cbor, [0x40])).len() == 0,
+    )
     let four = BoundedBuffer<4>::from_array([1, 2, 3, 4])
     assert!(encodes(cbor, four, [0x44, 0x01, 0x02, 0x03, 0x04]))
-    assert!(must(decodes<BoundedBuffer<4>, Cbor, 5>(cbor, [0x44, 0x01, 0x02, 0x03, 0x04])).equals(four))
+    assert!(
+        must(
+            decodes<BoundedBuffer<4>, Cbor, 5>(cbor, [0x44, 0x01, 0x02, 0x03, 0x04]),
+        ).equals(four),
+    )
     let none: [u8; 0] = []
     assert!(encodes(cbor, none, [0x80]))
-    assert!(vector<[u8; 3], Cbor, 4>(cbor, [1, 2, 3], [0x83, 0x01, 0x02, 0x03]))
+    assert!(
+        vector<[u8; 3], Cbor, 4>(cbor, [1, 2, 3], [0x83, 0x01, 0x02, 0x03]),
+    )
     assert!(encodes(cbor, Pairs { first: 2, second: 4 }, PAIRS_CBOR))
     let pairs = must(decodes<Pairs, Cbor, 5>(cbor, PAIRS_CBOR))
     assert!(pairs.first == 2 && pairs.second == 4)
@@ -526,83 +1166,239 @@ fn cbor_matches_rfc_8949_appendix_a() {
 #[test]
 fn cbor_writes_wide_integers_bytes_and_composed_types() {
     let cbor = Cbor::new()
-    assert!(encodes(cbor, Wide { big: U256_MAX, signed: I256_MIN, mid: U128_MAX, small: I128_MIN }, WIDE_CBOR))
+    assert!(
+        encodes(
+            cbor,
+            Wide { big: U256_MAX, signed: I256_MIN, mid: U128_MAX, small: I128_MIN },
+            WIDE_CBOR,
+        ),
+    )
     let wide = must(decodes<Wide, Cbor, 111>(cbor, WIDE_CBOR))
-    assert!(wide.big == U256_MAX && wide.signed == I256_MIN && wide.mid == U128_MAX && wide.small == I128_MIN)
+    assert!(
+        wide.big == U256_MAX
+            && wide.signed == I256_MIN
+            && wide.mid == U128_MAX
+            && wide.small == I128_MIN,
+    )
     assert!(encodes(cbor, sample_wallet(), WALLET_CBOR))
     let wallet = must(decodes<Wallet, Cbor, 38>(cbor, WALLET_CBOR))
-    assert!(wallet.owner.word() == 0xd8da6bf26964af9d7eed9e03e53415d37aa96045 && wallet.memo.len() == 3)
-    assert!(encodes(cbor, Page<u16, 3> { items: [1, 2, 65535], next: Option::Some(7) }, PAGE_CBOR))
-    assert!(encodes(cbor, Slots { values: [Option::Some(1), Option::None, Option::Some(255)] }, SLOTS_CBOR))
-    assert!(encodes(cbor, Reading { at: 5, temperature: Celsius { tenths: -125 } }, READING_CBOR))
+    assert!(
+        wallet.owner.word() == 0xd8da6bf26964af9d7eed9e03e53415d37aa96045 && wallet.memo.len() == 3,
+    )
+    assert!(
+        encodes(
+            cbor,
+            Page<u16, 3> { items: [1, 2, 65535], next: Option::Some(7) },
+            PAGE_CBOR,
+        ),
+    )
+    assert!(
+        encodes(
+            cbor,
+            Slots { values: [Option::Some(1), Option::None, Option::Some(255)] },
+            SLOTS_CBOR,
+        ),
+    )
+    assert!(
+        encodes(
+            cbor,
+            Reading { at: 5, temperature: Celsius { tenths: -125 } },
+            READING_CBOR,
+        ),
+    )
 }
 
 #[test]
 fn cbor_reports_bad_headers_and_numeric_ranges() {
     let limits = Limits::standard()
-    expect_error(cbor_sample<3>([0xa1, 0x01, 0x18], limits), ErrorKind::UnexpectedEnd, 3)
-    expect_error(cbor_sample<3>([0xa1, 0x01, 0xf4], limits), ErrorKind::TypeMismatch, 2)
-    expect_error(cbor_sample<4>([0xa1, 0x01, 0x18, 0x17], limits), ErrorKind::NonCanonical, 2)
-    expect_error(cbor_sample<4>([0xbf, 0x01, 0x01, 0xff], limits), ErrorKind::NonCanonical, 0)
-    expect_error(cbor_sample<5>([0xa1, 0x01, 0x19, 0x01, 0x00], limits), ErrorKind::IntegerOutOfRange, 2)
-    expect_error(cbor_sample<4>([0xa1, 0x01, 0x01, 0x00], limits), ErrorKind::TrailingData, 3)
-    expect_error(decodes<u64, Cbor, 1>(Cbor::new(), [0x20]), ErrorKind::TypeMismatch, 0)
+    expect_error(
+        cbor_sample<3>([0xa1, 0x01, 0x18], limits),
+        ErrorKind::UnexpectedEnd,
+        3,
+    )
+    expect_error(
+        cbor_sample<3>([0xa1, 0x01, 0xf4], limits),
+        ErrorKind::TypeMismatch,
+        2,
+    )
+    expect_error(
+        cbor_sample<4>([0xa1, 0x01, 0x18, 0x17], limits),
+        ErrorKind::NonCanonical,
+        2,
+    )
+    expect_error(
+        cbor_sample<4>([0xbf, 0x01, 0x01, 0xff], limits),
+        ErrorKind::NonCanonical,
+        0,
+    )
+    expect_error(
+        cbor_sample<5>([0xa1, 0x01, 0x19, 0x01, 0x00], limits),
+        ErrorKind::IntegerOutOfRange,
+        2,
+    )
+    expect_error(
+        cbor_sample<4>([0xa1, 0x01, 0x01, 0x00], limits),
+        ErrorKind::TrailingData,
+        3,
+    )
+    expect_error(
+        decodes<u64, Cbor, 1>(Cbor::new(), [0x20]),
+        ErrorKind::TypeMismatch,
+        0,
+    )
 }
 
 #[test]
 fn cbor_requires_canonical_bignums() {
     let cbor = Cbor::new()
     // Fits 64 bits, so it must be a plain integer.
-    expect_error(decodes<u128, Cbor, 3>(cbor, [0xc2, 0x41, 0x01]), ErrorKind::NonCanonical, 0)
+    expect_error(
+        decodes<u128, Cbor, 3>(cbor, [0xc2, 0x41, 0x01]),
+        ErrorKind::NonCanonical,
+        0,
+    )
     // Fields of 64 bits or fewer accept only plain integers.
-    expect_error(decodes<u64, Cbor, 3>(cbor, [0xc2, 0x41, 0x01]), ErrorKind::TypeMismatch, 0)
-    expect_error(decodes<u128, Cbor, 2>(cbor, [0xc2, 0x40]), ErrorKind::NonCanonical, 0)
+    expect_error(
+        decodes<u64, Cbor, 3>(cbor, [0xc2, 0x41, 0x01]),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        decodes<u128, Cbor, 2>(cbor, [0xc2, 0x40]),
+        ErrorKind::NonCanonical,
+        0,
+    )
     // A leading zero byte.
     expect_error(
-        decodes<u128, Cbor, 12>(cbor, [0xc2, 0x4a, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+        decodes<u128, Cbor, 12>(
+            cbor,
+            [0xc2, 0x4a, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+        ),
         ErrorKind::NonCanonical,
         0,
     )
     // A tag number in a longer header than it needs.
     expect_error(
-        decodes<u128, Cbor, 12>(cbor, [0xd8, 0x02, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+        decodes<u128, Cbor, 12>(
+            cbor,
+            [0xd8, 0x02, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+        ),
         ErrorKind::NonCanonical,
         0,
     )
     // Wider than 256 bits, wider than the field, and a bignum for a narrow field.
-    expect_error(decodes<u256, Cbor, 3>(cbor, [0xc2, 0x58, 0x21]), ErrorKind::IntegerOutOfRange, 0)
+    expect_error(
+        decodes<u256, Cbor, 3>(cbor, [0xc2, 0x58, 0x21]),
+        ErrorKind::IntegerOutOfRange,
+        0,
+    )
     expect_error(
         decodes<u128, Cbor, 19>(
             cbor,
-            [0xc2, 0x51, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            [
+                0xc2,
+                0x51,
+                0x01,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+            ],
         ),
         ErrorKind::IntegerOutOfRange,
         0,
     )
     expect_error(
-        decodes<u64, Cbor, 11>(cbor, [0xc2, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+        decodes<u64, Cbor, 11>(
+            cbor,
+            [0xc2, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+        ),
         ErrorKind::TypeMismatch,
         0,
     )
     // Other tags, and a bignum whose content is not a byte string.
-    expect_error(decodes<u128, Cbor, 2>(cbor, [0xc1, 0x00]), ErrorKind::TypeMismatch, 0)
-    expect_error(decodes<u128, Cbor, 3>(cbor, [0xc2, 0x61, 0x41]), ErrorKind::TypeMismatch, 1)
+    expect_error(
+        decodes<u128, Cbor, 2>(cbor, [0xc1, 0x00]),
+        ErrorKind::TypeMismatch,
+        0,
+    )
+    expect_error(
+        decodes<u128, Cbor, 3>(cbor, [0xc2, 0x61, 0x41]),
+        ErrorKind::TypeMismatch,
+        1,
+    )
 }
 
 #[test]
 fn cbor_reports_schema_text_and_byte_errors() {
     let limits = Limits::standard()
-    expect_field(cbor_sample<5>([0xa2, 0x01, 0x01, 0x01, 0x02], limits), ErrorKind::DuplicateField, 3, "value")
-    expect_error(cbor_sample<5>([0xa2, 0x02, 0xf6, 0x01, 0x01], limits), ErrorKind::NonCanonical, 3)
-    expect_error(cbor_sample<3>([0xa1, 0x03, 0x01], limits), ErrorKind::UnknownField, 1)
-    expect_field(cbor_sample<1>([0xa0], limits), ErrorKind::MissingField, 1, "value")
-    expect_field(cbor_sample<6>([0xa2, 0x01, 0x01, 0x02, 0x61, 0xc0], limits), ErrorKind::InvalidUtf8, 5, "note")
-    expect_field(cbor_sample<5>([0xa2, 0x01, 0x01, 0x02, 0x69], limits), ErrorKind::CapacityExceeded, 4, "note")
+    expect_field(
+        cbor_sample<5>([0xa2, 0x01, 0x01, 0x01, 0x02], limits),
+        ErrorKind::DuplicateField,
+        3,
+        "value",
+    )
+    expect_error(
+        cbor_sample<5>([0xa2, 0x02, 0xf6, 0x01, 0x01], limits),
+        ErrorKind::NonCanonical,
+        3,
+    )
+    expect_error(
+        cbor_sample<3>([0xa1, 0x03, 0x01], limits),
+        ErrorKind::UnknownField,
+        1,
+    )
+    expect_field(
+        cbor_sample<1>([0xa0], limits),
+        ErrorKind::MissingField,
+        1,
+        "value",
+    )
+    expect_field(
+        cbor_sample<6>([0xa2, 0x01, 0x01, 0x02, 0x61, 0xc0], limits),
+        ErrorKind::InvalidUtf8,
+        5,
+        "note",
+    )
+    expect_field(
+        cbor_sample<5>([0xa2, 0x01, 0x01, 0x02, 0x69], limits),
+        ErrorKind::CapacityExceeded,
+        4,
+        "note",
+    )
     let cbor = Cbor::new()
-    expect_error(decodes<BoundedBuffer<2>, Cbor, 4>(cbor, [0x43, 0x01, 0x02, 0x03]), ErrorKind::CapacityExceeded, 0)
-    expect_error(decodes<PackedBytes<4>, Cbor, 4>(cbor, [0x43, 0x01, 0x02, 0x03]), ErrorKind::InvalidLength, 0)
-    expect_error(decodes<Address, Cbor, 2>(cbor, [0x41, 0x01]), ErrorKind::InvalidLength, 0)
-    expect_error(decodes<BoundedBuffer<2>, Cbor, 2>(cbor, [0x61, 0x41]), ErrorKind::TypeMismatch, 0)
+    expect_error(
+        decodes<BoundedBuffer<2>, Cbor, 4>(cbor, [0x43, 0x01, 0x02, 0x03]),
+        ErrorKind::CapacityExceeded,
+        0,
+    )
+    expect_error(
+        decodes<PackedBytes<4>, Cbor, 4>(cbor, [0x43, 0x01, 0x02, 0x03]),
+        ErrorKind::InvalidLength,
+        0,
+    )
+    expect_error(
+        decodes<Address, Cbor, 2>(cbor, [0x41, 0x01]),
+        ErrorKind::InvalidLength,
+        0,
+    )
+    expect_error(
+        decodes<BoundedBuffer<2>, Cbor, 2>(cbor, [0x61, 0x41]),
+        ErrorKind::TypeMismatch,
+        0,
+    )
 }
 
 #[test]
@@ -621,7 +1417,11 @@ fn explicit_ids_order_fields_in_every_format() {
     let json: [u8; 30] = "{\"status\":\"Ready\",\"amount\":42}"
     assert!(encodes(Json::new(), value, json))
     let declaration_order: [u8; 30] = "{\"amount\":42,\"status\":\"Ready\"}"
-    assert!(must(decodes<StableTransfer, Json, 30>(Json::new(), declaration_order)).amount == 42)
+    assert!(
+        must(
+                decodes<StableTransfer, Json, 30>(Json::new(), declaration_order),
+            ).amount == 42,
+    )
 }
 
 // Limits and the traversal protocol.
@@ -629,9 +1429,21 @@ fn explicit_ids_order_fields_in_every_format() {
 #[test]
 fn writers_report_the_first_byte_that_does_not_fit() {
     let sample = Sample { value: 24, note: Option::None }
-    expect_error(Json::new().encode<Sample, 2>(sample), ErrorKind::CapacityExceeded, 2)
-    expect_error(Cbor::new().encode<Sample, 2>(sample), ErrorKind::CapacityExceeded, 2)
-    expect_error(Compact::new().encode<Sample, 1>(sample), ErrorKind::CapacityExceeded, 1)
+    expect_error(
+        Json::new().encode<Sample, 2>(sample),
+        ErrorKind::CapacityExceeded,
+        2,
+    )
+    expect_error(
+        Cbor::new().encode<Sample, 2>(sample),
+        ErrorKind::CapacityExceeded,
+        2,
+    )
+    expect_error(
+        Compact::new().encode<Sample, 1>(sample),
+        ErrorKind::CapacityExceeded,
+        1,
+    )
 }
 
 #[test]
@@ -641,49 +1453,149 @@ fn rejects_invalid_lengths_and_respects_container_limits() {
     let single = Limits { max_depth: 32, max_items: 1 }
     let json: [u8; 16] = "{\"transfers\":[]}"
     let cbor = [0xa1, 0x01, 0x80]
-    expect_field(decodes<Batch, Json, 16>(Json::new(), json), ErrorKind::InvalidLength, 14, "transfers")
-    expect_field(decodes<Batch, Cbor, 3>(Cbor::new(), cbor), ErrorKind::InvalidLength, 2, "transfers")
-    expect_error(decodes<Batch, Json, 16>(Json::with_limits(shallow), json), ErrorKind::DepthLimit, 13)
-    expect_error(decodes<Batch, Cbor, 3>(Cbor::with_limits(shallow), cbor), ErrorKind::DepthLimit, 2)
-    expect_error(json_sample<23>("{\"value\":1,\"note\":null}", single), ErrorKind::CollectionLimit, 11)
-    expect_error(cbor_sample<5>([0xa2, 0x01, 0x01, 0x02, 0xf6], single), ErrorKind::CollectionLimit, 0)
-    expect_error(cbor_sample<3>([0xb9, 0x01, 0x01], limits), ErrorKind::CollectionLimit, 0)
+    expect_field(
+        decodes<Batch, Json, 16>(Json::new(), json),
+        ErrorKind::InvalidLength,
+        14,
+        "transfers",
+    )
+    expect_field(
+        decodes<Batch, Cbor, 3>(Cbor::new(), cbor),
+        ErrorKind::InvalidLength,
+        2,
+        "transfers",
+    )
+    expect_error(
+        decodes<Batch, Json, 16>(Json::with_limits(shallow), json),
+        ErrorKind::DepthLimit,
+        13,
+    )
+    expect_error(
+        decodes<Batch, Cbor, 3>(Cbor::with_limits(shallow), cbor),
+        ErrorKind::DepthLimit,
+        2,
+    )
+    expect_error(
+        json_sample<23>("{\"value\":1,\"note\":null}", single),
+        ErrorKind::CollectionLimit,
+        11,
+    )
+    expect_error(
+        cbor_sample<5>([0xa2, 0x01, 0x01, 0x02, 0xf6], single),
+        ErrorKind::CollectionLimit,
+        0,
+    )
+    expect_error(
+        cbor_sample<3>([0xb9, 0x01, 0x01], limits),
+        ErrorKind::CollectionLimit,
+        0,
+    )
     let none = Limits { max_depth: 0, max_items: 0 }
-    assert!(vector<u64, Cbor, 3>(Cbor::with_limits(none), 256, [0x19, 0x01, 0x00]))
+    assert!(
+        vector<u64, Cbor, 3>(Cbor::with_limits(none), 256, [0x19, 0x01, 0x00]),
+    )
     let number: [u8; 3] = "256"
     assert!(vector<u64, Json, 3>(Json::with_limits(none), 256, number))
 }
 
 #[test]
 fn serializers_must_write_exactly_one_root_value() {
-    expect_error(Json::new().encode<Broken, 4>(Broken { value: 0 }), ErrorKind::InvalidState, 0)
-    expect_error(Cbor::new().encode<Broken, 4>(Broken { value: 0 }), ErrorKind::InvalidState, 0)
-    expect_error(Compact::new().encode<Broken, 16>(Broken { value: 0 }), ErrorKind::InvalidState, 0)
-    expect_error(Json::new().encode<Broken, 4>(Broken { value: 1 }), ErrorKind::InvalidState, 1)
-    expect_error(Cbor::new().encode<Broken, 4>(Broken { value: 1 }), ErrorKind::InvalidState, 1)
-    expect_error(Compact::new().encode<Broken, 16>(Broken { value: 1 }), ErrorKind::InvalidState, 8)
+    expect_error(
+        Json::new().encode<Broken, 4>(Broken { value: 0 }),
+        ErrorKind::InvalidState,
+        0,
+    )
+    expect_error(
+        Cbor::new().encode<Broken, 4>(Broken { value: 0 }),
+        ErrorKind::InvalidState,
+        0,
+    )
+    expect_error(
+        Compact::new().encode<Broken, 16>(Broken { value: 0 }),
+        ErrorKind::InvalidState,
+        0,
+    )
+    expect_error(
+        Json::new().encode<Broken, 4>(Broken { value: 1 }),
+        ErrorKind::InvalidState,
+        1,
+    )
+    expect_error(
+        Cbor::new().encode<Broken, 4>(Broken { value: 1 }),
+        ErrorKind::InvalidState,
+        1,
+    )
+    expect_error(
+        Compact::new().encode<Broken, 16>(Broken { value: 1 }),
+        ErrorKind::InvalidState,
+        8,
+    )
     let empty = BoundedBuffer<4>::empty()
-    expect_error(Json::new().decode<Broken, 4>(empty), ErrorKind::InvalidState, 0)
-    expect_error(Cbor::new().decode<Broken, 4>(empty), ErrorKind::InvalidState, 0)
-    expect_error(Compact::new().decode<Broken, 4>(empty), ErrorKind::InvalidState, 0)
+    expect_error(
+        Json::new().decode<Broken, 4>(empty),
+        ErrorKind::InvalidState,
+        0,
+    )
+    expect_error(
+        Cbor::new().decode<Broken, 4>(empty),
+        ErrorKind::InvalidState,
+        0,
+    )
+    expect_error(
+        Compact::new().decode<Broken, 4>(empty),
+        ErrorKind::InvalidState,
+        0,
+    )
 }
 
 #[test]
 fn serializers_must_visit_fields_in_id_order_and_count() {
     let point = Point { x: 1, y: 2 }
-    expect_error(Json::new().encode<Disordered, 32>(Disordered { point }), ErrorKind::NonCanonical, 6)
-    expect_error(Cbor::new().encode<Disordered, 32>(Disordered { point }), ErrorKind::NonCanonical, 3)
-    expect_error(Compact::new().encode<Disordered, 32>(Disordered { point }), ErrorKind::InvalidState, 0)
-    expect_error(Json::new().encode<Short, 32>(Short { point }), ErrorKind::InvalidLength, 6)
-    expect_error(Cbor::new().encode<Short, 32>(Short { point }), ErrorKind::InvalidLength, 3)
-    expect_error(Compact::new().encode<Short, 32>(Short { point }), ErrorKind::InvalidLength, 8)
+    expect_error(
+        Json::new().encode<Disordered, 32>(Disordered { point }),
+        ErrorKind::NonCanonical,
+        6,
+    )
+    expect_error(
+        Cbor::new().encode<Disordered, 32>(Disordered { point }),
+        ErrorKind::NonCanonical,
+        3,
+    )
+    expect_error(
+        Compact::new().encode<Disordered, 32>(Disordered { point }),
+        ErrorKind::InvalidState,
+        0,
+    )
+    expect_error(
+        Json::new().encode<Short, 32>(Short { point }),
+        ErrorKind::InvalidLength,
+        6,
+    )
+    expect_error(
+        Cbor::new().encode<Short, 32>(Short { point }),
+        ErrorKind::InvalidLength,
+        3,
+    )
+    expect_error(
+        Compact::new().encode<Short, 32>(Short { point }),
+        ErrorKind::InvalidLength,
+        8,
+    )
 }
 
 #[test]
 fn generic_decoding_of_an_empty_array_is_unsupported() {
     let empty: [u8; 2] = "[]"
-    expect_error(decodes<[u8; 0], Json, 2>(Json::new(), empty), ErrorKind::Unsupported, 0)
-    expect_error(decodes<[u8; 0], Cbor, 1>(Cbor::new(), [0x80]), ErrorKind::Unsupported, 0)
+    expect_error(
+        decodes<[u8; 0], Json, 2>(Json::new(), empty),
+        ErrorKind::Unsupported,
+        0,
+    )
+    expect_error(
+        decodes<[u8; 0], Cbor, 1>(Cbor::new(), [0x80]),
+        ErrorKind::Unsupported,
+        0,
+    )
 }
 
 // Schema evolution.
@@ -693,18 +1605,40 @@ fn appended_optional_fields_stay_compatible_while_absent() {
     let old = AccountV1 { owner: 1, balance: 2 }
     let json: [u8; 23] = "{\"owner\":1,\"balance\":2}"
     let cbor = [0xa2, 0x01, 0x01, 0x02, 0x02]
-    assert!(encodes(Json::new(), old, json) && encodes(Cbor::new(), old, cbor))
+    assert!(
+        encodes(Json::new(), old, json) && encodes(Cbor::new(), old, cbor),
+    )
     let upgraded = must(decodes<AccountV2, Json, 23>(Json::new(), json))
-    assert!(upgraded.owner == 1 && upgraded.balance == 2 && upgraded.label.is_none())
-    assert!(must(decodes<AccountV2, Cbor, 5>(Cbor::new(), cbor)).label.is_none())
+    assert!(
+        upgraded.owner == 1 && upgraded.balance == 2 && upgraded.label.is_none(),
+    )
+    assert!(
+        must(decodes<AccountV2, Cbor, 5>(Cbor::new(), cbor)).label.is_none(),
+    )
     let unlabeled = AccountV2 { owner: 1, balance: 2, label: Option::None }
-    assert!(encodes(Json::new(), unlabeled, json) && encodes(Cbor::new(), unlabeled, cbor))
-    let labeled = AccountV2 { owner: 1, balance: 2, label: Option::Some(must(Text<8>::from_array([0x61]))) }
+    assert!(
+        encodes(Json::new(), unlabeled, json) && encodes(Cbor::new(), unlabeled, cbor),
+    )
+    let labeled = AccountV2 {
+        owner: 1,
+        balance: 2,
+        label: Option::Some(must(Text<8>::from_array([0x61]))),
+    }
     let new_json: [u8; 35] = "{\"owner\":1,\"balance\":2,\"label\":\"a\"}"
     let new_cbor = [0xa3, 0x01, 0x01, 0x02, 0x02, 0x03, 0x61, 0x61]
-    assert!(encodes(Json::new(), labeled, new_json) && encodes(Cbor::new(), labeled, new_cbor))
-    expect_error(decodes<AccountV1, Json, 35>(Json::new(), new_json), ErrorKind::UnknownField, 23)
-    expect_error(decodes<AccountV1, Cbor, 8>(Cbor::new(), new_cbor), ErrorKind::UnknownField, 5)
+    assert!(
+        encodes(Json::new(), labeled, new_json) && encodes(Cbor::new(), labeled, new_cbor),
+    )
+    expect_error(
+        decodes<AccountV1, Json, 35>(Json::new(), new_json),
+        ErrorKind::UnknownField,
+        23,
+    )
+    expect_error(
+        decodes<AccountV1, Cbor, 8>(Cbor::new(), new_cbor),
+        ErrorKind::UnknownField,
+        5,
+    )
 }
 
 #[test]
@@ -713,7 +1647,11 @@ fn renamed_fields_keep_their_cbor_identity_but_not_their_json_name() {
     let renamed = must(decodes<AccountRenamed, Cbor, 5>(Cbor::new(), cbor))
     assert!(renamed.holder == 1 && renamed.funds == 2)
     let json: [u8; 23] = "{\"owner\":1,\"balance\":2}"
-    expect_error(decodes<AccountRenamed, Json, 23>(Json::new(), json), ErrorKind::UnknownField, 1)
+    expect_error(
+        decodes<AccountRenamed, Json, 23>(Json::new(), json),
+        ErrorKind::UnknownField,
+        1,
+    )
 }
 
 // The compact example format.
@@ -721,9 +1659,21 @@ fn renamed_fields_keep_their_cbor_identity_but_not_their_json_name() {
 #[test]
 fn compact_writes_positional_records() {
     let compact = Compact::new()
-    assert!(encodes(compact, Sample { value: 24, note: Option::None }, [0x18, 0x00]))
+    assert!(
+        encodes(
+            compact,
+            Sample { value: 24, note: Option::None },
+            [0x18, 0x00],
+        ),
+    )
     let noted = Sample { value: 255, note: Option::Some(must(emoji())) }
-    assert!(encodes(compact, noted, [0xff, 0x01, 0x05, 0x00, 0xf0, 0x9f, 0x98, 0x80]))
+    assert!(
+        encodes(
+            compact,
+            noted,
+            [0xff, 0x01, 0x05, 0x00, 0xf0, 0x9f, 0x98, 0x80],
+        ),
+    )
     assert!(
         encodes(
             compact,
@@ -731,43 +1681,126 @@ fn compact_writes_positional_records() {
             [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0, 0, 0, 2],
         ),
     )
-    assert!(vector<i128, Compact, 16>(compact, -2, [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe]))
+    assert!(
+        vector<i128, Compact, 16>(
+            compact,
+            -2,
+            [
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+                0xff,
+                0xfe,
+            ],
+        ),
+    )
     assert!(encodes(compact, StableStatus::Ready, [62]))
     // Addresses and fixed-length bytes carry no length: the type fixes it.
-    assert!(encodes(compact, Wallet { owner: Address::zero(), hash: PackedBytes<4>::from_array([1, 2, 3, 4]), memo: BoundedBuffer<8>::empty(), tag: Option::None }, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 0, 0]))
+    assert!(
+        encodes(
+            compact,
+            Wallet {
+                owner: Address::zero(),
+                hash: PackedBytes<4>::from_array([1, 2, 3, 4]),
+                memo: BoundedBuffer<8>::empty(),
+                tag: Option::None,
+            },
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 0, 0],
+        ),
+    )
 }
 
 #[test]
 fn compact_writes_tuples_as_headerless_sequences() {
     let compact = Compact::new()
-    assert!(vector<(u8, u16, bool), Compact, 4>(compact, (7, 300, true), [0x07, 0x01, 0x2c, 0x01]))
-    assert!(vector<((u8, u8), (u8,)), Compact, 3>(compact, ((1, 2), (3,)), [0x01, 0x02, 0x03]))
-    assert!(vector<Option<(u8, u8)>, Compact, 3>(compact, Option::Some((1, 2)), [0x01, 0x01, 0x02]))
-    assert!(vector<[(u8, bool); 2], Compact, 4>(compact, [(1, true), (2, false)], [0x01, 0x01, 0x02, 0x00]))
-    let decoded = must(decodes<(u8, Text<8>), Compact, 4>(compact, [0x07, 0x02, 0x68, 0x69]))
+    assert!(
+        vector<(u8, u16, bool), Compact, 4>(compact, (7, 300, true), [0x07, 0x01, 0x2c, 0x01]),
+    )
+    assert!(
+        vector<((u8, u8), (u8,)), Compact, 3>(compact, ((1, 2), (3,)), [0x01, 0x02, 0x03]),
+    )
+    assert!(
+        vector<Option<(u8, u8)>, Compact, 3>(compact, Option::Some((1, 2)), [0x01, 0x01, 0x02]),
+    )
+    assert!(
+        vector<[(u8, bool); 2], Compact, 4>(
+            compact,
+            [(1, true), (2, false)],
+            [0x01, 0x01, 0x02, 0x00],
+        ),
+    )
+    let decoded = must(
+        decodes<(u8, Text<8>), Compact, 4>(compact, [0x07, 0x02, 0x68, 0x69]),
+    )
     assert!(decoded.0 == 7 && decoded.1.equals(hi()))
     let written: (u8, Text<8>) = (7, hi())
     assert!(encodes(compact, written, [0x07, 0x02, 0x68, 0x69]))
-    expect_error(decodes<(u8, u8), Compact, 1>(compact, [0x07]), ErrorKind::UnexpectedEnd, 1)
-    expect_error(decodes<(u8, u8), Compact, 3>(compact, [0x07, 0x08, 0x09]), ErrorKind::TrailingData, 2)
+    expect_error(
+        decodes<(u8, u8), Compact, 1>(compact, [0x07]),
+        ErrorKind::UnexpectedEnd,
+        1,
+    )
+    expect_error(
+        decodes<(u8, u8), Compact, 3>(compact, [0x07, 0x08, 0x09]),
+        ErrorKind::TrailingData,
+        2,
+    )
 }
 
 #[test]
 fn compact_rejects_invalid_and_non_canonical_input() {
     let compact = Compact::new()
-    expect_error(decodes<bool, Compact, 1>(compact, [0x02]), ErrorKind::InvalidSyntax, 0)
-    expect_error(decodes<Option<u8>, Compact, 2>(compact, [0x02, 0x00]), ErrorKind::InvalidSyntax, 0)
-    expect_error(decodes<Text<8>, Compact, 3>(compact, [0x81, 0x00, 0x61]), ErrorKind::NonCanonical, 0)
-    expect_field(decodes<Sample, Compact, 1>(compact, [0x18]), ErrorKind::UnexpectedEnd, 1, "note")
-    expect_error(decodes<Sample, Compact, 3>(compact, [0x18, 0x00, 0x00]), ErrorKind::TrailingData, 2)
-    expect_error(decodes<Text<2>, Compact, 4>(compact, [0x03, 0x61, 0x61, 0x61]), ErrorKind::CapacityExceeded, 0)
+    expect_error(
+        decodes<bool, Compact, 1>(compact, [0x02]),
+        ErrorKind::InvalidSyntax,
+        0,
+    )
+    expect_error(
+        decodes<Option<u8>, Compact, 2>(compact, [0x02, 0x00]),
+        ErrorKind::InvalidSyntax,
+        0,
+    )
+    expect_error(
+        decodes<Text<8>, Compact, 3>(compact, [0x81, 0x00, 0x61]),
+        ErrorKind::NonCanonical,
+        0,
+    )
+    expect_field(
+        decodes<Sample, Compact, 1>(compact, [0x18]),
+        ErrorKind::UnexpectedEnd,
+        1,
+        "note",
+    )
+    expect_error(
+        decodes<Sample, Compact, 3>(compact, [0x18, 0x00, 0x00]),
+        ErrorKind::TrailingData,
+        2,
+    )
+    expect_error(
+        decodes<Text<2>, Compact, 4>(compact, [0x03, 0x61, 0x61, 0x61]),
+        ErrorKind::CapacityExceeded,
+        0,
+    )
 }
 
 // EVM revert data.
 
 #[test]
 fn codec_errors_abi_encode_as_their_code_and_offset() {
-    let bytes = core::abi::encode_alloc<Sol, CodecError>(CodecError::at(kind: ErrorKind::MissingField, offset: 7))
+    let bytes = core::abi::encode_alloc<Sol, CodecError>(
+        CodecError::at(kind: ErrorKind::MissingField, offset: 7),
+    )
     assert!(bytes.len() == 64)
     assert!(bytes.slice(offset: 0, len: 64).word_at(0) == 9)
     assert!(bytes.slice(offset: 0, len: 64).word_at(32) == 7)

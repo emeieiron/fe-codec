@@ -32,7 +32,10 @@ fn round_trips<T: Serialize + Deserialize + core::ops::Eq, const N: usize>(_ val
         && same<T, Compact, N>(Compact::new(), value)
 }
 
-fn same<T: Serialize + Deserialize + core::ops::Eq, F: Format, const N: usize>(_ format: F, _ value: T) -> bool {
+fn same<T: Serialize + Deserialize + core::ops::Eq, F: Format, const N: usize>(
+    _ format: F,
+    _ value: T,
+) -> bool {
     match format.encode<T, N>(value) {
         Result::Ok(bytes) => match format.decode<T, N>(bytes) {
             Result::Ok(decoded) => decoded == value,
@@ -100,10 +103,15 @@ pub fn codec_fields_round_trip(amount: u64, tip: u64, present: bool, hash: u64) 
     let payment = Payment {
         id: hash.downcast_truncate(),
         amount,
-        tip: if present { Option::Some(tip) } else { Option::None },
+        tip: if present {
+            Option::Some(tip)
+        } else {
+            Option::None
+        },
         hash: bytes,
     }
-    payment_survives(Json::new(), payment) && payment_survives(Cbor::new(), payment)
+    payment_survives(Json::new(), payment)
+        && payment_survives(Cbor::new(), payment)
         && payment_survives(Compact::new(), payment)
 }
 
@@ -111,7 +119,9 @@ fn payment_survives<F: Format>(_ format: F, _ payment: Payment) -> bool {
     match format.encode<Payment, 160>(payment) {
         Result::Ok(bytes) => match format.decode<Payment, 160>(bytes) {
             Result::Ok(decoded) => {
-                decoded.id == payment.id && decoded.amount == payment.amount && decoded.tip == payment.tip
+                decoded.id == payment.id
+                    && decoded.amount == payment.amount
+                    && decoded.tip == payment.tip
                     && decoded.hash == payment.hash
             },
             Result::Err(_) => false,
@@ -140,7 +150,11 @@ pub fn cbor_integers_use_the_shortest_form(a: u64, b: u64, c: u64, d: u64) -> bo
     match Cbor::new().encode<u256, 48>(value) {
         Result::Ok(bytes) => {
             let first = bytes.byte_at(0).unwrap()
-            if value <= 0xffffffffffffffff { first >> 5 == 0 } else { first == 0xc2 }
+            if value <= 0xffffffffffffffff {
+                first >> 5 == 0
+            } else {
+                first == 0xc2
+            }
         },
         Result::Err(_) => false,
     }
@@ -165,8 +179,13 @@ pub fn samples_round_trip(value: u8, present: bool, length: u8, bytes: u64) -> b
             return true
         },
     }
-    let sample = Sample { value, note: if present { Option::Some(note) } else { Option::None } }
-    sample_survives(Json::new(), sample) && sample_survives(Cbor::new(), sample)
+    let sample = Sample { value, note: if present {
+            Option::Some(note)
+        } else {
+            Option::None
+        } }
+    sample_survives(Json::new(), sample)
+        && sample_survives(Cbor::new(), sample)
         && sample_survives(Compact::new(), sample)
 }
 
@@ -200,7 +219,8 @@ pub fn byte_strings_round_trip(length: u8, bytes: u64) -> bool {
         index += 1
     }
     let value = output.finish()
-    bytes_survive(Json::new(), value) && bytes_survive(Cbor::new(), value)
+    bytes_survive(Json::new(), value)
+        && bytes_survive(Cbor::new(), value)
         && bytes_survive(Compact::new(), value)
 }
 
@@ -279,7 +299,8 @@ pub fn decoding_outcomes_agree(
     h: u64,
 ) -> u32 {
     let bytes = input(length, [a, b, c, d, e, f, g, h])
-    decodes_any(Json::new(), bytes) ^ (decodes_any(Cbor::new(), bytes) << 3)
+    decodes_any(Json::new(), bytes)
+        ^ (decodes_any(Cbor::new(), bytes) << 3)
         ^ (decodes_any(Compact::new(), bytes) << 6)
 }
 
@@ -292,7 +313,8 @@ pub fn encodings_agree(a: u64, b: u64, c: u64, d: u64) -> u64 {
         mid: wide(0, 0, a, b).downcast_truncate(),
         small: wide(0, 0, c, d).downcast_truncate(),
     }
-    fold(Json::new().encode<Wide, 320>(value)) ^ (fold(Cbor::new().encode<Wide, 160>(value)) << 1)
+    fold(Json::new().encode<Wide, 320>(value))
+        ^ (fold(Cbor::new().encode<Wide, 160>(value)) << 1)
         ^ (fold(Compact::new().encode<Wide, 160>(value)) << 2)
 }
 
@@ -318,7 +340,11 @@ fn fold<const N: usize>(_ result: own CodecResult<BoundedBuffer<N>>) -> u64 {
 /// The range check accepts exactly the values below 2^bits.
 #[property]
 pub fn unsigned_range_check_is_exact(value: u64, width: u8) -> bool {
-    let bits: u16 = if width % 4 == 0 { 8 } else if width % 4 == 1 { 16 } else if width % 4 == 2 { 32 } else { 64 }
+    let bits: u16 = if width % 4 == 0 {
+        8
+    } else if width % 4 == 1 {
+        16
+    } else if width % 4 == 2 { 32 } else { 64 }
     let fits = bits == 64 || (value >> (bits as u64)) == 0
     checked_unsigned(value, bits, 0).is_ok() == fits
 }
@@ -326,7 +352,11 @@ pub fn unsigned_range_check_is_exact(value: u64, width: u8) -> bool {
 /// The range check accepts exactly the values in [-2^(bits-1), 2^(bits-1)).
 #[property]
 pub fn signed_range_check_is_exact(value: i64, width: u8) -> bool {
-    let bits: u16 = if width % 4 == 0 { 8 } else if width % 4 == 1 { 16 } else if width % 4 == 2 { 32 } else { 64 }
+    let bits: u16 = if width % 4 == 0 {
+        8
+    } else if width % 4 == 1 {
+        16
+    } else if width % 4 == 2 { 32 } else { 64 }
     let fits = if bits == 64 {
         true
     } else {
@@ -353,15 +383,19 @@ pub fn cbor_heads_round_trip(value: u64) -> bool {
 /// The generic hash of a struct of atomic members equals its definition written out: the
 /// type hash of a constant type string, then each member's word.
 #[property(cases = 300)]
-pub fn flat_struct_hashes_match_their_definition(a0: u64, a1: u64, a2: u64, a3: u64, b: u64, c: bool) -> bool {
+pub fn flat_struct_hashes_match_their_definition(
+    a0: u64,
+    a1: u64,
+    a2: u64,
+    a3: u64,
+    b: u64,
+    c: bool,
+) -> bool {
     let a = wide(a0, a1, a2, a3)
     let who = Address::new(((b as u256) << 96) | 0x1234)
-    let expected = keccak_words([
-        core::keccak("Flat(uint256 a,address b,bool c)"),
-        a,
-        who.word(),
-        if c { 1 } else { 0 },
-    ])
+    let expected = keccak_words(
+        [core::keccak("Flat(uint256 a,address b,bool c)"), a, who.word(), if c { 1 } else { 0 }],
+    )
     let flat = Flat { a, b: who, c }
     let generated = flat.hash_struct() == expected
     match fe_codec_eip712::hash_struct(flat) {
@@ -381,10 +415,15 @@ pub fn typed_data_digests_agree(amount: u64, deadline: u64, who: u64, partial: b
     }
     let order = Order {
         maker: Party { who: Address::new(who as u256), contact: Contact { email } },
-        item: Asset { token: Address::new((amount as u256) << 64), amount: (amount as u256) << 128 },
+        item: Asset {
+            token: Address::new((amount as u256) << 64),
+            amount: (amount as u256) << 128,
+        },
         terms: Terms { deadline, partial },
     }
-    let domain = fe_codec_eip712::Domain::new().chain_id(deadline as u256).verifying_contract(Address::new(who as u256))
+    let domain = fe_codec_eip712::Domain::new()
+        .chain_id(deadline as u256)
+        .verifying_contract(Address::new(who as u256))
     match fe_codec_eip712::signing_hash(domain, order) {
         Result::Ok(digest) => digest.downcast_truncate(),
         Result::Err(error) => error.kind.code() as u64,
@@ -402,14 +441,23 @@ pub fn readers_skip_fields_added_later(owner: u64, balance: u64, present: bool, 
             return false
         },
     }
-    let account = AccountV2 { owner, balance, label: if present { Option::Some(text) } else { Option::None } }
+    let account = AccountV2 {
+        owner,
+        balance,
+        label: if present {
+            Option::Some(text)
+        } else {
+            Option::None
+        },
+    }
     reads_old(Json::new(), account) && reads_old(Cbor::new(), account)
 }
 
 fn reads_old<F: Format>(_ format: F, _ account: AccountV2) -> bool {
     match format.encode<AccountV2, 96>(account) {
         Result::Ok(bytes) => match format.decode<AccountReader, 96>(bytes) {
-            Result::Ok(reader) => reader.owner == account.owner && reader.balance == account.balance,
+            Result::Ok(reader) => reader.owner == account.owner
+                && reader.balance == account.balance,
             Result::Err(_) => false,
         },
         Result::Err(_) => false,

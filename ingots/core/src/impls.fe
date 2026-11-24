@@ -172,7 +172,9 @@ impl Deserialize for i256 {
 fn narrow<S: IntDowncast<T>, T>(_ value: own CodecResult<S>, _ offset: usize) -> CodecResult<T> {
     match value?.downcast() {
         Option::Some(narrowed) => Result::Ok(narrowed),
-        Option::None => Result::Err(CodecError::at(kind: ErrorKind::IntegerOutOfRange, offset)),
+        Option::None => Result::Err(
+            CodecError::at(kind: ErrorKind::IntegerOutOfRange, offset),
+        ),
     }
 }
 
@@ -272,7 +274,9 @@ impl<T: Deserialize + Copy, const N: usize> Deserialize for [T; N] {
         var sequence = decoder.begin_sequence(N)?
         if N == 0 {
             decoder.end_sequence(sequence)?
-            return Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: start))
+            return Result::Err(
+                CodecError::at(kind: ErrorKind::Unsupported, offset: start),
+            )
         }
         decoder.element(mut sequence)?
         let first = T::deserialize(mut decoder)?
@@ -320,7 +324,10 @@ impl<T: Deserialize + Copy, const N: usize> Deserialize for List<T, N> {
             // A decoder enforces the capacity itself; this guards one that does not.
             if list.len() == N {
                 return Result::Err(
-                    CodecError::at(kind: ErrorKind::CapacityExceeded, offset: decoder.offset()),
+                    CodecError::at(
+                        kind: ErrorKind::CapacityExceeded,
+                        offset: decoder.offset(),
+                    ),
                 )
             }
             list.push(T::deserialize(mut decoder)?)?
@@ -372,13 +379,17 @@ impl<K: MapKey, V: Deserialize + Copy, const N: usize> Deserialize for Map<K, V,
             let at = decoder.offset()
             // A decoder enforces the capacity itself; this guards one that does not.
             if map.len() == N {
-                return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: at))
+                return Result::Err(
+                    CodecError::at(kind: ErrorKind::CapacityExceeded, offset: at),
+                )
             }
             let key = K::deserialize(mut decoder)?
             decoder.map_value(mut state)?
             let value = V::deserialize(mut decoder)?
             if map.insert(key, value)?.is_some() {
-                return Result::Err(CodecError::at(kind: ErrorKind::DuplicateField, offset: at))
+                return Result::Err(
+                    CodecError::at(kind: ErrorKind::DuplicateField, offset: at),
+                )
             }
         }
         decoder.end_map(state)?
@@ -477,12 +488,12 @@ impl<T0: Serialize, T1: Serialize, T2: Serialize, T3: Serialize> Serialize for (
     }
 }
 
-impl<
-    T0: Deserialize,
-    T1: Deserialize,
-    T2: Deserialize,
-    T3: Deserialize,
-> Deserialize for (T0, T1, T2, T3) {
+impl<T0: Deserialize, T1: Deserialize, T2: Deserialize, T3: Deserialize> Deserialize for (
+    T0,
+    T1,
+    T2,
+    T3,
+) {
     fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
         var sequence = decoder.begin_sequence(4)?
         decoder.element(mut sequence)?
@@ -498,13 +509,13 @@ impl<
     }
 }
 
-impl<
-    T0: Serialize,
-    T1: Serialize,
-    T2: Serialize,
-    T3: Serialize,
-    T4: Serialize,
-> Serialize for (T0, T1, T2, T3, T4) {
+impl<T0: Serialize, T1: Serialize, T2: Serialize, T3: Serialize, T4: Serialize> Serialize for (
+    T0,
+    T1,
+    T2,
+    T3,
+    T4,
+) {
     fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
         let (ref e0, ref e1, ref e2, ref e3, ref e4) = self
         var sequence = encoder.begin_sequence(5)?

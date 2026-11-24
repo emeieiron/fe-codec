@@ -39,16 +39,22 @@ fn kind_at(_ lx: Lexed, _ index: usize) -> TokenKind {
 
 #[test]
 fn compact_keeps_type_syntax() {
-    assert!(same(compact_all(lexed("Option<Text<8>>")), "Option<Text<8>>"))
+    assert!(
+        same(compact_all(lexed("Option<Text<8>>")), "Option<Text<8>>"),
+    )
     assert!(same(compact_all(lexed("[u8; 2]")), "[u8; 2]"))
 }
 
 #[test]
 fn compact_collapses_whitespace() {
-    assert!(same(
-        compact_all(lexed("fe_codec_core::{\n    BoundedBuffer,\n    Text,\n}")),
-        "fe_codec_core::{ BoundedBuffer, Text, }",
-    ))
+    assert!(
+        same(
+            compact_all(
+                lexed("fe_codec_core::{\n    BoundedBuffer,\n    Text,\n}"),
+            ),
+            "fe_codec_core::{ BoundedBuffer, Text, }",
+        ),
+    )
     assert!(same(compact_all(lexed("  lead")), "lead"))
     assert!(same(compact_all(lexed("trail  \n")), "trail"))
 }
@@ -128,10 +134,16 @@ fn integer_literals_split_like_the_parser() {
 
 #[test]
 fn parse_int_limits() {
-    let lx = lexed("18446744073709551615 18446744073709551616 0xffffffffffffffff 0x10000000000000000 0")
-    assert!(lx.parse_int(lx.token(0)) == Option::Some(18446744073709551615))
+    let lx = lexed(
+        "18446744073709551615 18446744073709551616 0xffffffffffffffff 0x10000000000000000 0",
+    )
+    assert!(
+        lx.parse_int(lx.token(0)) == Option::Some(18446744073709551615),
+    )
     assert!(lx.parse_int(lx.token(2)) == Option::None)
-    assert!(lx.parse_int(lx.token(4)) == Option::Some(18446744073709551615))
+    assert!(
+        lx.parse_int(lx.token(4)) == Option::Some(18446744073709551615),
+    )
     assert!(lx.parse_int(lx.token(6)) == Option::None)
     assert!(lx.parse_int(lx.token(8)) == Option::Some(0))
     let word = lexed("abc")
@@ -271,7 +283,9 @@ fn line_col_counts_characters() {
     assert!(wide.line_col(2) == (1, 2))
     assert!(wide.line_col(3) == (1, 3))
     // A character before the line break does not shift the next line, and "✓" is three bytes.
-    let multi = lexed([0xe2, 0x9c, 0x93, 0xc3, 0xa9, 10, b'a', 0xe2, 0x9c, 0x93, b'b'])
+    let multi = lexed(
+        [0xe2, 0x9c, 0x93, 0xc3, 0xa9, 10, b'a', 0xe2, 0x9c, 0x93, b'b'],
+    )
     assert!(multi.line_col(5) == (1, 3))
     assert!(multi.line_col(6) == (2, 1))
     assert!(multi.line_col(10) == (2, 3))

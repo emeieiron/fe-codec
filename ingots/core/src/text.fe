@@ -95,7 +95,9 @@ impl Utf8 {
             if byte < self.lower || byte > self.upper {
                 return Option::None
             }
-            return Option::Some(Self { remaining: self.remaining - 1, lower: 0x80, upper: 0xbf })
+            return Option::Some(
+                Self { remaining: self.remaining - 1, lower: 0x80, upper: 0xbf },
+            )
         }
         if byte < 0x80 {
             return Option::Some(self)

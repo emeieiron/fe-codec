@@ -88,7 +88,9 @@ fn readers_can_look_anywhere_and_go_back() {
     assert!(reader.read().ok() == Option::Some(7))
     assert!(reader.read().ok() == Option::Some(8))
     // `byte_at` ignores the position and stops at the initialized length.
-    assert!(reader.byte_at(0) == Option::Some(7) && reader.byte_at(2) == Option::Some(9))
+    assert!(
+        reader.byte_at(0) == Option::Some(7) && reader.byte_at(2) == Option::Some(9),
+    )
     assert!(reader.byte_at(3).is_none())
     reader.rewind(1)
     assert!(reader.offset() == 1 && reader.remaining() == 2)

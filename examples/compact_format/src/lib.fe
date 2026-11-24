@@ -46,7 +46,9 @@ impl Format for Compact {
         encoder.finish()
     }
 
-    fn decode<T: Deserialize, const N: usize>(self, _ input: own BoundedBuffer<N>) -> CodecResult<T> {
+    fn decode<T: Deserialize, const N: usize>(self, _ input: own BoundedBuffer<N>) -> CodecResult<
+        T,
+    > {
         var decoder = CompactDecoder<N>::new(input, self.limits)
         let value = T::deserialize(mut decoder)?
         decoder.finish()?

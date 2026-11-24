@@ -14,7 +14,6 @@ use codec_compact::Compact
 use codec_transfer::models::{Bag, Crew, Member, Routes, Tally}
 use codec_transfer::testkit::{decodes, encodes, expect_error, expect_field, hi, must}
 
-
 const TALLY_JSON: [u8; 16] = "{\"counts\":[1,2]}"
 const TALLY_CBOR: [u8; 5] = [0xa1, 0x01, 0x82, 0x01, 0x02]
 const TALLY_EMPTY_JSON: [u8; 13] = "{\"counts\":[]}"
@@ -22,20 +21,83 @@ const TALLY_EMPTY_CBOR: [u8; 3] = [0xa1, 0x01, 0x80]
 const TALLY_FULL_JSON: [u8; 24] = "{\"counts\":[1,2,3,65535]}"
 const TALLY_FULL_CBOR: [u8; 9] = [0xa1, 0x01, 0x84, 0x01, 0x02, 0x03, 0x19, 0xff, 0xff]
 const CREW_JSON: [u8; 68] = "{\"members\":[{\"id\":1,\"name\":\"hi\"},{\"id\":2,\"name\":\"yo\"}],\"guests\":[7]}"
-const CREW_CBOR: [u8; 20] = [0xa2, 0x01, 0x82, 0xa2, 0x01, 0x01, 0x02, 0x62, 0x68, 0x69, 0xa2, 0x01, 0x02, 0x02, 0x62, 0x79, 0x6f, 0x02, 0x81, 0x07]
+const CREW_CBOR: [u8; 20] = [
+    0xa2,
+    0x01,
+    0x82,
+    0xa2,
+    0x01,
+    0x01,
+    0x02,
+    0x62,
+    0x68,
+    0x69,
+    0xa2,
+    0x01,
+    0x02,
+    0x02,
+    0x62,
+    0x79,
+    0x6f,
+    0x02,
+    0x81,
+    0x07,
+]
 const CREW_EMPTY_JSON: [u8; 14] = "{\"members\":[]}"
 const CREW_EMPTY_CBOR: [u8; 3] = [0xa1, 0x01, 0x80]
 const CREW_NO_GUESTS_JSON: [u8; 26] = "{\"members\":[],\"guests\":[]}"
 const CREW_NO_GUESTS_CBOR: [u8; 5] = [0xa2, 0x01, 0x80, 0x02, 0x80]
 const ROUTES_JSON: [u8; 84] = "{\"legs\":[[1,true],[2,false]],\"grid\":[[1,2],[3]],\"slots\":[1,null,3],\"fixed\":[[4],[]]}"
-const ROUTES_CBOR: [u8; 26] = [0xa4, 0x01, 0x82, 0x82, 0x01, 0xf5, 0x82, 0x02, 0xf4, 0x02, 0x82, 0x82, 0x01, 0x02, 0x81, 0x03, 0x03, 0x83, 0x01, 0xf6, 0x03, 0x04, 0x82, 0x81, 0x04, 0x80]
+const ROUTES_CBOR: [u8; 26] = [
+    0xa4,
+    0x01,
+    0x82,
+    0x82,
+    0x01,
+    0xf5,
+    0x82,
+    0x02,
+    0xf4,
+    0x02,
+    0x82,
+    0x82,
+    0x01,
+    0x02,
+    0x81,
+    0x03,
+    0x03,
+    0x83,
+    0x01,
+    0xf6,
+    0x03,
+    0x04,
+    0x82,
+    0x81,
+    0x04,
+    0x80,
+]
 const ROUTES_EMPTY_JSON: [u8; 48] = "{\"legs\":[],\"grid\":[],\"slots\":[],\"fixed\":[[],[]]}"
-const ROUTES_EMPTY_CBOR: [u8; 11] = [0xa4, 0x01, 0x80, 0x02, 0x80, 0x03, 0x80, 0x04, 0x82, 0x80, 0x80]
+const ROUTES_EMPTY_CBOR: [u8; 11] = [
+    0xa4,
+    0x01,
+    0x80,
+    0x02,
+    0x80,
+    0x03,
+    0x80,
+    0x04,
+    0x82,
+    0x80,
+    0x80,
+]
 const LIST_ROOT_JSON: [u8; 5] = "[1,2]"
 const LIST_ROOT_CBOR: [u8; 3] = [0x82, 0x01, 0x02]
 
 /// The elements of the list, in order: it holds exactly `expected`.
-fn holds<T: Eq + Copy, const N: usize, const M: usize>(_ list: List<T, N>, _ expected: [T; M]) -> bool {
+fn holds<T: Eq + Copy, const N: usize, const M: usize>(
+    _ list: List<T, N>,
+    _ expected: [T; M],
+) -> bool {
     list == must(List<T, N>::from_array(expected))
 }
 
@@ -53,7 +115,9 @@ fn yo() -> Text<8> {
 
 fn crew() -> Crew {
     Crew {
-        members: must(List<Member, 3>::from_array([member(1, hi()), member(2, yo())])),
+        members: must(
+            List<Member, 3>::from_array([member(1, hi()), member(2, yo())]),
+        ),
         guests: Option::Some(must(List<u8, 2>::from_array([7]))),
     }
 }
@@ -71,8 +135,14 @@ fn check_crew(_ value: Crew) {
 fn routes() -> Routes {
     Routes {
         legs: must(List<(u8, bool), 3>::from_array([(1, true), (2, false)])),
-        grid: must(List<List<u8, 2>, 2>::from_array([must(List<u8, 2>::from_array([1, 2])), must(List<u8, 2>::from_array([3]))])),
-        slots: must(List<Option<u8>, 3>::from_array([Option::Some(1), Option::None, Option::Some(3)])),
+        grid: must(
+            List<List<u8, 2>, 2>::from_array(
+                [must(List<u8, 2>::from_array([1, 2])), must(List<u8, 2>::from_array([3]))],
+            ),
+        ),
+        slots: must(
+            List<Option<u8>, 3>::from_array([Option::Some(1), Option::None, Option::Some(3)]),
+        ),
         fixed: [must(List<u8, 2>::from_array([4])), List<u8, 2>::new()],
     }
 }
@@ -80,8 +150,15 @@ fn routes() -> Routes {
 fn check_routes(_ value: Routes) {
     assert!(holds(value.legs, [(1, true), (2, false)]))
     assert!(value.grid.len() == 2)
-    assert!(holds(value.grid.get(0).unwrap(), [1, 2]) && holds(value.grid.get(1).unwrap(), [3]))
-    assert!(holds(value.slots, [Option::Some(1), Option::None, Option::Some(3)]))
+    assert!(
+        holds(value.grid.get(0).unwrap(), [1, 2]) && holds(value.grid.get(1).unwrap(), [3]),
+    )
+    assert!(
+        holds(
+            value.slots,
+            [Option::Some(1), Option::None, Option::Some(3)],
+        ),
+    )
     assert!(holds(value.fixed[0], [4]) && value.fixed[1].is_empty())
 }
 
@@ -110,21 +187,51 @@ fn json_writes_lists_as_arrays() {
     assert!(encodes(json, tally([0; 0]), TALLY_EMPTY_JSON))
     assert!(encodes(json, tally([1, 2, 3, 65535]), TALLY_FULL_JSON))
     assert!(encodes(json, crew(), CREW_JSON))
-    assert!(encodes(json, Crew { members: List<Member, 3>::new(), guests: Option::None }, CREW_EMPTY_JSON))
-    assert!(encodes(json, Crew { members: List<Member, 3>::new(), guests: Option::Some(List<u8, 2>::new()) }, CREW_NO_GUESTS_JSON))
+    assert!(
+        encodes(
+            json,
+            Crew { members: List<Member, 3>::new(), guests: Option::None },
+            CREW_EMPTY_JSON,
+        ),
+    )
+    assert!(
+        encodes(
+            json,
+            Crew { members: List<Member, 3>::new(), guests: Option::Some(List<u8, 2>::new()) },
+            CREW_NO_GUESTS_JSON,
+        ),
+    )
     assert!(encodes(json, routes(), ROUTES_JSON))
     assert!(encodes(json, empty_routes(), ROUTES_EMPTY_JSON))
     // At the root, a list and an array of the same elements are the same text.
-    assert!(encodes(json, must(List<u8, 4>::from_array([1, 2])), LIST_ROOT_JSON))
+    assert!(
+        encodes(
+            json,
+            must(List<u8, 4>::from_array([1, 2])),
+            LIST_ROOT_JSON,
+        ),
+    )
     assert!(encodes(json, [1 as u8, 2], LIST_ROOT_JSON))
 }
 
 #[test]
 fn json_reads_lists_of_any_length_up_to_the_capacity() {
     let json = Json::new()
-    assert!(holds(must(decodes<Tally, Json, 16>(json, TALLY_JSON)).counts, [1, 2]))
-    assert!(must(decodes<Tally, Json, 13>(json, TALLY_EMPTY_JSON)).counts.is_empty())
-    assert!(holds(must(decodes<Tally, Json, 24>(json, TALLY_FULL_JSON)).counts, [1, 2, 3, 65535]))
+    assert!(
+        holds(
+            must(decodes<Tally, Json, 16>(json, TALLY_JSON)).counts,
+            [1, 2],
+        ),
+    )
+    assert!(
+        must(decodes<Tally, Json, 13>(json, TALLY_EMPTY_JSON)).counts.is_empty(),
+    )
+    assert!(
+        holds(
+            must(decodes<Tally, Json, 24>(json, TALLY_FULL_JSON)).counts,
+            [1, 2, 3, 65535],
+        ),
+    )
     check_crew(must(decodes<Crew, Json, 68>(json, CREW_JSON)))
     let bare = must(decodes<Crew, Json, 14>(json, CREW_EMPTY_JSON))
     assert!(bare.members.is_empty() && bare.guests.is_none())
@@ -132,75 +239,346 @@ fn json_reads_lists_of_any_length_up_to_the_capacity() {
     assert!(none.members.is_empty() && none.guests.unwrap().is_empty())
     check_routes(must(decodes<Routes, Json, 84>(json, ROUTES_JSON)))
     let empty = must(decodes<Routes, Json, 48>(json, ROUTES_EMPTY_JSON))
-    assert!(empty.legs.is_empty() && empty.grid.is_empty() && empty.slots.is_empty())
+    assert!(
+        empty.legs.is_empty() && empty.grid.is_empty() && empty.slots.is_empty(),
+    )
     assert!(empty.fixed[0].is_empty() && empty.fixed[1].is_empty())
-    assert!(holds(must(decodes<List<u8, 4>, Json, 5>(json, LIST_ROOT_JSON)), [1, 2]))
+    assert!(
+        holds(
+            must(decodes<List<u8, 4>, Json, 5>(json, LIST_ROOT_JSON)),
+            [1, 2],
+        ),
+    )
     // Whitespace is allowed between tokens, and in an empty array.
-    assert!(holds(must(decodes<Tally, Json, 26>(json, " { \"counts\" : [ 1 , 2 ] } ")).counts, [1, 2]))
-    assert!(must(decodes<Tally, Json, 14>(json, "{\"counts\":[ ]}")).counts.is_empty())
-    assert!(must(decodes<List<u8, 4>, Json, 4>(json, " [ ]")).is_empty())
+    assert!(
+        holds(
+            must(
+                decodes<Tally, Json, 26>(json, " { \"counts\" : [ 1 , 2 ] } "),
+            ).counts,
+            [1, 2],
+        ),
+    )
+    assert!(
+        must(decodes<Tally, Json, 14>(json, "{\"counts\":[ ]}")).counts.is_empty(),
+    )
+    assert!(
+        must(decodes<List<u8, 4>, Json, 4>(json, " [ ]")).is_empty(),
+    )
     // Members in another order, with `null` for the absent optional list.
-    let reordered = must(decodes<Crew, Json, 48>(json, "{\"guests\":null,\"members\":[{\"name\":\"hi\",\"id\":1}]}"))
+    let reordered = must(
+        decodes<Crew, Json, 48>(
+            json,
+            "{\"guests\":null,\"members\":[{\"name\":\"hi\",\"id\":1}]}",
+        ),
+    )
     assert!(reordered.guests.is_none() && reordered.members.len() == 1)
 }
 
 #[test]
 fn json_rejects_lists_that_are_too_long_or_malformed() {
     // More than `N` elements is `CapacityExceeded` where the extra element starts.
-    expect_field(decodes<Tally, Json, 22>(Json::new(), "{\"counts\":[1,2,3,4,5]}"), ErrorKind::CapacityExceeded, 19, "counts")
-    expect_field(decodes<Tally, Json, 23>(Json::new(), "{\"counts\":[1,2,3,4, 5]}"), ErrorKind::CapacityExceeded, 20, "counts")
-    expect_field(decodes<Tally, Json, 24>(Json::new(), "{\"counts\":[1,2,3,4,\"x\"]}"), ErrorKind::CapacityExceeded, 19, "counts")
-    expect_field(decodes<Crew, Json, 93>(Json::new(), "{\"members\":[{\"id\":1,\"name\":\"a\"},{\"id\":2,\"name\":\"b\"},{\"id\":3,\"name\":\"c\"},{\"id\":4,\"name\":\"d\"}]}"), ErrorKind::CapacityExceeded, 72, "members")
-    expect_field(decodes<Crew, Json, 31>(Json::new(), "{\"members\":[],\"guests\":[1,2,3]}"), ErrorKind::CapacityExceeded, 28, "guests")
-    expect_error(decodes<List<u8, 2>, Json, 7>(Json::new(), "[1,2,3]"), ErrorKind::CapacityExceeded, 5)
-    expect_error(decodes<List<u8, 0>, Json, 3>(Json::new(), "[1]"), ErrorKind::CapacityExceeded, 1)
-    assert!(must(decodes<List<u8, 0>, Json, 2>(Json::new(), "[]")).is_empty())
+    expect_field(
+        decodes<Tally, Json, 22>(Json::new(), "{\"counts\":[1,2,3,4,5]}"),
+        ErrorKind::CapacityExceeded,
+        19,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Json, 23>(Json::new(), "{\"counts\":[1,2,3,4, 5]}"),
+        ErrorKind::CapacityExceeded,
+        20,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Json, 24>(Json::new(), "{\"counts\":[1,2,3,4,\"x\"]}"),
+        ErrorKind::CapacityExceeded,
+        19,
+        "counts",
+    )
+    expect_field(
+        decodes<Crew, Json, 93>(
+            Json::new(),
+            "{\"members\":[{\"id\":1,\"name\":\"a\"},{\"id\":2,\"name\":\"b\"},{\"id\":3,\"name\":\"c\"},{\"id\":4,\"name\":\"d\"}]}",
+        ),
+        ErrorKind::CapacityExceeded,
+        72,
+        "members",
+    )
+    expect_field(
+        decodes<Crew, Json, 31>(Json::new(), "{\"members\":[],\"guests\":[1,2,3]}"),
+        ErrorKind::CapacityExceeded,
+        28,
+        "guests",
+    )
+    expect_error(
+        decodes<List<u8, 2>, Json, 7>(Json::new(), "[1,2,3]"),
+        ErrorKind::CapacityExceeded,
+        5,
+    )
+    expect_error(
+        decodes<List<u8, 0>, Json, 3>(Json::new(), "[1]"),
+        ErrorKind::CapacityExceeded,
+        1,
+    )
+    assert!(
+        must(decodes<List<u8, 0>, Json, 2>(Json::new(), "[]")).is_empty(),
+    )
     // Commas.
-    expect_field(decodes<Tally, Json, 15>(Json::new(), "{\"counts\":[1,]}"), ErrorKind::InvalidSyntax, 13, "counts")
-    expect_field(decodes<Tally, Json, 16>(Json::new(), "{\"counts\":[1, ]}"), ErrorKind::InvalidSyntax, 14, "counts")
-    expect_field(decodes<Tally, Json, 15>(Json::new(), "{\"counts\":[,1]}"), ErrorKind::TypeMismatch, 11, "counts")
-    expect_field(decodes<Tally, Json, 14>(Json::new(), "{\"counts\":[,]}"), ErrorKind::TypeMismatch, 11, "counts")
-    expect_field(decodes<Tally, Json, 16>(Json::new(), "{\"counts\":[1 2]}"), ErrorKind::InvalidSyntax, 13, "counts")
-    expect_field(decodes<Tally, Json, 17>(Json::new(), "{\"counts\":[1,,2]}"), ErrorKind::TypeMismatch, 13, "counts")
+    expect_field(
+        decodes<Tally, Json, 15>(Json::new(), "{\"counts\":[1,]}"),
+        ErrorKind::InvalidSyntax,
+        13,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Json, 16>(Json::new(), "{\"counts\":[1, ]}"),
+        ErrorKind::InvalidSyntax,
+        14,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Json, 15>(Json::new(), "{\"counts\":[,1]}"),
+        ErrorKind::TypeMismatch,
+        11,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Json, 14>(Json::new(), "{\"counts\":[,]}"),
+        ErrorKind::TypeMismatch,
+        11,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Json, 16>(Json::new(), "{\"counts\":[1 2]}"),
+        ErrorKind::InvalidSyntax,
+        13,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Json, 17>(Json::new(), "{\"counts\":[1,,2]}"),
+        ErrorKind::TypeMismatch,
+        13,
+        "counts",
+    )
     // Elements of the wrong type or range, and arrays that end badly.
-    expect_field(decodes<Tally, Json, 16>(Json::new(), "{\"counts\":[\"a\"]}"), ErrorKind::TypeMismatch, 11, "counts")
-    expect_field(decodes<Tally, Json, 17>(Json::new(), "{\"counts\":[1,-1]}"), ErrorKind::IntegerOutOfRange, 13, "counts")
-    expect_field(decodes<Tally, Json, 18>(Json::new(), "{\"counts\":[65536]}"), ErrorKind::IntegerOutOfRange, 11, "counts")
-    expect_field(decodes<Tally, Json, 14>(Json::new(), "{\"counts\":[1,2"), ErrorKind::UnexpectedEnd, 14, "counts")
-    expect_field(decodes<Tally, Json, 13>(Json::new(), "{\"counts\":[1,"), ErrorKind::UnexpectedEnd, 13, "counts")
-    expect_field(decodes<Tally, Json, 11>(Json::new(), "{\"counts\":["), ErrorKind::UnexpectedEnd, 11, "counts")
-    expect_field(decodes<Tally, Json, 15>(Json::new(), "{\"counts\":[1,2}"), ErrorKind::InvalidSyntax, 14, "counts")
-    expect_field(decodes<Tally, Json, 12>(Json::new(), "{\"counts\":1}"), ErrorKind::TypeMismatch, 10, "counts")
-    expect_field(decodes<Tally, Json, 15>(Json::new(), "{\"counts\":null}"), ErrorKind::TypeMismatch, 10, "counts")
-    expect_field(decodes<Tally, Json, 13>(Json::new(), "{\"counts\":{}}"), ErrorKind::TypeMismatch, 10, "counts")
-    expect_field(decodes<Tally, Json, 15>(Json::new(), "{\"counts\":\"[]\"}"), ErrorKind::TypeMismatch, 10, "counts")
-    expect_error(decodes<Tally, Json, 14>(Json::new(), "{\"counts\":[]]}"), ErrorKind::InvalidSyntax, 12)
-    expect_error(decodes<Tally, Json, 15>(Json::new(), "{\"counts\":[]} x"), ErrorKind::TrailingData, 14)
+    expect_field(
+        decodes<Tally, Json, 16>(Json::new(), "{\"counts\":[\"a\"]}"),
+        ErrorKind::TypeMismatch,
+        11,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Json, 17>(Json::new(), "{\"counts\":[1,-1]}"),
+        ErrorKind::IntegerOutOfRange,
+        13,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Json, 18>(Json::new(), "{\"counts\":[65536]}"),
+        ErrorKind::IntegerOutOfRange,
+        11,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Json, 14>(Json::new(), "{\"counts\":[1,2"),
+        ErrorKind::UnexpectedEnd,
+        14,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Json, 13>(Json::new(), "{\"counts\":[1,"),
+        ErrorKind::UnexpectedEnd,
+        13,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Json, 11>(Json::new(), "{\"counts\":["),
+        ErrorKind::UnexpectedEnd,
+        11,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Json, 15>(Json::new(), "{\"counts\":[1,2}"),
+        ErrorKind::InvalidSyntax,
+        14,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Json, 12>(Json::new(), "{\"counts\":1}"),
+        ErrorKind::TypeMismatch,
+        10,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Json, 15>(Json::new(), "{\"counts\":null}"),
+        ErrorKind::TypeMismatch,
+        10,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Json, 13>(Json::new(), "{\"counts\":{}}"),
+        ErrorKind::TypeMismatch,
+        10,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Json, 15>(Json::new(), "{\"counts\":\"[]\"}"),
+        ErrorKind::TypeMismatch,
+        10,
+        "counts",
+    )
+    expect_error(
+        decodes<Tally, Json, 14>(Json::new(), "{\"counts\":[]]}"),
+        ErrorKind::InvalidSyntax,
+        12,
+    )
+    expect_error(
+        decodes<Tally, Json, 15>(Json::new(), "{\"counts\":[]} x"),
+        ErrorKind::TrailingData,
+        14,
+    )
     // An error inside an element names the innermost field.
-    expect_field(decodes<Crew, Json, 55>(Json::new(), "{\"members\":[{\"id\":1,\"name\":\"a\"},{\"id\":300,\"name\":\"b\"}]}"), ErrorKind::IntegerOutOfRange, 38, "id")
-    expect_field(decodes<Crew, Json, 22>(Json::new(), "{\"members\":[{\"id\":1}]}"), ErrorKind::MissingField, 20, "name")
-    expect_field(decodes<Routes, Json, 55>(Json::new(), "{\"legs\":[],\"grid\":[[1,2,3]],\"slots\":[],\"fixed\":[[],[]]}"), ErrorKind::CapacityExceeded, 24, "grid")
-    expect_field(decodes<Routes, Json, 58>(Json::new(), "{\"legs\":[[1,true,0]],\"grid\":[],\"slots\":[],\"fixed\":[[],[]]}"), ErrorKind::InvalidLength, 16, "legs")
-    expect_field(decodes<Routes, Json, 55>(Json::new(), "{\"legs\":[],\"grid\":[],\"slots\":[1,2,3,4],\"fixed\":[[],[]]}"), ErrorKind::CapacityExceeded, 36, "slots")
+    expect_field(
+        decodes<Crew, Json, 55>(
+            Json::new(),
+            "{\"members\":[{\"id\":1,\"name\":\"a\"},{\"id\":300,\"name\":\"b\"}]}",
+        ),
+        ErrorKind::IntegerOutOfRange,
+        38,
+        "id",
+    )
+    expect_field(
+        decodes<Crew, Json, 22>(Json::new(), "{\"members\":[{\"id\":1}]}"),
+        ErrorKind::MissingField,
+        20,
+        "name",
+    )
+    expect_field(
+        decodes<Routes, Json, 55>(
+            Json::new(),
+            "{\"legs\":[],\"grid\":[[1,2,3]],\"slots\":[],\"fixed\":[[],[]]}",
+        ),
+        ErrorKind::CapacityExceeded,
+        24,
+        "grid",
+    )
+    expect_field(
+        decodes<Routes, Json, 58>(
+            Json::new(),
+            "{\"legs\":[[1,true,0]],\"grid\":[],\"slots\":[],\"fixed\":[[],[]]}",
+        ),
+        ErrorKind::InvalidLength,
+        16,
+        "legs",
+    )
+    expect_field(
+        decodes<Routes, Json, 55>(
+            Json::new(),
+            "{\"legs\":[],\"grid\":[],\"slots\":[1,2,3,4],\"fixed\":[[],[]]}",
+        ),
+        ErrorKind::CapacityExceeded,
+        36,
+        "slots",
+    )
     // `fixed` is an array of lists: its own length is still fixed.
-    expect_field(decodes<Routes, Json, 45>(Json::new(), "{\"legs\":[],\"grid\":[],\"slots\":[],\"fixed\":[[]]}"), ErrorKind::InvalidLength, 43, "fixed")
-    expect_field(decodes<Routes, Json, 51>(Json::new(), "{\"legs\":[],\"grid\":[],\"slots\":[],\"fixed\":[[],[],[]]}"), ErrorKind::InvalidLength, 46, "fixed")
+    expect_field(
+        decodes<Routes, Json, 45>(
+            Json::new(),
+            "{\"legs\":[],\"grid\":[],\"slots\":[],\"fixed\":[[]]}",
+        ),
+        ErrorKind::InvalidLength,
+        43,
+        "fixed",
+    )
+    expect_field(
+        decodes<Routes, Json, 51>(
+            Json::new(),
+            "{\"legs\":[],\"grid\":[],\"slots\":[],\"fixed\":[[],[],[]]}",
+        ),
+        ErrorKind::InvalidLength,
+        46,
+        "fixed",
+    )
 }
 
 #[test]
 fn json_limits_apply_to_lists() {
     // `Limits.max_items` counts the elements of a list, and wins over the capacity.
-    expect_field(decodes<Tally, Json, 18>(Json::with_limits(Limits { max_depth: 32, max_items: 2 }), "{\"counts\":[1,2,3]}"), ErrorKind::CollectionLimit, 15, "counts")
-    assert!(holds(must(decodes<Tally, Json, 16>(Json::with_limits(Limits { max_depth: 32, max_items: 2 }), TALLY_JSON)).counts, [1, 2]))
-    expect_field(decodes<Tally, Json, 22>(Json::with_limits(Limits { max_depth: 32, max_items: 4 }), "{\"counts\":[1,2,3,4,5]}"), ErrorKind::CollectionLimit, 19, "counts")
-    expect_field(decodes<Tally, Json, 22>(Json::with_limits(Limits { max_depth: 32, max_items: 5 }), "{\"counts\":[1,2,3,4,5]}"), ErrorKind::CapacityExceeded, 19, "counts")
+    expect_field(
+        decodes<Tally, Json, 18>(
+            Json::with_limits(Limits { max_depth: 32, max_items: 2 }),
+            "{\"counts\":[1,2,3]}",
+        ),
+        ErrorKind::CollectionLimit,
+        15,
+        "counts",
+    )
+    assert!(
+        holds(
+            must(
+                decodes<Tally, Json, 16>(
+                    Json::with_limits(Limits { max_depth: 32, max_items: 2 }),
+                    TALLY_JSON,
+                ),
+            )
+                .counts,
+            [1, 2],
+        ),
+    )
+    expect_field(
+        decodes<Tally, Json, 22>(
+            Json::with_limits(Limits { max_depth: 32, max_items: 4 }),
+            "{\"counts\":[1,2,3,4,5]}",
+        ),
+        ErrorKind::CollectionLimit,
+        19,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Json, 22>(
+            Json::with_limits(Limits { max_depth: 32, max_items: 5 }),
+            "{\"counts\":[1,2,3,4,5]}",
+        ),
+        ErrorKind::CapacityExceeded,
+        19,
+        "counts",
+    )
     // A list is one level of depth, inside the record's.
-    expect_field(decodes<Tally, Json, 13>(Json::with_limits(Limits { max_depth: 1, max_items: 256 }), "{\"counts\":[]}"), ErrorKind::DepthLimit, 10, "counts")
-    assert!(must(decodes<Tally, Json, 13>(Json::with_limits(Limits { max_depth: 2, max_items: 256 }), TALLY_EMPTY_JSON)).counts.is_empty())
-    expect_field(decodes<Routes, Json, 50>(Json::with_limits(Limits { max_depth: 2, max_items: 256 }), "{\"legs\":[],\"grid\":[[]],\"slots\":[],\"fixed\":[[],[]]}"), ErrorKind::DepthLimit, 19, "grid")
+    expect_field(
+        decodes<Tally, Json, 13>(
+            Json::with_limits(Limits { max_depth: 1, max_items: 256 }),
+            "{\"counts\":[]}",
+        ),
+        ErrorKind::DepthLimit,
+        10,
+        "counts",
+    )
+    assert!(
+        must(
+            decodes<Tally, Json, 13>(
+                Json::with_limits(Limits { max_depth: 2, max_items: 256 }),
+                TALLY_EMPTY_JSON,
+            ),
+        )
+            .counts
+            .is_empty(),
+    )
+    expect_field(
+        decodes<Routes, Json, 50>(
+            Json::with_limits(Limits { max_depth: 2, max_items: 256 }),
+            "{\"legs\":[],\"grid\":[[]],\"slots\":[],\"fixed\":[[],[]]}",
+        ),
+        ErrorKind::DepthLimit,
+        19,
+        "grid",
+    )
     // Writing checks the same limit.
     let narrow = Json::with_limits(Limits { max_depth: 32, max_items: 2 })
-    expect_error(narrow.encode<Tally, 64>(tally([1, 2, 3])), ErrorKind::CollectionLimit, 10)
+    expect_error(
+        narrow.encode<Tally, 64>(tally([1, 2, 3])),
+        ErrorKind::CollectionLimit,
+        10,
+    )
     assert!(encodes(narrow, tally([1, 2]), TALLY_JSON))
 }
 
@@ -213,24 +591,58 @@ fn cbor_writes_lists_as_definite_length_arrays() {
     assert!(encodes(cbor, tally([0; 0]), TALLY_EMPTY_CBOR))
     assert!(encodes(cbor, tally([1, 2, 3, 65535]), TALLY_FULL_CBOR))
     assert!(encodes(cbor, crew(), CREW_CBOR))
-    assert!(encodes(cbor, Crew { members: List<Member, 3>::new(), guests: Option::None }, CREW_EMPTY_CBOR))
-    assert!(encodes(cbor, Crew { members: List<Member, 3>::new(), guests: Option::Some(List<u8, 2>::new()) }, CREW_NO_GUESTS_CBOR))
+    assert!(
+        encodes(
+            cbor,
+            Crew { members: List<Member, 3>::new(), guests: Option::None },
+            CREW_EMPTY_CBOR,
+        ),
+    )
+    assert!(
+        encodes(
+            cbor,
+            Crew { members: List<Member, 3>::new(), guests: Option::Some(List<u8, 2>::new()) },
+            CREW_NO_GUESTS_CBOR,
+        ),
+    )
     assert!(encodes(cbor, routes(), ROUTES_CBOR))
     assert!(encodes(cbor, empty_routes(), ROUTES_EMPTY_CBOR))
-    assert!(encodes(cbor, must(List<u8, 4>::from_array([1, 2])), LIST_ROOT_CBOR))
+    assert!(
+        encodes(
+            cbor,
+            must(List<u8, 4>::from_array([1, 2])),
+            LIST_ROOT_CBOR,
+        ),
+    )
     assert!(encodes(cbor, [1 as u8, 2], LIST_ROOT_CBOR))
     // A list longer than 23 elements has a one-byte head, as any array does.
     let long = must(List<u8, 30>::from_array([0; 24]))
     let head = must(cbor.encode<List<u8, 30>, 32>(long))
-    assert!(head.byte_at(0) == Option::Some(0x98) && head.byte_at(1) == Option::Some(24) && head.len() == 26)
+    assert!(
+        head.byte_at(0) == Option::Some(0x98)
+            && head.byte_at(1) == Option::Some(24)
+            && head.len() == 26,
+    )
 }
 
 #[test]
 fn cbor_reads_lists_of_any_length_up_to_the_capacity() {
     let cbor = Cbor::new()
-    assert!(holds(must(decodes<Tally, Cbor, 5>(cbor, TALLY_CBOR)).counts, [1, 2]))
-    assert!(must(decodes<Tally, Cbor, 3>(cbor, TALLY_EMPTY_CBOR)).counts.is_empty())
-    assert!(holds(must(decodes<Tally, Cbor, 9>(cbor, TALLY_FULL_CBOR)).counts, [1, 2, 3, 65535]))
+    assert!(
+        holds(
+            must(decodes<Tally, Cbor, 5>(cbor, TALLY_CBOR)).counts,
+            [1, 2],
+        ),
+    )
+    assert!(
+        must(decodes<Tally, Cbor, 3>(cbor, TALLY_EMPTY_CBOR)).counts.is_empty(),
+    )
+    assert!(
+        holds(
+            must(decodes<Tally, Cbor, 9>(cbor, TALLY_FULL_CBOR)).counts,
+            [1, 2, 3, 65535],
+        ),
+    )
     check_crew(must(decodes<Crew, Cbor, 20>(cbor, CREW_CBOR)))
     let bare = must(decodes<Crew, Cbor, 3>(cbor, CREW_EMPTY_CBOR))
     assert!(bare.members.is_empty() && bare.guests.is_none())
@@ -238,65 +650,308 @@ fn cbor_reads_lists_of_any_length_up_to_the_capacity() {
     assert!(none.members.is_empty() && none.guests.unwrap().is_empty())
     check_routes(must(decodes<Routes, Cbor, 26>(cbor, ROUTES_CBOR)))
     let empty = must(decodes<Routes, Cbor, 11>(cbor, ROUTES_EMPTY_CBOR))
-    assert!(empty.legs.is_empty() && empty.grid.is_empty() && empty.slots.is_empty())
+    assert!(
+        empty.legs.is_empty() && empty.grid.is_empty() && empty.slots.is_empty(),
+    )
     assert!(empty.fixed[0].is_empty() && empty.fixed[1].is_empty())
-    assert!(holds(must(decodes<List<u8, 4>, Cbor, 3>(cbor, LIST_ROOT_CBOR)), [1, 2]))
-    let long = must(decodes<List<u8, 30>, Cbor, 26>(cbor, [0x98, 24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]))
+    assert!(
+        holds(
+            must(decodes<List<u8, 4>, Cbor, 3>(cbor, LIST_ROOT_CBOR)),
+            [1, 2],
+        ),
+    )
+    let long = must(
+        decodes<List<u8, 30>, Cbor, 26>(
+            cbor,
+            [0x98, 24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        ),
+    )
     assert!(long.len() == 24)
 }
 
 #[test]
 fn cbor_rejects_lists_that_are_too_long_or_malformed() {
     // More than `N` elements is `CapacityExceeded` at the array's head, before any element is read.
-    expect_field(decodes<Tally, Cbor, 8>(Cbor::new(), [0xa1, 0x01, 0x85, 0x01, 0x02, 0x03, 0x04, 0x05]), ErrorKind::CapacityExceeded, 2, "counts")
-    expect_field(decodes<Tally, Cbor, 3>(Cbor::new(), [0xa1, 0x01, 0x85]), ErrorKind::CapacityExceeded, 2, "counts")
-    expect_field(decodes<Tally, Cbor, 4>(Cbor::new(), [0xa1, 0x01, 0x98, 0x18]), ErrorKind::CapacityExceeded, 2, "counts")
-    expect_field(decodes<Crew, Cbor, 7>(Cbor::new(), [0xa1, 0x01, 0x84, 0xa0, 0xa0, 0xa0, 0xa0]), ErrorKind::CapacityExceeded, 2, "members")
-    expect_field(decodes<Crew, Cbor, 8>(Cbor::new(), [0xa2, 0x01, 0x80, 0x02, 0x83, 0x01, 0x02, 0x03]), ErrorKind::CapacityExceeded, 4, "guests")
-    expect_error(decodes<List<u8, 2>, Cbor, 4>(Cbor::new(), [0x83, 0x01, 0x02, 0x03]), ErrorKind::CapacityExceeded, 0)
-    expect_error(decodes<List<u8, 0>, Cbor, 2>(Cbor::new(), [0x81, 0x01]), ErrorKind::CapacityExceeded, 0)
-    assert!(must(decodes<List<u8, 0>, Cbor, 1>(Cbor::new(), [0x80])).is_empty())
+    expect_field(
+        decodes<Tally, Cbor, 8>(
+            Cbor::new(),
+            [0xa1, 0x01, 0x85, 0x01, 0x02, 0x03, 0x04, 0x05],
+        ),
+        ErrorKind::CapacityExceeded,
+        2,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Cbor, 3>(Cbor::new(), [0xa1, 0x01, 0x85]),
+        ErrorKind::CapacityExceeded,
+        2,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Cbor, 4>(Cbor::new(), [0xa1, 0x01, 0x98, 0x18]),
+        ErrorKind::CapacityExceeded,
+        2,
+        "counts",
+    )
+    expect_field(
+        decodes<Crew, Cbor, 7>(Cbor::new(), [0xa1, 0x01, 0x84, 0xa0, 0xa0, 0xa0, 0xa0]),
+        ErrorKind::CapacityExceeded,
+        2,
+        "members",
+    )
+    expect_field(
+        decodes<Crew, Cbor, 8>(
+            Cbor::new(),
+            [0xa2, 0x01, 0x80, 0x02, 0x83, 0x01, 0x02, 0x03],
+        ),
+        ErrorKind::CapacityExceeded,
+        4,
+        "guests",
+    )
+    expect_error(
+        decodes<List<u8, 2>, Cbor, 4>(Cbor::new(), [0x83, 0x01, 0x02, 0x03]),
+        ErrorKind::CapacityExceeded,
+        0,
+    )
+    expect_error(
+        decodes<List<u8, 0>, Cbor, 2>(Cbor::new(), [0x81, 0x01]),
+        ErrorKind::CapacityExceeded,
+        0,
+    )
+    assert!(
+        must(decodes<List<u8, 0>, Cbor, 1>(Cbor::new(), [0x80])).is_empty(),
+    )
     // Heads are definite-length and shortest-form, as for every array.
-    expect_field(decodes<Tally, Cbor, 6>(Cbor::new(), [0xa1, 0x01, 0x9f, 0x01, 0x02, 0xff]), ErrorKind::NonCanonical, 2, "counts")
-    expect_field(decodes<Tally, Cbor, 6>(Cbor::new(), [0xa1, 0x01, 0x98, 0x02, 0x01, 0x02]), ErrorKind::NonCanonical, 2, "counts")
-    expect_field(decodes<Tally, Cbor, 5>(Cbor::new(), [0xa1, 0x01, 0x99, 0x00, 0x00]), ErrorKind::NonCanonical, 2, "counts")
+    expect_field(
+        decodes<Tally, Cbor, 6>(Cbor::new(), [0xa1, 0x01, 0x9f, 0x01, 0x02, 0xff]),
+        ErrorKind::NonCanonical,
+        2,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Cbor, 6>(Cbor::new(), [0xa1, 0x01, 0x98, 0x02, 0x01, 0x02]),
+        ErrorKind::NonCanonical,
+        2,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Cbor, 5>(Cbor::new(), [0xa1, 0x01, 0x99, 0x00, 0x00]),
+        ErrorKind::NonCanonical,
+        2,
+        "counts",
+    )
     // Other kinds of item, and elements of the wrong type or range.
-    expect_field(decodes<Tally, Cbor, 3>(Cbor::new(), [0xa1, 0x01, 0xa0]), ErrorKind::TypeMismatch, 2, "counts")
-    expect_field(decodes<Tally, Cbor, 5>(Cbor::new(), [0xa1, 0x01, 0x42, 0x01, 0x02]), ErrorKind::TypeMismatch, 2, "counts")
-    expect_field(decodes<Tally, Cbor, 3>(Cbor::new(), [0xa1, 0x01, 0xf6]), ErrorKind::TypeMismatch, 2, "counts")
-    expect_field(decodes<Tally, Cbor, 3>(Cbor::new(), [0xa1, 0x01, 0x01]), ErrorKind::TypeMismatch, 2, "counts")
-    expect_field(decodes<Tally, Cbor, 5>(Cbor::new(), [0xa1, 0x01, 0x81, 0x61, 0x61]), ErrorKind::TypeMismatch, 3, "counts")
-    expect_field(decodes<Tally, Cbor, 5>(Cbor::new(), [0xa1, 0x01, 0x82, 0x01, 0xf5]), ErrorKind::TypeMismatch, 4, "counts")
-    expect_field(decodes<Tally, Cbor, 8>(Cbor::new(), [0xa1, 0x01, 0x81, 0x1a, 0x00, 0x01, 0x00, 0x00]), ErrorKind::IntegerOutOfRange, 3, "counts")
-    expect_field(decodes<Tally, Cbor, 4>(Cbor::new(), [0xa1, 0x01, 0x81, 0x20]), ErrorKind::TypeMismatch, 3, "counts")
+    expect_field(
+        decodes<Tally, Cbor, 3>(Cbor::new(), [0xa1, 0x01, 0xa0]),
+        ErrorKind::TypeMismatch,
+        2,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Cbor, 5>(Cbor::new(), [0xa1, 0x01, 0x42, 0x01, 0x02]),
+        ErrorKind::TypeMismatch,
+        2,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Cbor, 3>(Cbor::new(), [0xa1, 0x01, 0xf6]),
+        ErrorKind::TypeMismatch,
+        2,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Cbor, 3>(Cbor::new(), [0xa1, 0x01, 0x01]),
+        ErrorKind::TypeMismatch,
+        2,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Cbor, 5>(Cbor::new(), [0xa1, 0x01, 0x81, 0x61, 0x61]),
+        ErrorKind::TypeMismatch,
+        3,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Cbor, 5>(Cbor::new(), [0xa1, 0x01, 0x82, 0x01, 0xf5]),
+        ErrorKind::TypeMismatch,
+        4,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Cbor, 8>(
+            Cbor::new(),
+            [0xa1, 0x01, 0x81, 0x1a, 0x00, 0x01, 0x00, 0x00],
+        ),
+        ErrorKind::IntegerOutOfRange,
+        3,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Cbor, 4>(Cbor::new(), [0xa1, 0x01, 0x81, 0x20]),
+        ErrorKind::TypeMismatch,
+        3,
+        "counts",
+    )
     // Input that ends inside a list, and input after it.
-    expect_field(decodes<Tally, Cbor, 4>(Cbor::new(), [0xa1, 0x01, 0x82, 0x01]), ErrorKind::UnexpectedEnd, 4, "counts")
-    expect_field(decodes<Tally, Cbor, 3>(Cbor::new(), [0xa1, 0x01, 0x82]), ErrorKind::UnexpectedEnd, 3, "counts")
-    expect_field(decodes<Tally, Cbor, 2>(Cbor::new(), [0xa1, 0x01]), ErrorKind::UnexpectedEnd, 2, "counts")
-    expect_error(decodes<Tally, Cbor, 4>(Cbor::new(), [0xa1, 0x01, 0x80, 0x00]), ErrorKind::TrailingData, 3)
-    expect_error(decodes<Tally, Cbor, 5>(Cbor::new(), [0xa1, 0x01, 0x81, 0x01, 0x01]), ErrorKind::TrailingData, 4)
+    expect_field(
+        decodes<Tally, Cbor, 4>(Cbor::new(), [0xa1, 0x01, 0x82, 0x01]),
+        ErrorKind::UnexpectedEnd,
+        4,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Cbor, 3>(Cbor::new(), [0xa1, 0x01, 0x82]),
+        ErrorKind::UnexpectedEnd,
+        3,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Cbor, 2>(Cbor::new(), [0xa1, 0x01]),
+        ErrorKind::UnexpectedEnd,
+        2,
+        "counts",
+    )
+    expect_error(
+        decodes<Tally, Cbor, 4>(Cbor::new(), [0xa1, 0x01, 0x80, 0x00]),
+        ErrorKind::TrailingData,
+        3,
+    )
+    expect_error(
+        decodes<Tally, Cbor, 5>(Cbor::new(), [0xa1, 0x01, 0x81, 0x01, 0x01]),
+        ErrorKind::TrailingData,
+        4,
+    )
     // An error inside an element names the innermost field.
-    expect_field(decodes<Crew, Cbor, 9>(Cbor::new(), [0xa1, 0x01, 0x81, 0xa2, 0x01, 0x01, 0x02, 0x62, 0x68]), ErrorKind::UnexpectedEnd, 9, "name")
-    expect_field(decodes<Crew, Cbor, 6>(Cbor::new(), [0xa1, 0x01, 0x81, 0xa1, 0x01, 0x01]), ErrorKind::MissingField, 6, "name")
-    expect_field(decodes<Routes, Cbor, 15>(Cbor::new(), [0xa4, 0x01, 0x80, 0x02, 0x81, 0x83, 0x01, 0x02, 0x03, 0x03, 0x80, 0x04, 0x82, 0x80, 0x80]), ErrorKind::CapacityExceeded, 5, "grid")
+    expect_field(
+        decodes<Crew, Cbor, 9>(
+            Cbor::new(),
+            [0xa1, 0x01, 0x81, 0xa2, 0x01, 0x01, 0x02, 0x62, 0x68],
+        ),
+        ErrorKind::UnexpectedEnd,
+        9,
+        "name",
+    )
+    expect_field(
+        decodes<Crew, Cbor, 6>(Cbor::new(), [0xa1, 0x01, 0x81, 0xa1, 0x01, 0x01]),
+        ErrorKind::MissingField,
+        6,
+        "name",
+    )
+    expect_field(
+        decodes<Routes, Cbor, 15>(
+            Cbor::new(),
+            [
+                0xa4,
+                0x01,
+                0x80,
+                0x02,
+                0x81,
+                0x83,
+                0x01,
+                0x02,
+                0x03,
+                0x03,
+                0x80,
+                0x04,
+                0x82,
+                0x80,
+                0x80,
+            ],
+        ),
+        ErrorKind::CapacityExceeded,
+        5,
+        "grid",
+    )
     // `fixed` is an array of lists: its own length is still fixed.
-    expect_field(decodes<Routes, Cbor, 10>(Cbor::new(), [0xa4, 0x01, 0x80, 0x02, 0x80, 0x03, 0x80, 0x04, 0x81, 0x80]), ErrorKind::InvalidLength, 8, "fixed")
-    expect_field(decodes<Routes, Cbor, 12>(Cbor::new(), [0xa4, 0x01, 0x80, 0x02, 0x80, 0x03, 0x80, 0x04, 0x83, 0x80, 0x80, 0x80]), ErrorKind::InvalidLength, 8, "fixed")
+    expect_field(
+        decodes<Routes, Cbor, 10>(
+            Cbor::new(),
+            [0xa4, 0x01, 0x80, 0x02, 0x80, 0x03, 0x80, 0x04, 0x81, 0x80],
+        ),
+        ErrorKind::InvalidLength,
+        8,
+        "fixed",
+    )
+    expect_field(
+        decodes<Routes, Cbor, 12>(
+            Cbor::new(),
+            [0xa4, 0x01, 0x80, 0x02, 0x80, 0x03, 0x80, 0x04, 0x83, 0x80, 0x80, 0x80],
+        ),
+        ErrorKind::InvalidLength,
+        8,
+        "fixed",
+    )
 }
 
 #[test]
 fn cbor_limits_apply_to_lists() {
     // `Limits.max_items` is checked at the head, and wins over the capacity.
-    expect_field(decodes<Tally, Cbor, 7>(Cbor::with_limits(Limits { max_depth: 32, max_items: 3 }), [0xa1, 0x01, 0x84, 0x01, 0x02, 0x03, 0x04]), ErrorKind::CollectionLimit, 2, "counts")
-    expect_field(decodes<Tally, Cbor, 3>(Cbor::with_limits(Limits { max_depth: 32, max_items: 3 }), [0xa1, 0x01, 0x85]), ErrorKind::CollectionLimit, 2, "counts")
-    expect_field(decodes<Tally, Cbor, 3>(Cbor::with_limits(Limits { max_depth: 32, max_items: 5 }), [0xa1, 0x01, 0x85]), ErrorKind::CapacityExceeded, 2, "counts")
-    assert!(holds(must(decodes<Tally, Cbor, 5>(Cbor::with_limits(Limits { max_depth: 32, max_items: 2 }), TALLY_CBOR)).counts, [1, 2]))
+    expect_field(
+        decodes<Tally, Cbor, 7>(
+            Cbor::with_limits(Limits { max_depth: 32, max_items: 3 }),
+            [0xa1, 0x01, 0x84, 0x01, 0x02, 0x03, 0x04],
+        ),
+        ErrorKind::CollectionLimit,
+        2,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Cbor, 3>(
+            Cbor::with_limits(Limits { max_depth: 32, max_items: 3 }),
+            [0xa1, 0x01, 0x85],
+        ),
+        ErrorKind::CollectionLimit,
+        2,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Cbor, 3>(
+            Cbor::with_limits(Limits { max_depth: 32, max_items: 5 }),
+            [0xa1, 0x01, 0x85],
+        ),
+        ErrorKind::CapacityExceeded,
+        2,
+        "counts",
+    )
+    assert!(
+        holds(
+            must(
+                decodes<Tally, Cbor, 5>(
+                    Cbor::with_limits(Limits { max_depth: 32, max_items: 2 }),
+                    TALLY_CBOR,
+                ),
+            )
+                .counts,
+            [1, 2],
+        ),
+    )
     // A list is one level of depth, inside the record's.
-    expect_field(decodes<Tally, Cbor, 3>(Cbor::with_limits(Limits { max_depth: 1, max_items: 256 }), [0xa1, 0x01, 0x80]), ErrorKind::DepthLimit, 2, "counts")
-    assert!(must(decodes<Tally, Cbor, 3>(Cbor::with_limits(Limits { max_depth: 2, max_items: 256 }), TALLY_EMPTY_CBOR)).counts.is_empty())
+    expect_field(
+        decodes<Tally, Cbor, 3>(
+            Cbor::with_limits(Limits { max_depth: 1, max_items: 256 }),
+            [0xa1, 0x01, 0x80],
+        ),
+        ErrorKind::DepthLimit,
+        2,
+        "counts",
+    )
+    assert!(
+        must(
+            decodes<Tally, Cbor, 3>(
+                Cbor::with_limits(Limits { max_depth: 2, max_items: 256 }),
+                TALLY_EMPTY_CBOR,
+            ),
+        )
+            .counts
+            .is_empty(),
+    )
     // Writing checks the same limit.
     let narrow = Cbor::with_limits(Limits { max_depth: 32, max_items: 2 })
-    expect_error(narrow.encode<Tally, 64>(tally([1, 2, 3])), ErrorKind::CollectionLimit, 2)
+    expect_error(
+        narrow.encode<Tally, 64>(tally([1, 2, 3])),
+        ErrorKind::CollectionLimit,
+        2,
+    )
     assert!(encodes(narrow, tally([1, 2]), TALLY_CBOR))
 }
 
@@ -305,63 +960,290 @@ fn cbor_limits_apply_to_lists() {
 #[test]
 fn compact_writes_a_length_before_a_lists_elements() {
     let compact = Compact::new()
-    assert!(encodes(compact, tally([1, 2]), [0x02, 0x00, 0x01, 0x00, 0x02]))
+    assert!(
+        encodes(compact, tally([1, 2]), [0x02, 0x00, 0x01, 0x00, 0x02]),
+    )
     assert!(encodes(compact, tally([0; 0]), [0x00]))
-    assert!(encodes(compact, tally([1, 2, 3, 65535]), [0x04, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03, 0xff, 0xff]))
-    assert!(encodes(compact, crew(), [0x02, 0x01, 0x02, 0x68, 0x69, 0x02, 0x02, 0x79, 0x6f, 0x01, 0x01, 0x07]))
-    assert!(encodes(compact, Crew { members: List<Member, 3>::new(), guests: Option::None }, [0x00, 0x00]))
-    assert!(encodes(compact, routes(), [0x02, 0x01, 0x01, 0x02, 0x00, 0x02, 0x02, 0x01, 0x02, 0x01, 0x03, 0x03, 0x01, 0x01, 0x00, 0x01, 0x03, 0x01, 0x04, 0x00]))
+    assert!(
+        encodes(
+            compact,
+            tally([1, 2, 3, 65535]),
+            [0x04, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03, 0xff, 0xff],
+        ),
+    )
+    assert!(
+        encodes(
+            compact,
+            crew(),
+            [0x02, 0x01, 0x02, 0x68, 0x69, 0x02, 0x02, 0x79, 0x6f, 0x01, 0x01, 0x07],
+        ),
+    )
+    assert!(
+        encodes(
+            compact,
+            Crew { members: List<Member, 3>::new(), guests: Option::None },
+            [0x00, 0x00],
+        ),
+    )
+    assert!(
+        encodes(
+            compact,
+            routes(),
+            [
+                0x02,
+                0x01,
+                0x01,
+                0x02,
+                0x00,
+                0x02,
+                0x02,
+                0x01,
+                0x02,
+                0x01,
+                0x03,
+                0x03,
+                0x01,
+                0x01,
+                0x00,
+                0x01,
+                0x03,
+                0x01,
+                0x04,
+                0x00,
+            ],
+        ),
+    )
     // The same elements as a list and as an array differ by the length.
-    assert!(encodes(compact, must(List<u8, 4>::from_array([1, 2])), [0x02, 0x01, 0x02]))
+    assert!(
+        encodes(
+            compact,
+            must(List<u8, 4>::from_array([1, 2])),
+            [0x02, 0x01, 0x02],
+        ),
+    )
     assert!(encodes(compact, [1 as u8, 2], [0x01, 0x02]))
     // A list longer than 127 elements has a two-byte length.
     let long = must(List<u8, 200>::from_array([7; 130]))
     let bytes = must(compact.encode<List<u8, 200>, 140>(long))
-    assert!(bytes.byte_at(0) == Option::Some(0x82) && bytes.byte_at(1) == Option::Some(0x01) && bytes.len() == 132)
-    assert!(must(compact.decode<List<u8, 200>, 140>(bytes)).len() == 130)
+    assert!(
+        bytes.byte_at(0) == Option::Some(0x82)
+            && bytes.byte_at(1) == Option::Some(0x01)
+            && bytes.len() == 132,
+    )
+    assert!(
+        must(compact.decode<List<u8, 200>, 140>(bytes)).len() == 130,
+    )
 }
 
 #[test]
 fn compact_reads_lists_of_any_length_up_to_the_capacity() {
     let compact = Compact::new()
-    assert!(holds(must(decodes<Tally, Compact, 5>(compact, [0x02, 0x00, 0x01, 0x00, 0x02])).counts, [1, 2]))
-    assert!(must(decodes<Tally, Compact, 1>(compact, [0x00])).counts.is_empty())
-    assert!(holds(must(decodes<Tally, Compact, 9>(compact, [0x04, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03, 0xff, 0xff])).counts, [1, 2, 3, 65535]))
-    check_crew(must(decodes<Crew, Compact, 12>(compact, [0x02, 0x01, 0x02, 0x68, 0x69, 0x02, 0x02, 0x79, 0x6f, 0x01, 0x01, 0x07])))
-    check_routes(must(decodes<Routes, Compact, 20>(compact, [0x02, 0x01, 0x01, 0x02, 0x00, 0x02, 0x02, 0x01, 0x02, 0x01, 0x03, 0x03, 0x01, 0x01, 0x00, 0x01, 0x03, 0x01, 0x04, 0x00])))
-    assert!(holds(must(decodes<List<u8, 4>, Compact, 3>(compact, [0x02, 0x01, 0x02])), [1, 2]))
+    assert!(
+        holds(
+            must(
+                decodes<Tally, Compact, 5>(compact, [0x02, 0x00, 0x01, 0x00, 0x02]),
+            ).counts,
+            [1, 2],
+        ),
+    )
+    assert!(
+        must(decodes<Tally, Compact, 1>(compact, [0x00])).counts.is_empty(),
+    )
+    assert!(
+        holds(
+            must(
+                decodes<Tally, Compact, 9>(
+                    compact,
+                    [0x04, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03, 0xff, 0xff],
+                ),
+            )
+                .counts,
+            [1, 2, 3, 65535],
+        ),
+    )
+    check_crew(
+        must(
+            decodes<Crew, Compact, 12>(
+                compact,
+                [0x02, 0x01, 0x02, 0x68, 0x69, 0x02, 0x02, 0x79, 0x6f, 0x01, 0x01, 0x07],
+            ),
+        ),
+    )
+    check_routes(
+        must(
+            decodes<Routes, Compact, 20>(
+                compact,
+                [
+                    0x02,
+                    0x01,
+                    0x01,
+                    0x02,
+                    0x00,
+                    0x02,
+                    0x02,
+                    0x01,
+                    0x02,
+                    0x01,
+                    0x03,
+                    0x03,
+                    0x01,
+                    0x01,
+                    0x00,
+                    0x01,
+                    0x03,
+                    0x01,
+                    0x04,
+                    0x00,
+                ],
+            ),
+        ),
+    )
+    assert!(
+        holds(
+            must(
+                decodes<List<u8, 4>, Compact, 3>(compact, [0x02, 0x01, 0x02]),
+            ),
+            [1, 2],
+        ),
+    )
 }
 
 #[test]
 fn compact_rejects_lists_that_are_too_long_or_malformed() {
     // A length over `N` is `CapacityExceeded` at the length, before any element is read.
-    expect_field(decodes<Tally, Compact, 11>(Compact::new(), [0x05, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x04, 0x00, 0x05]), ErrorKind::CapacityExceeded, 0, "counts")
-    expect_field(decodes<Tally, Compact, 1>(Compact::new(), [0x05]), ErrorKind::CapacityExceeded, 0, "counts")
-    expect_field(decodes<Crew, Compact, 6>(Compact::new(), [0x00, 0x01, 0x03, 0x01, 0x02, 0x03]), ErrorKind::CapacityExceeded, 2, "guests")
-    expect_error(decodes<List<u8, 2>, Compact, 4>(Compact::new(), [0x03, 0x01, 0x02, 0x03]), ErrorKind::CapacityExceeded, 0)
-    expect_field(decodes<Tally, Compact, 2>(Compact::new(), [0x81, 0x01]), ErrorKind::CapacityExceeded, 0, "counts")
+    expect_field(
+        decodes<Tally, Compact, 11>(
+            Compact::new(),
+            [0x05, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x04, 0x00, 0x05],
+        ),
+        ErrorKind::CapacityExceeded,
+        0,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Compact, 1>(Compact::new(), [0x05]),
+        ErrorKind::CapacityExceeded,
+        0,
+        "counts",
+    )
+    expect_field(
+        decodes<Crew, Compact, 6>(Compact::new(), [0x00, 0x01, 0x03, 0x01, 0x02, 0x03]),
+        ErrorKind::CapacityExceeded,
+        2,
+        "guests",
+    )
+    expect_error(
+        decodes<List<u8, 2>, Compact, 4>(Compact::new(), [0x03, 0x01, 0x02, 0x03]),
+        ErrorKind::CapacityExceeded,
+        0,
+    )
+    expect_field(
+        decodes<Tally, Compact, 2>(Compact::new(), [0x81, 0x01]),
+        ErrorKind::CapacityExceeded,
+        0,
+        "counts",
+    )
     // The length is in its shortest form.
-    expect_field(decodes<Tally, Compact, 2>(Compact::new(), [0x80, 0x00]), ErrorKind::NonCanonical, 0, "counts")
-    expect_field(decodes<Tally, Compact, 6>(Compact::new(), [0x82, 0x00, 0x00, 0x01, 0x00, 0x02]), ErrorKind::NonCanonical, 0, "counts")
+    expect_field(
+        decodes<Tally, Compact, 2>(Compact::new(), [0x80, 0x00]),
+        ErrorKind::NonCanonical,
+        0,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Compact, 6>(Compact::new(), [0x82, 0x00, 0x00, 0x01, 0x00, 0x02]),
+        ErrorKind::NonCanonical,
+        0,
+        "counts",
+    )
     // Input that ends inside a list, and input after it.
-    expect_field(decodes<Tally, Compact, 4>(Compact::new(), [0x02, 0x00, 0x01, 0x00]), ErrorKind::UnexpectedEnd, 4, "counts")
-    expect_field(decodes<Tally, Compact, 1>(Compact::new(), [0x02]), ErrorKind::UnexpectedEnd, 1, "counts")
-    expect_field(decodes<Tally, Compact, 0>(Compact::new(), []), ErrorKind::UnexpectedEnd, 0, "counts")
-    expect_error(decodes<Tally, Compact, 2>(Compact::new(), [0x00, 0x00]), ErrorKind::TrailingData, 1)
-    expect_error(decodes<Tally, Compact, 4>(Compact::new(), [0x01, 0x00, 0x01, 0x00]), ErrorKind::TrailingData, 3)
+    expect_field(
+        decodes<Tally, Compact, 4>(Compact::new(), [0x02, 0x00, 0x01, 0x00]),
+        ErrorKind::UnexpectedEnd,
+        4,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Compact, 1>(Compact::new(), [0x02]),
+        ErrorKind::UnexpectedEnd,
+        1,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Compact, 0>(Compact::new(), []),
+        ErrorKind::UnexpectedEnd,
+        0,
+        "counts",
+    )
+    expect_error(
+        decodes<Tally, Compact, 2>(Compact::new(), [0x00, 0x00]),
+        ErrorKind::TrailingData,
+        1,
+    )
+    expect_error(
+        decodes<Tally, Compact, 4>(Compact::new(), [0x01, 0x00, 0x01, 0x00]),
+        ErrorKind::TrailingData,
+        3,
+    )
     // `fixed` is an array of lists: it has no length of its own, each list does.
-    expect_field(decodes<Routes, Compact, 4>(Compact::new(), [0x00, 0x00, 0x00, 0x00]), ErrorKind::UnexpectedEnd, 4, "fixed")
+    expect_field(
+        decodes<Routes, Compact, 4>(Compact::new(), [0x00, 0x00, 0x00, 0x00]),
+        ErrorKind::UnexpectedEnd,
+        4,
+        "fixed",
+    )
 }
 
 #[test]
 fn compact_limits_apply_to_lists() {
-    expect_field(decodes<Tally, Compact, 7>(Compact::with_limits(Limits { max_depth: 32, max_items: 2 }), [0x03, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03]), ErrorKind::CollectionLimit, 0, "counts")
-    assert!(holds(must(decodes<Tally, Compact, 5>(Compact::with_limits(Limits { max_depth: 32, max_items: 2 }), [0x02, 0x00, 0x01, 0x00, 0x02])).counts, [1, 2]))
-    expect_field(decodes<Tally, Compact, 1>(Compact::with_limits(Limits { max_depth: 32, max_items: 4 }), [0x05]), ErrorKind::CollectionLimit, 0, "counts")
-    expect_field(decodes<Tally, Compact, 1>(Compact::with_limits(Limits { max_depth: 1, max_items: 256 }), [0x00]), ErrorKind::DepthLimit, 0, "counts")
+    expect_field(
+        decodes<Tally, Compact, 7>(
+            Compact::with_limits(Limits { max_depth: 32, max_items: 2 }),
+            [0x03, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03],
+        ),
+        ErrorKind::CollectionLimit,
+        0,
+        "counts",
+    )
+    assert!(
+        holds(
+            must(
+                decodes<Tally, Compact, 5>(
+                    Compact::with_limits(Limits { max_depth: 32, max_items: 2 }),
+                    [0x02, 0x00, 0x01, 0x00, 0x02],
+                ),
+            )
+                .counts,
+            [1, 2],
+        ),
+    )
+    expect_field(
+        decodes<Tally, Compact, 1>(
+            Compact::with_limits(Limits { max_depth: 32, max_items: 4 }),
+            [0x05],
+        ),
+        ErrorKind::CollectionLimit,
+        0,
+        "counts",
+    )
+    expect_field(
+        decodes<Tally, Compact, 1>(
+            Compact::with_limits(Limits { max_depth: 1, max_items: 256 }),
+            [0x00],
+        ),
+        ErrorKind::DepthLimit,
+        0,
+        "counts",
+    )
     let narrow = Compact::with_limits(Limits { max_depth: 32, max_items: 2 })
-    expect_error(narrow.encode<Tally, 64>(tally([1, 2, 3])), ErrorKind::CollectionLimit, 0)
-    assert!(encodes(narrow, tally([1, 2]), [0x02, 0x00, 0x01, 0x00, 0x02]))
+    expect_error(
+        narrow.encode<Tally, 64>(tally([1, 2, 3])),
+        ErrorKind::CollectionLimit,
+        0,
+    )
+    assert!(
+        encodes(narrow, tally([1, 2]), [0x02, 0x00, 0x01, 0x00, 0x02]),
+    )
 }
 
 // Every format, and lists inside generic records.
@@ -388,15 +1270,42 @@ fn every_format_round_trips_lists() {
 fn generic_records_hold_lists() {
     let bytes = Bag<u8, 3> { items: must(List<u8, 3>::from_array([1, 2])) }
     assert!(encodes(Json::new(), bytes, "{\"items\":[1,2]}"))
-    assert!(encodes(Cbor::new(), bytes, [0xa1, 0x01, 0x82, 0x01, 0x02]))
+    assert!(
+        encodes(Cbor::new(), bytes, [0xa1, 0x01, 0x82, 0x01, 0x02]),
+    )
     assert!(encodes(Compact::new(), bytes, [0x02, 0x01, 0x02]))
-    assert!(holds(must(decodes<Bag<u8, 3>, Json, 15>(Json::new(), "{\"items\":[1,2]}")).items, [1, 2]))
-    assert!(holds(must(decodes<Bag<u8, 3>, Cbor, 5>(Cbor::new(), [0xa1, 0x01, 0x82, 0x01, 0x02])).items, [1, 2]))
-    assert!(holds(must(decodes<Bag<u8, 3>, Compact, 3>(Compact::new(), [0x02, 0x01, 0x02])).items, [1, 2]))
-    expect_field(decodes<Bag<u8, 1>, Json, 15>(Json::new(), "{\"items\":[1,2]}"), ErrorKind::CapacityExceeded, 12, "items")
+    assert!(
+        holds(
+            must(
+                decodes<Bag<u8, 3>, Json, 15>(Json::new(), "{\"items\":[1,2]}"),
+            ).items,
+            [1, 2],
+        ),
+    )
+    assert!(
+        holds(
+            must(
+                decodes<Bag<u8, 3>, Cbor, 5>(Cbor::new(), [0xa1, 0x01, 0x82, 0x01, 0x02]),
+            ).items,
+            [1, 2],
+        ),
+    )
+    assert!(
+        holds(
+            must(
+                decodes<Bag<u8, 3>, Compact, 3>(Compact::new(), [0x02, 0x01, 0x02]),
+            ).items,
+            [1, 2],
+        ),
+    )
+    expect_field(
+        decodes<Bag<u8, 1>, Json, 15>(Json::new(), "{\"items\":[1,2]}"),
+        ErrorKind::CapacityExceeded,
+        12,
+        "items",
+    )
     let members = Bag<Member, 2> { items: must(List<Member, 2>::from_array([member(1, hi())])) }
     stable<Bag<Member, 2>, Json, 64>(Json::new(), members)
     stable<Bag<Member, 2>, Cbor, 32>(Cbor::new(), members)
     stable<Bag<Member, 2>, Compact, 32>(Compact::new(), members)
 }
-
