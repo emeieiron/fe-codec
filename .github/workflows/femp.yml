@@ -58,8 +58,9 @@ jobs:
             | sh -s -- --yes --no-modify-path
           echo "$HOME/.femp/bin" >> "$GITHUB_PATH"
 
+      # examples/transfer runs tools/fe_codec_gen as a FeMP source generator, and that script
+      # builds the generator with `fe`, so every job needs Fe besides FeMP.
       - name: Install Fe and build the generator
-        if: matrix.name == 'consumer'
         run: |
           curl -fsSL https://raw.githubusercontent.com/argotorg/fe/master/feup/feup.sh \
             | bash -s -- --version "$FE_VERSION" --no-modify-path
