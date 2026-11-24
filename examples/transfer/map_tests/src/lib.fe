@@ -11,11 +11,11 @@
 use core::bytes::PackedBytes
 use core::ops::Eq
 use fe_codec_cbor::Cbor
-use fe_codec_core::{BoundedBuffer, CodecResult, Deserialize, ErrorKind, Format, Limits, List, Map, MapKey, Serialize, Text}
+use fe_codec_core::{BoundedBuffer, CodecResult, Decoder, Deserialize, Encoder, ErrorKind, Format, Limits, List, Map, MapKey, Serialize, Text}
 use fe_codec_eip712::{Domain, Eip712}
-use fe_codec_json::Json
+use fe_codec_json::{Json, JsonDecoder, JsonEncoder}
 use codec_compact::Compact
-use codec_transfer::models::{Atlas, Treasury, Member, Roster}
+use codec_transfer::models::{Atlas, Treasury, Member, Roster, Shape, Status}
 use codec_transfer::testkit::{decodes, encodes, expect_error, expect_field, hi, must}
 use codec_transfer::typed::Registry
 use std::evm::Address
@@ -694,3 +694,211 @@ fn eip712_has_no_maps() {
     expect_error(eip712.type_hash<Map<u8, u8, 2>>(), ErrorKind::Unsupported, 0)
 }
 
+// JSON key position. After `begin_map` and `next_key` a decoder stands at a key, and after
+// `begin_map` and `map_key` an encoder is writing one. A key is a string, so only the kinds that
+// can be one are accepted there: unsigned integers (in quotes), text, bytes and addresses. The
+// others are rejected where the key starts, before anything is read or written: `TypeMismatch`
+// for a decoder, `Unsupported` for an encoder. These tests drive both by hand, since a derived
+// `Map` can only reach the accepted kinds.
+
+/// A decoder over `input` that has read `before` entries of `u8` to `u8` and stands at the next key.
+fn at_key<const M: usize>(_ input: [u8; M], _ before: usize) -> JsonDecoder<M> {
+    var decoder = JsonDecoder<M>::new(BoundedBuffer<M>::from_array(input), Limits::standard())
+    var map = must(decoder.begin_map(4))
+    var index: usize = 0
+    while index < before {
+        assert!(must(decoder.next_key(mut map)))
+        assert!(must(decoder.read_unsigned(8)) == 1)
+        must(decoder.map_value(mut map))
+        assert!(must(decoder.read_unsigned(8)) == 1)
+        index += 1
+    }
+    assert!(must(decoder.next_key(mut map)))
+    decoder
+}
+
+/// An encoder that has written `before` entries of `1` to `1` and is writing the next key.
+fn at_key_encoder(_ before: usize) -> JsonEncoder<32> {
+    var encoder = JsonEncoder<32>::new(Limits::standard())
+    var map = must(encoder.begin_map(4))
+    var index: usize = 0
+    while index < before {
+        must(encoder.map_key(mut map))
+        must(encoder.write_unsigned(1, 8))
+        must(encoder.map_value(mut map))
+        must(encoder.write_unsigned(1, 8))
+        index += 1
+    }
+    must(encoder.map_key(mut map))
+    encoder
+}
+
+/// A decoder at the key of `{"1":1}`, which starts at offset 1: every kind of value that is not
+/// a key is `TypeMismatch` there.
+#[test]
+fn json_decoder_rejects_values_that_are_not_keys() {
+    var some = at_key<7>("{\"1\":1}", 0)
+    expect_error(some.read_some(), ErrorKind::TypeMismatch, 1)
+    var skip = at_key<7>("{\"1\":1}", 0)
+    expect_error(skip.skip_value(), ErrorKind::TypeMismatch, 1)
+    var boolean = at_key<7>("{\"1\":1}", 0)
+    expect_error(boolean.read_bool(), ErrorKind::TypeMismatch, 1)
+    var signed = at_key<7>("{\"1\":1}", 0)
+    expect_error(signed.read_signed(8), ErrorKind::TypeMismatch, 1)
+    var wide = at_key<7>("{\"1\":1}", 0)
+    expect_error(wide.read_wide_signed(256), ErrorKind::TypeMismatch, 1)
+    var variant = at_key<7>("{\"1\":1}", 0)
+    expect_error(variant.read_variant<Status>(), ErrorKind::TypeMismatch, 1)
+    var wrapped = at_key<7>("{\"1\":1}", 0)
+    expect_error(wrapped.begin_variant<Shape>(), ErrorKind::TypeMismatch, 1)
+    var record = at_key<7>("{\"1\":1}", 0)
+    expect_error(record.begin_record<Member>(), ErrorKind::TypeMismatch, 1)
+    var sequence = at_key<7>("{\"1\":1}", 0)
+    expect_error(sequence.begin_sequence(1), ErrorKind::TypeMismatch, 1)
+    var list = at_key<7>("{\"1\":1}", 0)
+    expect_error(list.begin_list(1), ErrorKind::TypeMismatch, 1)
+    var map = at_key<7>("{\"1\":1}", 0)
+    expect_error(map.begin_map(1), ErrorKind::TypeMismatch, 1)
+}
+
+/// The offset is where the key starts: after white space, and after the comma of a later entry.
+#[test]
+fn json_decoder_reports_a_key_where_it_starts() {
+    var spaced = at_key<8>("{ \"1\":1}", 0)
+    expect_error(spaced.read_some(), ErrorKind::TypeMismatch, 2)
+    var spaced_skip = at_key<8>("{ \"1\":1}", 0)
+    expect_error(spaced_skip.skip_value(), ErrorKind::TypeMismatch, 2)
+    var spaced_bool = at_key<8>("{ \"1\":1}", 0)
+    expect_error(spaced_bool.read_bool(), ErrorKind::TypeMismatch, 2)
+    var spaced_signed = at_key<8>("{ \"1\":1}", 0)
+    expect_error(spaced_signed.read_signed(8), ErrorKind::TypeMismatch, 2)
+    var spaced_record = at_key<8>("{ \"1\":1}", 0)
+    expect_error(spaced_record.begin_record<Member>(), ErrorKind::TypeMismatch, 2)
+    var spaced_sequence = at_key<8>("{ \"1\":1}", 0)
+    expect_error(spaced_sequence.begin_sequence(1), ErrorKind::TypeMismatch, 2)
+    var spaced_list = at_key<8>("{ \"1\":1}", 0)
+    expect_error(spaced_list.begin_list(1), ErrorKind::TypeMismatch, 2)
+    var spaced_map = at_key<8>("{ \"1\":1}", 0)
+    expect_error(spaced_map.begin_map(1), ErrorKind::TypeMismatch, 2)
+    // The second key of `{"1":1, "2":2}` starts at offset 8.
+    var later_some = at_key<14>("{\"1\":1, \"2\":2}", 1)
+    expect_error(later_some.read_some(), ErrorKind::TypeMismatch, 8)
+    var later_skip = at_key<14>("{\"1\":1, \"2\":2}", 1)
+    expect_error(later_skip.skip_value(), ErrorKind::TypeMismatch, 8)
+    var later_bool = at_key<14>("{\"1\":1, \"2\":2}", 1)
+    expect_error(later_bool.read_bool(), ErrorKind::TypeMismatch, 8)
+    var later_signed = at_key<14>("{\"1\":1, \"2\":2}", 1)
+    expect_error(later_signed.read_signed(8), ErrorKind::TypeMismatch, 8)
+    var later_record = at_key<14>("{\"1\":1, \"2\":2}", 1)
+    expect_error(later_record.begin_record<Member>(), ErrorKind::TypeMismatch, 8)
+    var later_map = at_key<14>("{\"1\":1, \"2\":2}", 1)
+    expect_error(later_map.begin_map(1), ErrorKind::TypeMismatch, 8)
+}
+
+/// The key is not touched by the rejection: it can still be read as what it is.
+#[test]
+fn json_decoder_leaves_the_key_in_place_when_it_rejects() {
+    var decoder = at_key<7>("{\"1\":1}", 0)
+    expect_error(decoder.read_some(), ErrorKind::TypeMismatch, 1)
+    expect_error(decoder.skip_value(), ErrorKind::TypeMismatch, 1)
+    expect_error(decoder.read_bool(), ErrorKind::TypeMismatch, 1)
+    expect_error(decoder.begin_record<Member>(), ErrorKind::TypeMismatch, 1)
+    assert!(must(decoder.read_unsigned(8)) == 1)
+}
+
+/// The kinds that can be keys are read in key position, and the value after a key is any kind of
+/// value again.
+#[test]
+fn json_decoder_reads_the_kinds_that_can_be_keys() {
+    var number = JsonDecoder<12>::new(BoundedBuffer<12>::from_array("{\"300\":true}"), Limits::standard())
+    var number_map = must(number.begin_map(1))
+    assert!(must(number.next_key(mut number_map)))
+    assert!(must(number.read_wide_unsigned(256)) == 300)
+    must(number.map_value(mut number_map))
+    assert!(must(number.read_bool()))
+    assert!(!must(number.next_key(mut number_map)))
+    must(number.end_map(number_map))
+    must(number.finish())
+
+    var name = JsonDecoder<12>::new(BoundedBuffer<12>::from_array("{\"hi\":[1,2]}"), Limits::standard())
+    var name_map = must(name.begin_map(1))
+    assert!(must(name.next_key(mut name_map)))
+    assert!(must(name.read_text<8>()).equals(hi()))
+    must(name.map_value(mut name_map))
+    must(name.skip_value())
+    assert!(!must(name.next_key(mut name_map)))
+    must(name.end_map(name_map))
+    must(name.finish())
+
+    var bytes = JsonDecoder<15>::new(BoundedBuffer<15>::from_array("{\"0x0102\":null}"), Limits::standard())
+    var bytes_map = must(bytes.begin_map(1))
+    assert!(must(bytes.next_key(mut bytes_map)))
+    assert!(must(bytes.read_bytes<2>()).equals(BoundedBuffer<2>::from_array([1, 2])))
+    must(bytes.map_value(mut bytes_map))
+    assert!(!must(bytes.read_some()))
+    assert!(!must(bytes.next_key(mut bytes_map)))
+    must(bytes.end_map(bytes_map))
+    must(bytes.finish())
+}
+
+/// An encoder writing the key of the first entry of a map is at offset 1, after the `{`: every
+/// kind of value that is not a key is `Unsupported` there, and nothing is written.
+#[test]
+fn json_encoder_rejects_values_that_are_not_keys() {
+    expect_error(at_key_encoder(0).write_none(), ErrorKind::Unsupported, 1)
+    expect_error(at_key_encoder(0).write_some(), ErrorKind::Unsupported, 1)
+    expect_error(at_key_encoder(0).write_bool(true), ErrorKind::Unsupported, 1)
+    expect_error(at_key_encoder(0).write_signed(1, 8), ErrorKind::Unsupported, 1)
+    expect_error(at_key_encoder(0).write_wide_signed(1, 256), ErrorKind::Unsupported, 1)
+    expect_error(at_key_encoder(0).write_variant<Status>(0), ErrorKind::Unsupported, 1)
+    expect_error(at_key_encoder(0).begin_variant<Shape>(1), ErrorKind::Unsupported, 1)
+    expect_error(at_key_encoder(0).begin_record<Member>(2), ErrorKind::Unsupported, 1)
+    expect_error(at_key_encoder(0).begin_sequence(1), ErrorKind::Unsupported, 1)
+    expect_error(at_key_encoder(0).begin_list(1), ErrorKind::Unsupported, 1)
+    expect_error(at_key_encoder(0).begin_map(1), ErrorKind::Unsupported, 1)
+    // The second key is after the first entry and the comma: `{"1":1,` is 7 bytes.
+    expect_error(at_key_encoder(1).write_none(), ErrorKind::Unsupported, 7)
+    expect_error(at_key_encoder(1).write_some(), ErrorKind::Unsupported, 7)
+    expect_error(at_key_encoder(1).write_bool(false), ErrorKind::Unsupported, 7)
+    expect_error(at_key_encoder(1).write_signed(-1, 8), ErrorKind::Unsupported, 7)
+    expect_error(at_key_encoder(1).begin_record<Member>(2), ErrorKind::Unsupported, 7)
+    expect_error(at_key_encoder(1).begin_sequence(1), ErrorKind::Unsupported, 7)
+    expect_error(at_key_encoder(1).begin_map(1), ErrorKind::Unsupported, 7)
+}
+
+/// The kinds that can be keys are written in key position, an integer in quotes, and the value
+/// after a key is any kind of value again.
+#[test]
+fn json_encoder_writes_the_kinds_that_can_be_keys() {
+    var number = JsonEncoder<21>::new(Limits::standard())
+    var number_map = must(number.begin_map(2))
+    must(number.map_key(mut number_map))
+    must(number.write_unsigned(7, 8))
+    must(number.map_value(mut number_map))
+    must(number.write_none())
+    must(number.map_key(mut number_map))
+    must(number.write_wide_unsigned(300, 256))
+    must(number.map_value(mut number_map))
+    must(number.write_bool(true))
+    must(number.end_map(number_map))
+    assert!(must(number.finish()).equals(BoundedBuffer<21>::from_array("{\"7\":null,\"300\":true}")))
+
+    var name = JsonEncoder<9>::new(Limits::standard())
+    var name_map = must(name.begin_map(1))
+    must(name.map_key(mut name_map))
+    must(name.write_text<8>(hi()))
+    must(name.map_value(mut name_map))
+    must(name.write_signed(-1, 8))
+    must(name.end_map(name_map))
+    assert!(must(name.finish()).equals(BoundedBuffer<9>::from_array("{\"hi\":-1}")))
+
+    var bytes = JsonEncoder<16>::new(Limits::standard())
+    var bytes_map = must(bytes.begin_map(1))
+    must(bytes.map_key(mut bytes_map))
+    must(bytes.write_bytes<2>(BoundedBuffer<2>::from_array([1, 2])))
+    must(bytes.map_value(mut bytes_map))
+    must(bytes.write_some())
+    must(bytes.write_bool(false))
+    must(bytes.end_map(bytes_map))
+    assert!(must(bytes.finish()).equals(BoundedBuffer<16>::from_array("{\"0x0102\":false}")))
+}
