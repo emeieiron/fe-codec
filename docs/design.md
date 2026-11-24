@@ -19,7 +19,7 @@ model types ──impl──▶ Serialize / Deserialize / Schema      generated 
   (name, ID, whether optional) and an enum's variants.
 - **The data model.** `Encoder` and `Decoder` are the vocabulary every format speaks:
   booleans, integers up to 256 bits, text, bytes, options, unit variants, records and
-  fixed-length sequences, which also carry tuples. Records visit fields in ascending ID
+  sequences, which carry fixed-length arrays, tuples and lists. Records visit fields in ascending ID
   order; `OMIT_NONE` tells a serializer whether the format leaves out `None` fields.
 - **The format side.** A `Format` value (`Json`, `Cbor`, or a third party's) owns its
   limits and drives an encoder or decoder over a bounded buffer. Formats do not depend on
@@ -36,7 +36,7 @@ native backends.
 
 | Fe capability | Used for |
 | --- | --- |
-| Traits implemented on primitives, `Option<T>`, `[T; N]` and tuples from any ingot that owns the trait | The built-in impls in `core/src/impls.fe` |
+| Traits implemented on primitives, `Option<T>`, `[T; N]`, `List<T, N>` and tuples from any ingot that owns the trait | The built-in impls in `core/src/impls.fe` |
 | Associated consts, generic and const-generic trait methods | `Encoder::OMIT_NONE`, `Format::encode<T, N>` |
 | Partial generic arguments, the rest inferred | `f<A>(x)` for `f<A, const N>` |
 | Inference from an annotated binding through `?` | `let bytes: BoundedBuffer<128> = fe_codec_json::encode(order)?` |
@@ -71,7 +71,7 @@ native backends.
 | I2 | **Canonical output.** Equal values encode to identical bytes. CBOR follows RFC 8949 §4.2.1. |
 | I3 | **Strict decoding.** Unknown, duplicate and missing fields, trailing data, non-canonical CBOR, out-of-range integers, invalid UTF-8 and malformed hex are rejected with a typed kind and offset. |
 | I4 | **Bounds.** No input or value makes an encoder or decoder panic. Capacity, depth and item limits produce errors. |
-| I5 | **Traversal protocol.** One root value; record fields visited in ascending ID order and counted exactly; sequences of exact length. Checked in every first-party format and in the compact example. |
+| I5 | **Traversal protocol.** One root value; record fields visited in ascending ID order and counted exactly; sequences of exact length, lists of at most their capacity. Checked in every first-party format and in the compact example. |
 | I6 | **Targets agree.** The EVM, native and WebAssembly builds produce the same bytes and the same errors. |
 | I7 | **Evolution.** An appended optional field with a new ID is compatible both ways while `None`; a field keeps its CBOR identity across a rename. |
 

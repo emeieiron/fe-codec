@@ -12,6 +12,7 @@ use fe_codec_core::{
     CodecResult,
     Deserialize,
     Format,
+    List,
     Serialize,
     Text,
     checked_signed,
@@ -66,6 +67,24 @@ pub fn tuples_round_trip(a: u8, b: i64, c: bool, d: u64) -> bool {
         && round_trips<Option<(u64, i64)>, 64>(Option::Some((d, b)))
         && round_trips<Option<(u64, i64)>, 64>(Option::None)
         && round_trips<[(bool, u8); 2], 64>([(c, a), (!c, a)])
+}
+
+/// A list survives every format at every length up to its capacity, alone and inside an option.
+#[property(cases = 300)]
+#[gen(length = "0..=4")]
+pub fn lists_round_trip(length: u8, a: u64, b: u64, c: u64, d: u64) -> bool {
+    let values: [u64; 4] = [a, b, c, d]
+    var list = List<u64, 4>::new()
+    var index: u8 = 0
+    while index < length {
+        if list.push(values[index as usize]).is_err() {
+            return false
+        }
+        index += 1
+    }
+    round_trips<List<u64, 4>, 96>(list)
+        && round_trips<Option<List<u64, 4>>, 96>(Option::Some(list))
+        && round_trips<Option<List<u64, 4>>, 96>(Option::None)
 }
 
 /// Fields written by a codec survive every format for any amount, with and without the
@@ -221,6 +240,7 @@ fn decodes_any<F: Format>(_ format: F, _ bytes: BoundedBuffer<64>) -> u32 {
     outcome(format.decode<Wide, 64>(bytes))
         ^ (outcome(format.decode<Sample, 64>(bytes)) << 1)
         ^ (outcome(format.decode<Wallet, 64>(bytes)) << 2)
+        ^ (outcome(format.decode<List<u16, 4>, 64>(bytes)) << 3)
 }
 
 /// No input makes a decoder panic: any failure is a returned error.

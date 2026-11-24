@@ -9,6 +9,7 @@ Types are tuples:
     ('int', signed, bits)  ('bool',)  ('addr',)
     ('text', n)  ('buf', n)  ('packed', n)       n is an int, or a const parameter's name
     ('opt', t)  ('arr', t, n)                    n likewise
+    ('list', t, n)                               List<t, n>: 0 to n elements, which are Copy
     ('tup', (t, ...))                            1 to 8 element types
     ('ref', name, args)                          a local record or enum; args are types or ints
     ('param', name)                              a type parameter of the enclosing generic record
@@ -124,6 +125,8 @@ def fe_type(t):
         return "Option<%s>" % fe_type(t[1])
     if k == "arr":
         return "[%s; %s]" % (fe_type(t[1]), t[2])
+    if k == "list":
+        return "List<%s, %s>" % (fe_type(t[1]), t[2])
     if k == "tup":
         return "(%s%s)" % (", ".join(fe_type(e) for e in t[1]), "," if len(t[1]) == 1 else "")
     if k == "ref":
@@ -150,6 +153,8 @@ def subst(t, env):
         return ("opt", subst(t[1], env))
     if k == "arr":
         return ("arr", subst(t[1], env), size(t[2]))
+    if k == "list":
+        return ("list", subst(t[1], env), size(t[2]))
     if k == "tup":
         return ("tup", tuple(subst(e, env) for e in t[1]))
     if k == "ref":
@@ -161,7 +166,7 @@ def subst(t, env):
 
 def walk(t):
     yield t
-    if t[0] == "opt" or t[0] == "arr":
+    if t[0] in ("opt", "arr", "list"):
         yield from walk(t[1])
     elif t[0] == "tup":
         for e in t[1]:
@@ -187,7 +192,7 @@ def weight(spec, t):
     k = t[0]
     if k == "opt":
         return 1 + weight(spec, t[1])
-    if k == "arr":
+    if k in ("arr", "list"):
         return 1 + (t[2] if isinstance(t[2], int) else 3) * weight(spec, t[1])
     if k == "tup":
         return 1 + sum(weight(spec, e) for e in t[1])
@@ -200,7 +205,7 @@ def is_copy(spec, t):
     k = t[0]
     if k == "opt":
         return is_copy(spec, t[1])
-    if k == "arr":
+    if k == "arr" or k == "list":
         return is_copy(spec, t[1])
     if k == "tup":
         return all(is_copy(spec, e) for e in t[1])
@@ -211,9 +216,9 @@ def is_copy(spec, t):
 
 
 def uses_array(t):
-    """Whether a parameter appears under an array in `t`."""
+    """Whether a parameter appears under an array or a list in `t`."""
     k = t[0]
-    if k == "arr":
+    if k == "arr" or k == "list":
         return any(w[0] == "param" for w in walk(t[1]))
     if k == "opt":
         return uses_array(t[1])
@@ -226,7 +231,7 @@ def type_param_needs_copy(m, name):
     for f in m.fields:
         t = f.ty
         for w in walk(t):
-            if w[0] == "arr" and any(x == ("param", name) for x in walk(w[1])):
+            if w[0] in ("arr", "list") and any(x == ("param", name) for x in walk(w[1])):
                 return True
     return any(g[1] == name and g[2] for g in m.generics)
 
@@ -326,6 +331,11 @@ def gen_value(spec, rng, t):
         return None if rng.random() < 0.4 else gen_value(spec, rng, t[1])
     if k == "arr":
         return [gen_value(spec, rng, t[1]) for _ in range(t[2])]
+    if k == "list":
+        # Empty, full and everything between, so each length class is tried.
+        n = t[2]
+        count = rng.choice([0, 1, n, n, rng.randint(0, n), rng.randint(0, n)])
+        return [gen_value(spec, rng, t[1]) for _ in range(min(count, n))]
     if k == "tup":
         return [gen_value(spec, rng, e) for e in t[1]]
     if k == "ref":
@@ -354,7 +364,7 @@ def to_js(spec, t, v):
         return reference.Hex(v)
     if k == "opt":
         return None if v is None else to_js(spec, t[1], v)
-    if k == "arr":
+    if k == "arr" or k == "list":
         return [to_js(spec, t[1], x) for x in v]
     if k == "tup":
         return [to_js(spec, e, x) for e, x in zip(t[1], v)]
@@ -370,7 +380,7 @@ def to_cbor(spec, t, v):
         return v
     if k == "opt":
         return None if v is None else to_cbor(spec, t[1], v)
-    if k == "arr":
+    if k == "arr" or k == "list":
         return [to_cbor(spec, t[1], x) for x in v]
     if k == "tup":
         return [to_cbor(spec, e, x) for e, x in zip(t[1], v)]
@@ -426,7 +436,7 @@ def to_cbor_with_unknown(spec, rng, t, v, added):
     k = t[0]
     if k == "opt":
         return None if v is None else to_cbor_with_unknown(spec, rng, t[1], v, added)
-    if k == "arr":
+    if k == "arr" or k == "list":
         return [to_cbor_with_unknown(spec, rng, t[1], x, added) for x in v]
     if k == "tup":
         return [to_cbor_with_unknown(spec, rng, e, x, added) for e, x in zip(t[1], v)]
@@ -511,7 +521,7 @@ def noisy_json(spec, rng, t, v, drop=None, counter=None, added=None):
             return '"0x' + (h.upper() if rng.random() < 0.3 else h) + '"'
         if k == "opt":
             return "null" if v is None else go(t[1], v)
-        if k == "arr":
+        if k == "arr" or k == "list":
             items = [ws() + go(t[1], x) + ws() for x in v]
             return "[" + ws() + ",".join(items) + ws() + "]"
         if k == "tup":
@@ -549,7 +559,7 @@ def record_occurrences(spec, t, v, out=None):
     if k == "opt":
         if v is not None:
             record_occurrences(spec, t[1], v, out)
-    elif k == "arr":
+    elif k == "arr" or k == "list":
         for x in v:
             record_occurrences(spec, t[1], x, out)
     elif k == "tup":
@@ -570,7 +580,7 @@ def dropped_value(spec, t, v, occurrence, name):
         k = t[0]
         if k == "opt":
             return None if v is None else go(t[1], v)
-        if k == "arr":
+        if k == "arr" or k == "list":
             return [go(t[1], x) for x in v]
         if k == "tup":
             return [go(e, x) for e, x in zip(t[1], v)]
@@ -608,13 +618,15 @@ def eip_type(spec, t):
         return "address"
     if k == "arr":
         return "%s[%d]" % (eip_type(spec, t[1]), t[2])
+    if k == "list":
+        return "%s[]" % eip_type(spec, t[1])
     m = spec.model(t[1])
     return t[1] if m.is_record else "uint8"
 
 
 def to_eip(spec, t, v):
     k = t[0]
-    if k == "arr":
+    if k == "arr" or k == "list":
         return [to_eip(spec, t[1], x) for x in v]
     if k == "ref":
         m = spec.model(t[1])

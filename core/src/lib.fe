@@ -1,6 +1,7 @@
 pub use fe_codec_io::{BoundedBuffer, ByteReader, ByteWriter, IoError, IoErrorKind}
 pub use error::{CodecError, ErrorKind, CodecResult, Limits}
 pub use text::{Text, TextWriter, Utf8}
+pub use list::List
 pub use schema::{
     Schema,
     FieldInfo,

@@ -74,6 +74,7 @@ class Gen:
             choices.append(("inst", 3.0))
         if depth < 2:
             choices.append(("arr", 2.6))
+            choices.append(("list", 2.2))
             if not plain:
                 choices.append(("opt", 2.0))
                 # EIP-712 has no tuples, so the types a root may use have none.
@@ -101,6 +102,8 @@ class Gen:
             return ("param", rng.choice(params))
         if kind == "tup":
             return self.tuple(depth, force_copy, plain, params, consts, avail_generics)
+        if kind == "list":
+            return self.list(depth, top, plain, params, consts, avail_generics)
         if kind == "opt":
             inner = self.gen_type(depth + 1, False, force_copy, plain, params, consts, avail_generics)
             if inner[0] == "opt":
@@ -120,6 +123,20 @@ class Gen:
         else:
             elem = self.gen_type(depth + 1, False, not noncopy_ok, plain, params, consts, avail_generics)
         return ("arr", elem, length)
+
+    def list(self, depth, top, plain, params, consts, avail_generics):
+        """`List<T, N>`. Its elements are always `Copy`, since a list stores copies of them. A
+        capacity of 0 is a field's whole type only, as an empty array is."""
+        rng = self.rng
+        if consts and rng.random() < 0.35:
+            length = rng.choice(consts)
+        else:
+            length = rng.choice([0, 1, 2, 3, 4]) if top and rng.random() < 0.12 else rng.choice([1, 2, 3, 4])
+        if not plain and depth < 1 and rng.random() < 0.2:
+            elem = self.tuple(depth + 1, True, plain, params, consts, avail_generics)
+        else:
+            elem = self.gen_type(depth + 1, False, True, plain, params, consts, avail_generics)
+        return ("list", elem, length)
 
     def tuple(self, depth, force_copy, plain, params, consts, avail_generics):
         """A tuple of 1 to 8 elements. Core decodes the elements one by one, so none needs `Copy`
@@ -252,16 +269,19 @@ class Gen:
         rng = self.rng
         pt = ("param", p)
         options = [pt, ("opt", pt), ("arr", pt, rng.randint(1, 3)), ("arr", ("opt", pt), rng.randint(1, 3)),
-                   ("opt", ("arr", pt, rng.randint(1, 3))), ("arr", ("arr", pt, rng.randint(1, 2)), rng.randint(1, 3))]
+                   ("opt", ("arr", pt, rng.randint(1, 3))), ("arr", ("arr", pt, rng.randint(1, 2)), rng.randint(1, 3)),
+                   ("list", pt, rng.randint(1, 3)), ("opt", ("list", pt, rng.randint(1, 3))),
+                   ("list", ("opt", pt), rng.randint(1, 3))]
         if consts:
             n = rng.choice(consts)
-            options += [("arr", pt, n), ("opt", ("arr", pt, n)), ("arr", ("opt", pt), n)]
+            options += [("arr", pt, n), ("opt", ("arr", pt, n)), ("arr", ("opt", pt), n), ("list", pt, n),
+                        ("list", ("arr", pt, 2), n)]
         return rng.choice(options)
 
     def const_use(self, c, params):
         rng = self.rng
         options = [("text", c), ("buf", c), ("packed", c), ("arr", Int(False, rng.choice([8, 64])), c),
-                   ("arr", BOOL, c)]
+                   ("arr", BOOL, c), ("list", Int(False, rng.choice([8, 64])), c), ("list", ADDR, c)]
         return rng.choice(options)
 
     def run(self):

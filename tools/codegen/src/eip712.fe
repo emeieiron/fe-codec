@@ -7,8 +7,8 @@ use core::{MemBuffer, MemVec, Option, Result}
 use fe_syntax::{ArgKind, File, Span}
 use ingot::render::{header, imports}
 use ingot::schema::{
-    Diagnostic, Model, Output, Program, TyKind, array_elem, array_len, arg_run, arg_ty, ty_kind,
-    ty_name,
+    Diagnostic, Model, Output, Program, TyKind, array_elem, array_len, arg_run, arg_ty, list_element,
+    ty_kind, ty_name,
 }
 use ingot::text::{copy, is_text, part, same}
 
@@ -171,6 +171,16 @@ fn eip712_type(
                 i += 1
             }
             let last = part(name, last_start, name.len())
+            // A list is a dynamic array.
+            if last == "List" {
+                return match list_element(file, ty) {
+                    Option::Some(element) => {
+                        let inner = eip712_type(program, output, model, element, mut dependencies, mut enums)?
+                        Result::Ok(format!(inner, "[]"))
+                    },
+                    Option::None => Result::Err(format!("List<T, N> is T[] in EIP-712, so T must be a type")),
+                }
+            }
             match integer(last) {
                 Option::Some(integer) => return Result::Ok(integer),
                 Option::None => {},

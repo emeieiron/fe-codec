@@ -68,7 +68,10 @@ impl<const N: usize> CompactEncoder<N> {
     }
 
     fn begin(mut self, _ count: usize) -> CodecResult<Frame> {
-        let offset = self.offset()
+        self.begin_at(count, self.offset())
+    }
+
+    fn begin_at(mut self, _ count: usize, _ offset: usize) -> CodecResult<Frame> {
         self.structure.check_items(count, offset)?
         self.structure.begin(offset)?
         Result::Ok(Frame::new(count))
@@ -214,6 +217,16 @@ impl<const N: usize> Encoder for CompactEncoder<N> {
 
     fn begin_sequence(mut self, _ length: usize) -> CodecResult<Frame> {
         self.begin(length)
+    }
+
+    /// A list writes its length as a ULEB128 number before its elements, because the type
+    /// does not fix it as it does for a fixed-length sequence.
+    fn begin_list(mut self, _ length: usize) -> CodecResult<Frame> {
+        let offset = self.offset()
+        let count = self.length(length)?
+        self.structure.check_items(length, offset)?
+        self.uleb(count)?
+        self.begin_at(length, offset)
     }
 
     fn element(mut self, _ sequence: mut Frame) -> CodecResult<()> {

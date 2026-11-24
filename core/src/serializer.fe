@@ -34,12 +34,18 @@ pub trait Format {
 /// Values: `bool`; unsigned and signed integers, passed as `u64`/`i64` with a width of 8, 16,
 /// 32 or 64 bits, or as `u256`/`i256` with a width of 128 or 256 bits; UTF-8 text; byte
 /// strings of a bounded length; byte strings of an exact length; EVM addresses; optional
-/// values; unit enum variants; records; and fixed-length sequences.
+/// values; unit enum variants; records; and sequences, which are fixed-length or lists.
 ///
 /// A record visits its fields in ascending ID order. When `OMIT_NONE` is true, the format
 /// identifies fields by key and a serializer leaves `None` fields out; otherwise it visits
 /// every field. `present` counts the fields the serializer will visit. Each field or
 /// sequence element is announced before its value is written.
+///
+/// A list is a sequence whose length belongs to the value, not the type. `begin_list` opens
+/// one with its length, and `element` and `end_sequence` work as for any sequence. A format
+/// that writes the same bytes for both keeps the default, which calls `begin_sequence`; one
+/// that must tell a list from a fixed-length sequence, such as `examples/compact_format`,
+/// which writes a length for lists only, overrides it.
 ///
 /// Encoders report errors with the offset of the output byte being written.
 pub trait Encoder {
@@ -71,6 +77,11 @@ pub trait Encoder {
     fn end_record(mut self, _ record: own Self::Record) -> CodecResult<()>
 
     fn begin_sequence(mut self, _ length: usize) -> CodecResult<Self::Sequence>
+    /// Opens a list of `length` elements, which `element` and `end_sequence` then fill and
+    /// close.
+    fn begin_list(mut self, _ length: usize) -> CodecResult<Self::Sequence> {
+        self.begin_sequence(length)
+    }
     fn element(mut self, _ sequence: mut Self::Sequence) -> CodecResult<()>
     fn end_sequence(mut self, _ sequence: own Self::Sequence) -> CodecResult<()>
 }
@@ -82,6 +93,13 @@ pub trait Encoder {
 /// or `None` at the end of the record; the deserializer tracks duplicate and missing fields.
 /// When `R::skips_unknown_fields()` is true, `next_field` skips the fields `R` does not list
 /// with `skip_value`; otherwise it fails with `UnknownField`.
+///
+/// A list is read with `begin_list`, which takes the most elements the type holds, then
+/// `next_element` until it returns false, then `end_sequence`. `next_element` returns true
+/// when another element follows, with the decoder positioned at it. A decoder fails with
+/// `CapacityExceeded` when the list holds more than `capacity` elements: at the extra
+/// element, or, in a format that counts first, at the start of the list. A format with no
+/// lists keeps the defaults, which fail with `Unsupported`.
 pub trait Decoder {
     type Record
     type Sequence
@@ -115,4 +133,17 @@ pub trait Decoder {
     fn begin_sequence(mut self, _ length: usize) -> CodecResult<Self::Sequence>
     fn element(mut self, _ sequence: mut Self::Sequence) -> CodecResult<()>
     fn end_sequence(mut self, _ sequence: own Self::Sequence) -> CodecResult<()>
+    /// Opens a list of at most `capacity` elements.
+    fn begin_list(mut self, _ capacity: usize) -> CodecResult<Self::Sequence> {
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.offset()),
+        )
+    }
+    /// Whether another element of a list follows. When it does, the decoder is positioned at
+    /// it; when it does not, `end_sequence` closes the list.
+    fn next_element(mut self, _ sequence: mut Self::Sequence) -> CodecResult<bool> {
+        Result::Err(
+            CodecError::at(kind: ErrorKind::Unsupported, offset: self.offset()),
+        )
+    }
 }

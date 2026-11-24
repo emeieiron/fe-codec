@@ -229,6 +229,31 @@ pub fn arg_ty(_ file: ref File, _ ty: usize, _ index: usize) -> Option<usize> {
     }
 }
 
+/// The last segment of a path name: `List` for `fe_codec_core::List`.
+fn last_segment(_ name: ref MemBuffer) -> MemBuffer {
+    var last_start: usize = 0
+    var i: usize = 0
+    while i + 1 < name.len() {
+        if name[i] == b':' && name[i + 1] == b':' {
+            last_start = i + 2
+        }
+        i += 1
+    }
+    ingot::text::part(name, last_start, name.len())
+}
+
+/// The element type node of `List<T, N>`, recognized by its last path segment as `Text` is.
+pub fn list_element(_ file: ref File, _ ty: usize) -> Option<usize> {
+    match ty_kind(file, ty) {
+        TyKind::Path => {},
+        _ => return Option::None,
+    }
+    if last_segment(ty_name(file, ty)) != "List" || arg_run(file, ty).len < 1 {
+        return Option::None
+    }
+    arg_ty(file, ty, 0)
+}
+
 fn is_option(_ name: ref MemBuffer) -> bool {
     name == "Option" || name == "core::Option" || name == "core::option::Option"
 }
@@ -281,8 +306,8 @@ fn mark_copy(_ file: ref File, _ generics: mut MemVec<Generic>, _ name: ref MemB
 }
 
 /// Records that decoding builds arrays of every type parameter inside `ty` through `Option`,
-/// nested arrays and tuples, as `Option<T>`, `[T; 2]` and `(T, u8)` need `T: Copy` when they
-/// are array elements.
+/// `List`, nested arrays and tuples, as `Option<T>`, `List<T, 2>`, `[T; 2]` and `(T, u8)` need
+/// `T: Copy` when they are array elements.
 fn mark_copy_params(_ file: ref File, _ generics: mut MemVec<Generic>, _ ty: usize) {
     match ty_kind(file, ty) {
         TyKind::Path => {
@@ -292,6 +317,10 @@ fn mark_copy_params(_ file: ref File, _ generics: mut MemVec<Generic>, _ ty: usi
                 return
             }
             match option_payload(file, ty) {
+                Option::Some(inner) => mark_copy_params(file, mut generics, inner),
+                Option::None => {},
+            }
+            match list_element(file, ty) {
                 Option::Some(inner) => mark_copy_params(file, mut generics, inner),
                 Option::None => {},
             }
@@ -814,7 +843,7 @@ impl Program {
                                 Option::None => {},
                             }
                             if !unroll {
-                                self.array_element(source, element, mut generics, site)?
+                                self.array_element(source, element, false, mut generics, site)?
                             } else {
                                 unrolled = true
                                 unrolled_element = element
@@ -1123,18 +1152,17 @@ impl Program {
         match ty_kind(file, ty) {
             TyKind::Path => {
                 let name = ty_name(file, ty)
-                var last_start: usize = 0
-                var i: usize = 0
-                while i + 1 < name.len() {
-                    if name[i] == b':' && name[i + 1] == b':' {
-                        last_start = i + 2
-                    }
-                    i += 1
-                }
-                let last = ingot::text::part(name, last_start, name.len())
+                let last = last_segment(name)
                 if is_primitive(last) || last == "Text" || last == "BoundedBuffer" || last == "PackedBytes"
                     || last == "Address" {
                     return COPY_YES
+                }
+                // A list is `Copy` when its elements are.
+                if last == "List" {
+                    return match list_element(file, ty) {
+                        Option::Some(inner) => self.copyness(source, inner, generics),
+                        Option::None => COPY_UNKNOWN,
+                    }
                 }
                 if is_option(name) {
                     if arg_run(file, ty).len == 0 {
@@ -1180,12 +1208,13 @@ impl Program {
         }
     }
 
-    /// Type parameters an array of `element` makes `Copy`, and an error for a local non-`Copy`
-    /// element.
+    /// Type parameters an array or, when `list`, a list of `element` makes `Copy`, and an
+    /// error for a local non-`Copy` element.
     fn array_element(
         self,
         _ source: usize,
         _ element: usize,
+        _ list: bool,
         _ generics: mut MemVec<Generic>,
         _ site: usize,
     ) -> Result<Diagnostic, ()> {
@@ -1205,6 +1234,13 @@ impl Program {
             mark_copy_params(file, mut generics, element)
         }
         if copyness == COPY_NO {
+            if list {
+                return fail(
+                    source,
+                    site,
+                    format!("a list stores copies of its elements; implement Copy for the element type"),
+                )
+            }
             return fail(
                 source,
                 site,
@@ -1214,7 +1250,7 @@ impl Program {
         Result::Ok(())
     }
 
-    /// Checks every array inside `ty`, which the trait impls decode.
+    /// Checks every array and list inside `ty`, which the trait impls decode.
     fn nested_arrays(
         self,
         _ source: usize,
@@ -1225,6 +1261,10 @@ impl Program {
         let file = ref self.files[source]
         match ty_kind(file, ty) {
             TyKind::Path => {
+                match list_element(file, ty) {
+                    Option::Some(element) => self.array_element(source, element, true, mut generics, site)?,
+                    Option::None => {},
+                }
                 var i: usize = 0
                 while i < arg_run(file, ty).len {
                     match arg_ty(file, ty, i) {
@@ -1237,7 +1277,7 @@ impl Program {
             },
             TyKind::Array => {
                 let element = array_elem(file, ty)
-                self.array_element(source, element, mut generics, site)?
+                self.array_element(source, element, false, mut generics, site)?
                 self.nested_arrays(source, element, mut generics, site)
             },
             TyKind::Tuple => {

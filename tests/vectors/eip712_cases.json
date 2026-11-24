@@ -36,6 +36,51 @@
     "digest": "0xfa9a9be3275d238d9efd08dd9c557784886daeb3fe51ddad8a069b2496fcb2fc"
   },
   {
+    "label": "SQUAD",
+    "json": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"},{\"name\":\"salt\",\"type\":\"bytes32\"}],\"Squad\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"members\",\"type\":\"Person[]\"},{\"name\":\"scores\",\"type\":\"uint8[]\"}],\"Person\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"wallet\",\"type\":\"address\"}]},\"primaryType\":\"Squad\",\"domain\":{\"name\":\"Full\",\"version\":\"2\",\"chainId\":\"137\",\"verifyingContract\":\"0xcccccccccccccccccccccccccccccccccccccccc\",\"salt\":\"0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20\"},\"message\":{\"name\":\"Team\",\"members\":[{\"name\":\"Cow\",\"wallet\":\"0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826\"},{\"name\":\"Bob\",\"wallet\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}],\"scores\":[\"1\",\"2\",\"255\"]}}",
+    "encodeType": "Squad(string name,Person[] members,uint8[] scores)Person(string name,address wallet)",
+    "typeHash": "0x12778eccfaa709cab66c8afb9ab4e2f02f9fc6bf1d39c2ff81ab89258a685642",
+    "hashStruct": "0x4987e1b7aefca34d607d6fe99e9d0e2968f093ba255d9f7091d705d77b4dd04f",
+    "domainSeparator": "0x689beec36d8fc1b869233213ddb6b2fd7336e233af826094adbec714fa6ff3a1",
+    "digest": "0x8746eef517705a12e6e230570bb6f64f0a83f2592523115adb02915d00ddf8b6"
+  },
+  {
+    "label": "SQUAD_EMPTY",
+    "json": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"}],\"Squad\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"members\",\"type\":\"Person[]\"},{\"name\":\"scores\",\"type\":\"uint8[]\"}],\"Person\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"wallet\",\"type\":\"address\"}]},\"primaryType\":\"Squad\",\"domain\":{\"name\":\"Ether Mail\",\"version\":\"1\",\"chainId\":\"1\",\"verifyingContract\":\"0xcccccccccccccccccccccccccccccccccccccccc\"},\"message\":{\"name\":\"Nobody\",\"members\":[],\"scores\":[]}}",
+    "encodeType": "Squad(string name,Person[] members,uint8[] scores)Person(string name,address wallet)",
+    "typeHash": "0x12778eccfaa709cab66c8afb9ab4e2f02f9fc6bf1d39c2ff81ab89258a685642",
+    "hashStruct": "0x6967707de8c1991b743a17866c0b1d532b7eca7d0a616e1166c80384792ab6dc",
+    "domainSeparator": "0xf2cee375fa42b42143804025fc449deafd50cc031ca257e0b194a650a912090f",
+    "digest": "0xcb59445aa8e9d280a12156f835a2abf0995eafbb80a8109e4e493111ea609151"
+  },
+  {
+    "label": "SQUAD_FULL",
+    "json": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"}],\"Squad\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"members\",\"type\":\"Person[]\"},{\"name\":\"scores\",\"type\":\"uint8[]\"}],\"Person\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"wallet\",\"type\":\"address\"}]},\"primaryType\":\"Squad\",\"domain\":{\"name\":\"Partial\",\"chainId\":\"10\"},\"message\":{\"name\":\"Four\",\"members\":[{\"name\":\"Cow\",\"wallet\":\"0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826\"},{\"name\":\"Bob\",\"wallet\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},{\"name\":\"Cow\",\"wallet\":\"0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826\"},{\"name\":\"Bob\",\"wallet\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}],\"scores\":[\"0\",\"1\",\"2\",\"3\"]}}",
+    "encodeType": "Squad(string name,Person[] members,uint8[] scores)Person(string name,address wallet)",
+    "typeHash": "0x12778eccfaa709cab66c8afb9ab4e2f02f9fc6bf1d39c2ff81ab89258a685642",
+    "hashStruct": "0x629c4e600be3bcb1bd77a4ad2df7ac4e4de9e6a88ebb513097d89fa85d2c6e72",
+    "domainSeparator": "0x8d045f17569257da61874b78b18c6570bedc492bb70ffcac8db1ff6a94521e8a",
+    "digest": "0xa4db8877855bbceb679d3cafb4179d04a979b88c706eae12ee528e3c518ca35e"
+  },
+  {
+    "label": "TIERS",
+    "json": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"}],\"Tiers\":[{\"name\":\"rows\",\"type\":\"uint8[2][]\"},{\"name\":\"columns\",\"type\":\"uint8[][2]\"},{\"name\":\"nested\",\"type\":\"uint8[][]\"}]},\"primaryType\":\"Tiers\",\"domain\":{\"name\":\"Partial\",\"chainId\":\"10\"},\"message\":{\"rows\":[[\"1\",\"2\"],[\"3\",\"4\"]],\"columns\":[[\"5\"],[\"6\",\"7\"]],\"nested\":[[\"8\"],[],[\"9\",\"10\"]]}}",
+    "encodeType": "Tiers(uint8[2][] rows,uint8[][2] columns,uint8[][] nested)",
+    "typeHash": "0x732239af38a51b573d03411d4c79f34984cd18790ecef4a1b12b5299ae306d81",
+    "hashStruct": "0x17b0757624839e182ff2ed550794bfd771b9fea195d1172d522e949696ab23c4",
+    "domainSeparator": "0x8d045f17569257da61874b78b18c6570bedc492bb70ffcac8db1ff6a94521e8a",
+    "digest": "0x9fdd75042adae37de456c4dd466aafb93624f1217045c96a3989afee4084ac56"
+  },
+  {
+    "label": "TIERS_EMPTY",
+    "json": "{\"types\":{\"EIP712Domain\":[],\"Tiers\":[{\"name\":\"rows\",\"type\":\"uint8[2][]\"},{\"name\":\"columns\",\"type\":\"uint8[][2]\"},{\"name\":\"nested\",\"type\":\"uint8[][]\"}]},\"primaryType\":\"Tiers\",\"domain\":{},\"message\":{\"rows\":[],\"columns\":[[],[]],\"nested\":[]}}",
+    "encodeType": "Tiers(uint8[2][] rows,uint8[][2] columns,uint8[][] nested)",
+    "typeHash": "0x732239af38a51b573d03411d4c79f34984cd18790ecef4a1b12b5299ae306d81",
+    "hashStruct": "0x413be55f2964e4ed36a742589831c235ff759bba98da14d3b3ae4454cbaafadd",
+    "domainSeparator": "0x6192106f129ce05c9075d319c1fa6ea9b3ae37cbd0c1ef92e2be7137bb07baa1",
+    "digest": "0xab04eb4a97dd078a45eec8cb53990c9eb905b43442988a9eec9c7f37e157c6c5"
+  },
+  {
     "label": "KINDS",
     "json": "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"}],\"Kinds\":[{\"name\":\"flag\",\"type\":\"bool\"},{\"name\":\"small\",\"type\":\"int8\"},{\"name\":\"big\",\"type\":\"int256\"},{\"name\":\"ubig\",\"type\":\"uint256\"},{\"name\":\"data\",\"type\":\"bytes\"},{\"name\":\"hash\",\"type\":\"bytes32\"},{\"name\":\"short\",\"type\":\"bytes4\"},{\"name\":\"label\",\"type\":\"string\"},{\"name\":\"who\",\"type\":\"address\"},{\"name\":\"level\",\"type\":\"uint8\"}]},\"primaryType\":\"Kinds\",\"domain\":{\"name\":\"Ether Mail\",\"version\":\"1\",\"chainId\":\"1\",\"verifyingContract\":\"0xcccccccccccccccccccccccccccccccccccccccc\"},\"message\":{\"flag\":true,\"small\":\"-12\",\"big\":\"-1606938044258990275541962092341162602522202993782792835301376\",\"ubig\":\"57896044618658097711785492504343953926634992332820282019728792003956564819975\",\"data\":\"0x010203\",\"hash\":\"0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\",\"short\":\"0xdeadbeef\",\"label\":\"say \\\"hi\\\" ü\",\"who\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"level\":\"1\"}}",
     "encodeType": "Kinds(bool flag,int8 small,int256 big,uint256 ubig,bytes data,bytes32 hash,bytes4 short,string label,address who,uint8 level)",

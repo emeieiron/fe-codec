@@ -196,6 +196,8 @@ TYPES = {
     "Group": t(("name", "string"), ("members", "Person[2]")),
     "Grid": t(("cells", "uint8[2][3]")),
     "Inbox": t(("owner", "address"), ("mails", "Mail[0]")),
+    "Squad": t(("name", "string"), ("members", "Person[]"), ("scores", "uint8[]")),
+    "Tiers": t(("rows", "uint8[2][]"), ("columns", "uint8[][2]"), ("nested", "uint8[][]")),
     "Kinds": t(
         ("flag", "bool"), ("small", "int8"), ("big", "int256"), ("ubig", "uint256"),
         ("data", "bytes"), ("hash", "bytes32"), ("short", "bytes4"), ("label", "string"),
@@ -234,6 +236,13 @@ CASES = [
     ("GROUP", "Group", {"name": "Team", "members": [cow, bob]}, "FULL"),
     ("GRID", "Grid", {"cells": [[1, 2], [3, 4], [5, 255]]}, "PARTIAL"),
     ("INBOX", "Inbox", {"owner": COW, "mails": []}, "EMPTY"),
+    # Dynamic arrays, which a `List<T, N>` is: partly filled, empty and full, and nested in
+    # fixed-length arrays and in each other.
+    ("SQUAD", "Squad", {"name": "Team", "members": [cow, bob], "scores": [1, 2, 255]}, "FULL"),
+    ("SQUAD_EMPTY", "Squad", {"name": "Nobody", "members": [], "scores": []}, "MAIL"),
+    ("SQUAD_FULL", "Squad", {"name": "Four", "members": [cow, bob, cow, bob], "scores": [0, 1, 2, 3]}, "PARTIAL"),
+    ("TIERS", "Tiers", {"rows": [[1, 2], [3, 4]], "columns": [[5], [6, 7]], "nested": [[8], [], [9, 10]]}, "PARTIAL"),
+    ("TIERS_EMPTY", "Tiers", {"rows": [], "columns": [[], []], "nested": []}, "EMPTY"),
     ("KINDS", "Kinds", {
         "flag": True, "small": -12, "big": -(1 << 200), "ubig": (1 << 255) + 7,
         "data": bytes([1, 2, 3]), "hash": bytes(range(32)), "short": bytes.fromhex("deadbeef"),

@@ -1,5 +1,5 @@
 use core::bytes::PackedBytes
-use fe_codec_core::{BoundedBuffer, Text}
+use fe_codec_core::{BoundedBuffer, List, Text}
 use std::evm::Address
 use ingot::codecs::{HexAmount, HexWord, RecipientPair}
 use ingot::custom::Celsius
@@ -76,6 +76,32 @@ pub struct Waypoint {
     pub next: Option<(u16, u64)>,
     pub tag: (u8,),
 }
+
+/// A list holds 0 to `N` elements: an array on the wire, whose length the value decides.
+#[serializable]
+pub struct Tally { pub counts: List<u16, 4> }
+
+/// List elements are `Copy`, as records here must declare.
+#[serializable]
+pub struct Member { pub id: u8, pub name: Text<8> }
+impl Copy for Member {}
+
+/// A list of records, and an optional list.
+#[serializable]
+pub struct Crew { pub members: List<Member, 3>, pub guests: Option<List<u8, 2>> }
+
+/// Lists of tuples, of lists and of optional values, and an array of lists.
+#[serializable]
+pub struct Routes {
+    pub legs: List<(u8, bool), 3>,
+    pub grid: List<List<u8, 2>, 2>,
+    pub slots: List<Option<u8>, 3>,
+    pub fixed: [List<u8, 2>; 2],
+}
+
+/// A generic record with a list: decoding the list makes `T` need `Copy`.
+#[serializable]
+pub struct Bag<T, const N: usize> { pub items: List<T, N> }
 
 /// A field whose type has a handwritten serializer in another module.
 #[serializable]

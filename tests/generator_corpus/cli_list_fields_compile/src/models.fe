@@ -1,0 +1,30 @@
+use fe_codec_core::{List, Text}
+use std::evm::Address
+
+#[serializable]
+pub struct Leg { pub from: u8, pub to: u8 }
+impl Copy for Leg {}
+#[serializable]
+pub struct Plain { pub id: u8 }
+
+#[serializable]
+pub struct Route {
+    pub ids: List<u32, 8>,
+    pub names: List<Text<8>, 4>,
+    pub legs: List<Leg, 4>,
+    pub maybe: Option<List<Leg, 2>>,
+    pub optionals: List<Option<u8>, 3>,
+    pub pairs: List<(u8, Leg), 3>,
+    pub grid: List<List<u8, 2>, 2>,
+    pub rows: List<[u8; 2], 3>,
+    pub lists: [List<u8, 2>; 2],
+    pub tuple: (List<u8, 2>, bool),
+    pub owners: fe_codec_core::List<Address, 2>,
+    pub inside: (Plain, List<Leg, 2>),
+}
+
+#[serializable]
+pub struct Batch<T, const N: usize> { pub items: List<T, N> }
+
+#[serializable]
+pub struct Wrapped<T> { pub items: Option<List<T, 3>>, pub pairs: List<(T, u8), 2> }

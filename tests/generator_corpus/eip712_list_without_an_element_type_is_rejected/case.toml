@@ -1,0 +1,3 @@
+sources = ["src/models.fe"]
+modes = ["eip712"]
+expect_stderr = "src/models.fe:4:5: error: field 'a': List<T, N> is T[] in EIP-712, so T must be a type\n"

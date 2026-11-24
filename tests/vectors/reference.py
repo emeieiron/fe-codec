@@ -74,6 +74,19 @@ cases = {
                      'next': None, 'tag': [5]},
                     {1: [7, 'hi'], 2: [[-1, 2], [3, -4]], 3: [[1, True], [2, False]],
                      4: None, 5: [5]}),
+  # A list is an array of its current length, in both formats.
+  'TALLY': ({'counts': [1, 2]}, {1: [1, 2]}),
+  'TALLY_EMPTY': ({'counts': []}, {1: []}),
+  'TALLY_FULL': ({'counts': [1, 2, 3, 65535]}, {1: [1, 2, 3, 65535]}),
+  'CREW': ({'members': [{'id': 1, 'name': 'hi'}, {'id': 2, 'name': 'yo'}], 'guests': [7]},
+           {1: [{1: 1, 2: 'hi'}, {1: 2, 2: 'yo'}], 2: [7]}),
+  'CREW_EMPTY': ({'members': [], 'guests': None}, {1: [], 2: None}),
+  'CREW_NO_GUESTS': ({'members': [], 'guests': []}, {1: [], 2: []}),
+  'ROUTES': ({'legs': [[1, True], [2, False]], 'grid': [[1, 2], [3]], 'slots': [1, None, 3], 'fixed': [[4], []]},
+             {1: [[1, True], [2, False]], 2: [[1, 2], [3]], 3: [1, None, 3], 4: [[4], []]}),
+  'ROUTES_EMPTY': ({'legs': [], 'grid': [], 'slots': [], 'fixed': [[], []]},
+                   {1: [], 2: [], 3: [], 4: [[], []]}),
+  'LIST_ROOT': ([1, 2], [1, 2]),
 }
 for name, (j, c) in cases.items():
     jt = js(j); cb = cbor(c)

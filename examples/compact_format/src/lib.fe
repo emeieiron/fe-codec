@@ -9,7 +9,8 @@
 //! - Text and byte strings are a ULEB128 length and the bytes. Lengths and variant IDs use
 //!   the shortest ULEB128 form; a longer one is rejected as non-canonical.
 //! - Sequences, which carry arrays and tuples, have no header, because their length is part of
-//!   the type.
+//!   the type. A list, whose length is part of the value, writes it as a ULEB128 number before
+//!   its elements, through `Encoder::begin_list` and `Decoder::begin_list`.
 //! - Nothing marks where a value ends, so it keeps `Decoder::skip_value`'s default, which fails
 //!   with `Unsupported`, and `#[codec_skip_unknown]` has no effect: fields are read by position.
 

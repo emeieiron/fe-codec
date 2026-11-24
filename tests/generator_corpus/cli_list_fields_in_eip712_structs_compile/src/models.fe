@@ -1,0 +1,20 @@
+use fe_codec_core::{List, Text}
+use std::evm::Address
+
+#[serializable]
+pub struct Person { pub name: Text<16>, pub wallet: Address }
+impl Copy for Person {}
+#[serializable]
+pub enum Level { Low, High }
+impl Copy for Level {}
+#[serializable]
+#[eip712]
+pub struct Mail {
+    pub to: List<Person, 4>,
+    pub levels: List<Level, 2>,
+    pub tags: List<u8, 8>,
+    pub notes: List<Text<32>, 2>,
+    pub grid: List<[u8; 2], 3>,
+    pub columns: [List<u8, 2>; 2],
+    pub nested: List<List<u8, 2>, 2>,
+}

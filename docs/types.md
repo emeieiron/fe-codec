@@ -10,12 +10,36 @@
 | `core::bytes::PackedBytes<N>`, `std::evm::Address` | Bytes of exactly `N`, or 20 |
 | `Option<T>` | Anywhere, except `Option<Option<T>>`, which cannot round-trip |
 | `[T; N]` | As a field, any length of `Copy` elements, or up to 64 of other elements. Elsewhere, such as inside an `Option`, decoding needs `T: Copy` and `N > 0` |
+| `List<T, N>` | 0 to `N` elements, each of a `Copy` type; `Copy` itself when `T` is. A field or nested, with any supported element type |
 | `(T0, ..., T7)` | Tuples of 1 to 8 supported types, anywhere a type can appear. `()` has no wire form and is rejected |
 | `#[serializable]` structs | Named fields of up to 31-byte names; type and const generic parameters |
 | `#[serializable]` enums | Unit variants of up to 31-byte names |
 | Your own types | With handwritten impls; see [writing serializers](writing-serializers.md) |
 
-Not supported yet: enums with payloads, variable-length collections and maps.
+Not supported yet: enums with payloads and maps.
+
+## Lists
+
+`List<T, N>` from `fe_codec_core` is the variable-length collection: its capacity is fixed at
+compile time, like `Text<N>`'s, and its length is part of the value. It stores copies of its
+elements, so `T` must be `Copy`; the generator rejects a local type that is not, and adds the
+bound to a type parameter. Encoding writes only the elements present; decoding fails with
+`CapacityExceeded` when the input holds more than `N`.
+
+```fe
+#[serializable]
+pub struct Batch {
+    pub ids: List<u32, 8>,
+}
+
+var ids = List<u32, 8>::new()
+ids.push(7)?                                   // CapacityExceeded once it holds 8
+let batch = Batch { ids }
+let same = List<u32, 8>::from_array([7, 9])?   // or from an array of up to 8 elements
+```
+
+`len`, `capacity`, `is_empty` and `get(index)` read a list, and lists of equal elements are
+`==`. [Wire profiles](formats.md#lists) say how each format writes one.
 
 ## Choosing a serializer per field
 

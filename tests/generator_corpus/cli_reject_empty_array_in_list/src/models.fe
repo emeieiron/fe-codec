@@ -1,0 +1,4 @@
+#[serializable]
+pub struct Item {
+    pub id: List<[u8; 0], 2>
+}

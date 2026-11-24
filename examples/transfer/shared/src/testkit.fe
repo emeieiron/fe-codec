@@ -1,11 +1,17 @@
 // Helpers shared by the test modules of this example: this ingot's own tests and the test-only
 // ingots next to it (eip712_tests, codec_field_tests).
 
-use fe_codec_core::{BoundedBuffer, CodecResult, Deserialize, ErrorKind, Format, Serialize, Text}
+use fe_codec_core::{BoundedBuffer, CodecResult, Deserialize, Describe, ErrorKind, Format, Serialize, Text}
+use fe_codec_eip712::{Domain, Eip712, Eip712Struct}
 
 /// The text `hi`.
 pub fn hi() -> Text<8> {
     must(Text<8>::from_array("hi"))
+}
+
+/// A `Text<N>` of `bytes`; any error aborts the test.
+pub fn text<const M: usize, const N: usize>(_ bytes: [u8; M]) -> Text<N> {
+    must(Text<N>::from_array(bytes))
 }
 
 /// The value of an `Ok` result; any error aborts the test.
@@ -55,4 +61,29 @@ pub fn encodes<T: Serialize, F: Format, const M: usize>(_ format: F, _ value: T,
 /// Decodes `input` as a `T` in `format`.
 pub fn decodes<T: Deserialize, F: Format, const M: usize>(_ format: F, _ input: [u8; M]) -> CodecResult<T> {
     format.decode<T, M>(BoundedBuffer<M>::from_array(input))
+}
+
+/// Every EIP-712 output for one value: its type string and hash, its struct hash, the digest
+/// in `domain`, and the wallet request, byte for byte. The generated static hashing must
+/// agree with the generic path.
+pub fn check_eip712<T: Serialize + Describe + Eip712Struct, const E: usize, const J: usize>(
+    _ value: T,
+    _ domain: Domain,
+    _ encode_type: [u8; E],
+    _ type_hash: u256,
+    _ hash: u256,
+    _ digest: u256,
+    _ json: [u8; J],
+) {
+    let eip712 = Eip712::new()
+    let expected = text<E, E>(encode_type)
+    assert!(must(eip712.encode_type<T, E>()).equals(expected))
+    assert!(must(eip712.type_hash<T>()) == type_hash)
+    assert!(must(eip712.hash_struct(value)) == hash)
+    assert!(must(eip712.signing_hash(domain, value)) == digest)
+    let request = must(eip712.typed_data_json<T, J>(domain, value))
+    assert!(request.equals(BoundedBuffer<J>::from_array(json)))
+    assert!(T::TYPE_HASH == type_hash)
+    assert!(value.hash_struct() == hash)
+    assert!(domain.digest(value.hash_struct()) == digest)
 }

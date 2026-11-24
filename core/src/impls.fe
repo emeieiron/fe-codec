@@ -3,6 +3,7 @@ use core::marker::Copy
 use core::num::IntDowncast
 use fe_codec_io::BoundedBuffer
 use ingot::error::{CodecError, CodecResult, ErrorKind}
+use ingot::list::List
 use ingot::serializer::{Decoder, Deserialize, Encoder, Serialize}
 use ingot::text::Text
 use std::evm::Address
@@ -283,6 +284,48 @@ impl<T: Deserialize + Copy, const N: usize> Deserialize for [T; N] {
         }
         decoder.end_sequence(sequence)?
         Result::Ok(array)
+    }
+}
+
+/// A list is a sequence of its current length. Decoding stops at the end of the sequence, so
+/// a list of any length up to `N` round-trips, and a longer one fails with `CapacityExceeded`
+/// where the decoder finds the extra element.
+impl<T: Serialize, const N: usize> Serialize for List<T, N> {
+    fn serialize<E: Encoder>(self, _ encoder: mut E) -> CodecResult<()> {
+        var sequence = encoder.begin_list(self.len())?
+        var index: usize = 0
+        while index < self.len() {
+            encoder.element(mut sequence)?
+            match self.items[index] {
+                Option::Some(ref value) => value.serialize(mut encoder)?,
+                // Every slot below the length is filled, so no list reaches this.
+                Option::None => {
+                    return Result::Err(
+                        CodecError::at(kind: ErrorKind::InvalidState, offset: encoder.offset()),
+                    )
+                },
+            }
+            index += 1
+        }
+        encoder.end_sequence(sequence)
+    }
+}
+
+impl<T: Deserialize + Copy, const N: usize> Deserialize for List<T, N> {
+    fn deserialize<D: Decoder>(_ decoder: mut D) -> CodecResult<Self> {
+        var sequence = decoder.begin_list(N)?
+        var list = List<T, N>::new()
+        while decoder.next_element(mut sequence)? {
+            // A decoder enforces the capacity itself; this guards one that does not.
+            if list.len() == N {
+                return Result::Err(
+                    CodecError::at(kind: ErrorKind::CapacityExceeded, offset: decoder.offset()),
+                )
+            }
+            list.push(T::deserialize(mut decoder)?)?
+        }
+        decoder.end_sequence(sequence)?
+        Result::Ok(list)
     }
 }
 

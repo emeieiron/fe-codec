@@ -1,6 +1,7 @@
 use core::bytes::PackedBytes
 use fe_codec_io::BoundedBuffer
 use ingot::error::{CodecError, CodecResult, ErrorKind}
+use ingot::list::List
 use ingot::schema::Schema
 use ingot::text::Text
 use std::evm::Address
@@ -17,7 +18,7 @@ pub trait Describe {
 
 /// The type vocabulary a description is written in, mirroring the `Encoder` data model.
 ///
-/// An option or sequence opens, describes its one inner type, and closes. A tuple opens,
+/// An option, sequence or list opens, describes its one inner type, and closes. A tuple opens,
 /// describes each element type in order, and closes. A record opens,
 /// then for each field in position order calls `field` and describes the field's type,
 /// then closes.
@@ -33,6 +34,14 @@ pub trait Describer {
     fn end_option(mut self) -> CodecResult<()>
     fn begin_sequence(mut self, _ length: usize) -> CodecResult<()>
     fn end_sequence(mut self, _ length: usize) -> CodecResult<()>
+    /// A list opens with its capacity, describes its element type, and closes with the same
+    /// capacity. A format with no variable-length collections keeps this default.
+    fn begin_list(mut self, _ capacity: usize) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+    fn end_list(mut self, _ capacity: usize) -> CodecResult<()> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
     /// A tuple opens with its arity, describes each element type in order, and closes with the
     /// same arity. A format with no tuple type keeps this default.
     fn begin_tuple(mut self, _ length: usize) -> CodecResult<()> {
@@ -162,6 +171,14 @@ impl<T: Describe, const N: usize> Describe for [T; N] {
         describer.begin_sequence(N)?
         T::describe(mut describer)?
         describer.end_sequence(N)
+    }
+}
+
+impl<T: Describe, const N: usize> Describe for List<T, N> {
+    fn describe<V: Describer>(_ describer: mut V) -> CodecResult<()> {
+        describer.begin_list(N)?
+        T::describe(mut describer)?
+        describer.end_list(N)
     }
 }
 

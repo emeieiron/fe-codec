@@ -394,6 +394,19 @@ impl Describer for TypeTable {
         self.put(b']')
     }
 
+    /// A list is a dynamic array, `T[]`.
+    fn begin_list(mut self, _ capacity: usize) -> CodecResult<()> {
+        if self.depth == 0 {
+            return Result::Err(unsupported())
+        }
+        Result::Ok(())
+    }
+
+    fn end_list(mut self, _ capacity: usize) -> CodecResult<()> {
+        self.put(b'[')?
+        self.put(b']')
+    }
+
     /// A unit enum is a `uint8` holding the variant's ID.
     fn enumeration<V: Schema>(mut self) -> CodecResult<()> {
         self.leaf(UINT8, 5)

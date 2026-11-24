@@ -98,7 +98,10 @@ impl<const N: usize> CompactDecoder<N> {
     }
 
     fn begin(mut self, _ count: usize) -> CodecResult<Frame> {
-        let offset = self.offset()
+        self.begin_at(count, self.offset())
+    }
+
+    fn begin_at(mut self, _ count: usize, _ offset: usize) -> CodecResult<Frame> {
         self.structure.check_items(count, offset)?
         self.structure.begin(offset)?
         Result::Ok(Frame::new(count))
@@ -262,5 +265,26 @@ impl<const N: usize> Decoder for CompactDecoder<N> {
 
     fn end_sequence(mut self, _ sequence: own Frame) -> CodecResult<()> {
         self.end(sequence)
+    }
+
+    /// The ULEB128 length comes first. A length over `Limits.max_items`, or else over
+    /// `capacity`, is an error at the length, before any element is read.
+    fn begin_list(mut self, _ capacity: usize) -> CodecResult<Frame> {
+        let offset = self.offset()
+        let length = self.structure.wire_items(self.uleb()?, offset)?
+        if length > capacity {
+            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset))
+        }
+        self.begin_at(length, offset)
+    }
+
+    fn next_element(mut self, _ sequence: mut Frame) -> CodecResult<bool> {
+        if sequence.remaining() == 0 {
+            return Result::Ok(false)
+        }
+        let offset = self.offset()
+        self.structure.member(offset)?
+        sequence.take(offset)?
+        Result::Ok(true)
     }
 }

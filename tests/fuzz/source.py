@@ -165,6 +165,17 @@ class Renderer:
                 s.t(",")
                 s.g(self.tight_or_space(rng, style["tspace"]))
             s.t(")")
+        elif k == "list":
+            s.t("List")
+            s.t("<")
+            s.g(self.tight_or_space(rng, style["tspace"]))
+            self.emit_type(s, t[1], rng, style)
+            s.g(self.tight_or_space(rng, style["tspace"]))
+            s.t(",")
+            s.g(" " if rng.random() < 0.85 else "")
+            s.t(str(t[2]))
+            s.g(self.tight_or_space(rng, style["tspace"]))
+            s.t(">")
         elif k == "arr":
             s.t("[")
             s.g(self.tight_or_space(rng, style["tspace"]), "x")
@@ -380,6 +391,8 @@ class Renderer:
                         names.add("BoundedBuffer")
                     elif w[0] == "packed":
                         names.add("PackedBytes")
+                    elif w[0] == "list":
+                        names.add("List")
                     elif w[0] == "addr":
                         names.add("Address")
                     elif w[0] == "ref":
@@ -387,7 +400,7 @@ class Renderer:
                         if o.module != m_index:
                             foreign.setdefault(o.module, set()).add(o.name)
         lines = []
-        core = sorted(n for n in names if n in ("Text", "BoundedBuffer"))
+        core = sorted(n for n in names if n in ("Text", "BoundedBuffer", "List"))
         if rng.random() < 0.15:
             core = sorted(set(core) | {"Text", "BoundedBuffer"})  # an unused import
         if core:

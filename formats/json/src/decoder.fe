@@ -29,7 +29,9 @@ const MAX_WIDE_UNSIGNED: u256 = 0xffffffffffffffffffffffffffffffffffffffffffffff
 const MAX_WIDE_SIGNED: u256 = 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 
 pub struct Record { seen: usize }
-pub struct Sequence { expected: usize, seen: usize }
+/// An array being read. A list has no expected length: `expected` is its capacity, and it
+/// ends where the array does.
+pub struct Sequence { expected: usize, seen: usize, list: bool }
 
 pub struct JsonDecoder<const N: usize> { input: ByteReader<N>, structure: Structure }
 
@@ -643,7 +645,7 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
 
     fn begin_sequence(mut self, _ length: usize) -> CodecResult<Sequence> {
         self.begin(b'[')?
-        Result::Ok(Sequence { expected: length, seen: 0 })
+        Result::Ok(Sequence { expected: length, seen: 0, list: false })
     }
 
     fn element(mut self, _ sequence: mut Sequence) -> CodecResult<()> {
@@ -662,10 +664,36 @@ impl<const N: usize> Decoder for JsonDecoder<N> {
     }
 
     fn end_sequence(mut self, _ sequence: own Sequence) -> CodecResult<()> {
-        if sequence.seen != sequence.expected {
+        if !sequence.list && sequence.seen != sequence.expected {
             return Result::Err(self.error(ErrorKind::InvalidLength))
         }
         self.end(b']', ErrorKind::InvalidLength)
+    }
+
+    fn begin_list(mut self, _ capacity: usize) -> CodecResult<Sequence> {
+        self.begin(b'[')?
+        Result::Ok(Sequence { expected: capacity, seen: 0, list: true })
+    }
+
+    /// An element past the capacity is `CapacityExceeded` where it starts. `Limits.max_items`
+    /// is checked first.
+    fn next_element(mut self, _ sequence: mut Sequence) -> CodecResult<bool> {
+        self.whitespace()?
+        if self.peek()? == b']' {
+            return Result::Ok(false)
+        }
+        self.separator(sequence.seen)?
+        // A comma must be followed by an element.
+        if self.peek()? == b']' {
+            return Result::Err(self.error(ErrorKind::InvalidSyntax))
+        }
+        let offset = self.offset()
+        if sequence.seen == sequence.expected {
+            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset))
+        }
+        self.structure.member(offset)?
+        sequence.seen += 1
+        Result::Ok(true)
     }
 }
 

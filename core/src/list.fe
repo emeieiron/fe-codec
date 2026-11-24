@@ -1,0 +1,88 @@
+use core::marker::Copy
+use core::ops::Eq
+use ingot::error::{CodecError, CodecResult, ErrorKind}
+
+/// A sequence of 0 to `N` elements: the collection counterpart of `Text<N>` and
+/// `BoundedBuffer<N>`. The capacity is part of the type, so a list needs no heap.
+///
+/// Elements must be `Copy`: the storage is `N` slots that start as `None` and are filled by
+/// copying values in, and `Option::None` can only be copied into every slot of an array when
+/// the element type is `Copy`.
+///
+/// Encoders write a list as a sequence of its current length; decoders read a sequence of
+/// any length up to `N` and reject a longer one with `CapacityExceeded`.
+pub struct List<T, const N: usize> { pub(ingot) items: [Option<T>; N], length: usize }
+impl<T: Copy, const N: usize> Copy for List<T, N> {}
+
+impl<T, const N: usize> List<T, N> {
+    pub fn len(self) -> usize {
+        self.length
+    }
+
+    pub fn capacity(self) -> usize {
+        N
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.length == 0
+    }
+}
+
+impl<T: Copy, const N: usize> List<T, N> {
+    /// An empty list.
+    pub fn new() -> Self {
+        Self { items: [Option::None; N], length: 0 }
+    }
+
+    /// A list of the elements of `values`, in order. Fails with `CapacityExceeded` at offset
+    /// `N` when `M` is more than `N`.
+    pub fn from_array<const M: usize>(_ values: [T; M]) -> CodecResult<Self> {
+        if M > N {
+            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: N))
+        }
+        var list = Self::new()
+        var index: usize = 0
+        while index < M {
+            list.items[index] = Option::Some(values[index])
+            index += 1
+        }
+        list.length = M
+        Result::Ok(list)
+    }
+
+    /// Appends `value`, or fails with `CapacityExceeded` at offset `N` when the list is full.
+    pub fn push(mut self, _ value: T) -> CodecResult<()> {
+        if self.length == N {
+            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset: N))
+        }
+        self.items[self.length] = Option::Some(value)
+        self.length += 1
+        Result::Ok(())
+    }
+
+    /// The element at `index`, or `None` at or past the length.
+    pub fn get(self, _ index: usize) -> Option<T> {
+        if index >= self.length {
+            return Option::None
+        }
+        self.items[index]
+    }
+}
+
+/// Lists are equal when they hold equal elements in the same order. Slots past the length
+/// are not compared.
+impl<T: Copy + Eq, const N: usize> Eq for List<T, N> {
+    fn eq(self, _ other: List<T, N>) -> bool {
+        if self.length != other.length {
+            return false
+        }
+        var index: usize = 0
+        while index < self.length {
+            if self.items[index] != other.items[index] {
+                return false
+            }
+            index += 1
+        }
+        true
+    }
+}

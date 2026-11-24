@@ -3,10 +3,11 @@
 
 use core::bytes::PackedBytes
 use core::num::IntDowncast
-use fe_codec_core::{BoundedBuffer, CodecResult, Describe, ErrorKind, Limits, Serialize, Text}
-use fe_codec_eip712::{Domain, Eip712, Eip712Struct}
+use fe_codec_core::{BoundedBuffer, CodecResult, ErrorKind, Limits, List}
+use fe_codec_eip712::{Domain, Eip712}
 use std::evm::Address
 use codec_transfer::models::{Booking, Recipient, Receipt}
+use codec_transfer::testkit::{check_eip712, text}
 use codec_transfer::typed::{
     Asset,
     Conflict,
@@ -28,7 +29,10 @@ use codec_transfer::typed::{
     Person,
     Ranked,
     Route,
+    Sparse,
+    Squad,
     Terms,
+    Tiers,
     TooLong,
 }
 
@@ -52,6 +56,31 @@ const INBOX_TYPE_HASH: u256 = 0x7e017abd4736b4928f48a5e05cd587b36b333f85f2c5da98
 const INBOX_HASH: u256 = 0x4d101175709c9027244610de0b425ed2533cf543816f3fd14bae641f227e49ca
 const INBOX_DIGEST: u256 = 0xfa9a9be3275d238d9efd08dd9c557784886daeb3fe51ddad8a069b2496fcb2fc
 const INBOX_JSON: [u8; 402] = "{\"types\":{\"EIP712Domain\":[],\"Inbox\":[{\"name\":\"owner\",\"type\":\"address\"},{\"name\":\"mails\",\"type\":\"Mail[0]\"}],\"Mail\":[{\"name\":\"from\",\"type\":\"Person\"},{\"name\":\"to\",\"type\":\"Person\"},{\"name\":\"contents\",\"type\":\"string\"}],\"Person\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"wallet\",\"type\":\"address\"}]},\"primaryType\":\"Inbox\",\"domain\":{},\"message\":{\"owner\":\"0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826\",\"mails\":[]}}"
+const SQUAD_ENCODE_TYPE: [u8; 84] = "Squad(string name,Person[] members,uint8[] scores)Person(string name,address wallet)"
+const SQUAD_TYPE_HASH: u256 = 0x12778eccfaa709cab66c8afb9ab4e2f02f9fc6bf1d39c2ff81ab89258a685642
+const SQUAD_HASH: u256 = 0x4987e1b7aefca34d607d6fe99e9d0e2968f093ba255d9f7091d705d77b4dd04f
+const SQUAD_DIGEST: u256 = 0x8746eef517705a12e6e230570bb6f64f0a83f2592523115adb02915d00ddf8b6
+const SQUAD_JSON: [u8; 821] = "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"},{\"name\":\"salt\",\"type\":\"bytes32\"}],\"Squad\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"members\",\"type\":\"Person[]\"},{\"name\":\"scores\",\"type\":\"uint8[]\"}],\"Person\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"wallet\",\"type\":\"address\"}]},\"primaryType\":\"Squad\",\"domain\":{\"name\":\"Full\",\"version\":\"2\",\"chainId\":\"137\",\"verifyingContract\":\"0xcccccccccccccccccccccccccccccccccccccccc\",\"salt\":\"0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20\"},\"message\":{\"name\":\"Team\",\"members\":[{\"name\":\"Cow\",\"wallet\":\"0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826\"},{\"name\":\"Bob\",\"wallet\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}],\"scores\":[\"1\",\"2\",\"255\"]}}"
+const SQUAD_EMPTY_ENCODE_TYPE: [u8; 84] = "Squad(string name,Person[] members,uint8[] scores)Person(string name,address wallet)"
+const SQUAD_EMPTY_TYPE_HASH: u256 = 0x12778eccfaa709cab66c8afb9ab4e2f02f9fc6bf1d39c2ff81ab89258a685642
+const SQUAD_EMPTY_HASH: u256 = 0x6967707de8c1991b743a17866c0b1d532b7eca7d0a616e1166c80384792ab6dc
+const SQUAD_EMPTY_DIGEST: u256 = 0xcb59445aa8e9d280a12156f835a2abf0995eafbb80a8109e4e493111ea609151
+const SQUAD_EMPTY_JSON: [u8; 568] = "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"version\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"},{\"name\":\"verifyingContract\",\"type\":\"address\"}],\"Squad\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"members\",\"type\":\"Person[]\"},{\"name\":\"scores\",\"type\":\"uint8[]\"}],\"Person\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"wallet\",\"type\":\"address\"}]},\"primaryType\":\"Squad\",\"domain\":{\"name\":\"Ether Mail\",\"version\":\"1\",\"chainId\":\"1\",\"verifyingContract\":\"0xcccccccccccccccccccccccccccccccccccccccc\"},\"message\":{\"name\":\"Nobody\",\"members\":[],\"scores\":[]}}"
+const SQUAD_FULL_ENCODE_TYPE: [u8; 84] = "Squad(string name,Person[] members,uint8[] scores)Person(string name,address wallet)"
+const SQUAD_FULL_TYPE_HASH: u256 = 0x12778eccfaa709cab66c8afb9ab4e2f02f9fc6bf1d39c2ff81ab89258a685642
+const SQUAD_FULL_HASH: u256 = 0x629c4e600be3bcb1bd77a4ad2df7ac4e4de9e6a88ebb513097d89fa85d2c6e72
+const SQUAD_FULL_DIGEST: u256 = 0xa4db8877855bbceb679d3cafb4179d04a979b88c706eae12ee528e3c518ca35e
+const SQUAD_FULL_JSON: [u8; 694] = "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"}],\"Squad\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"members\",\"type\":\"Person[]\"},{\"name\":\"scores\",\"type\":\"uint8[]\"}],\"Person\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"wallet\",\"type\":\"address\"}]},\"primaryType\":\"Squad\",\"domain\":{\"name\":\"Partial\",\"chainId\":\"10\"},\"message\":{\"name\":\"Four\",\"members\":[{\"name\":\"Cow\",\"wallet\":\"0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826\"},{\"name\":\"Bob\",\"wallet\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},{\"name\":\"Cow\",\"wallet\":\"0xcd2a3d9f938e13cd947ec05abc7fe734df8dd826\"},{\"name\":\"Bob\",\"wallet\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}],\"scores\":[\"0\",\"1\",\"2\",\"3\"]}}"
+const TIERS_ENCODE_TYPE: [u8; 58] = "Tiers(uint8[2][] rows,uint8[][2] columns,uint8[][] nested)"
+const TIERS_TYPE_HASH: u256 = 0x732239af38a51b573d03411d4c79f34984cd18790ecef4a1b12b5299ae306d81
+const TIERS_HASH: u256 = 0x17b0757624839e182ff2ed550794bfd771b9fea195d1172d522e949696ab23c4
+const TIERS_DIGEST: u256 = 0x9fdd75042adae37de456c4dd466aafb93624f1217045c96a3989afee4084ac56
+const TIERS_JSON: [u8; 383] = "{\"types\":{\"EIP712Domain\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"chainId\",\"type\":\"uint256\"}],\"Tiers\":[{\"name\":\"rows\",\"type\":\"uint8[2][]\"},{\"name\":\"columns\",\"type\":\"uint8[][2]\"},{\"name\":\"nested\",\"type\":\"uint8[][]\"}]},\"primaryType\":\"Tiers\",\"domain\":{\"name\":\"Partial\",\"chainId\":\"10\"},\"message\":{\"rows\":[[\"1\",\"2\"],[\"3\",\"4\"]],\"columns\":[[\"5\"],[\"6\",\"7\"]],\"nested\":[[\"8\"],[],[\"9\",\"10\"]]}}"
+const TIERS_EMPTY_ENCODE_TYPE: [u8; 58] = "Tiers(uint8[2][] rows,uint8[][2] columns,uint8[][] nested)"
+const TIERS_EMPTY_TYPE_HASH: u256 = 0x732239af38a51b573d03411d4c79f34984cd18790ecef4a1b12b5299ae306d81
+const TIERS_EMPTY_HASH: u256 = 0x413be55f2964e4ed36a742589831c235ff759bba98da14d3b3ae4454cbaafadd
+const TIERS_EMPTY_DIGEST: u256 = 0xab04eb4a97dd078a45eec8cb53990c9eb905b43442988a9eec9c7f37e157c6c5
+const TIERS_EMPTY_JSON: [u8; 237] = "{\"types\":{\"EIP712Domain\":[],\"Tiers\":[{\"name\":\"rows\",\"type\":\"uint8[2][]\"},{\"name\":\"columns\",\"type\":\"uint8[][2]\"},{\"name\":\"nested\",\"type\":\"uint8[][]\"}]},\"primaryType\":\"Tiers\",\"domain\":{},\"message\":{\"rows\":[],\"columns\":[[],[]],\"nested\":[]}}"
 const KINDS_ENCODE_TYPE: [u8; 125] = "Kinds(bool flag,int8 small,int256 big,uint256 ubig,bytes data,bytes32 hash,bytes4 short,string label,address who,uint8 level)"
 const KINDS_TYPE_HASH: u256 = 0x8a706f40f74e79dbc24bb701514461ed772a35b854e3cf5d418a115dbfdbe757
 const KINDS_HASH: u256 = 0xb9c692e93c76aa1011684548f69db0a03085625b8dfcff46bf15698f90650c9e
@@ -79,10 +108,6 @@ fn must<T>(_ result: own CodecResult<T>) -> T {
     }
 }
 
-fn text<const M: usize, const N: usize>(_ bytes: [u8; M]) -> Text<N> {
-    must(Text<N>::from_array(bytes))
-}
-
 fn expect_error<T>(_ result: own CodecResult<T>, _ kind: ErrorKind) {
     match result {
         Result::Err(error) => assert!(error.kind == kind),
@@ -98,31 +123,6 @@ fn expect_field<T, const M: usize>(_ result: own CodecResult<T>, _ kind: ErrorKi
         },
         Result::Ok(_) => assert!(false),
     }
-}
-
-/// Every EIP-712 output for one value: its type string and hash, its struct hash, the digest
-/// in `domain`, and the wallet request, byte for byte. The generated static hashing must
-/// agree with the generic path.
-fn check<T: Serialize + Describe + Eip712Struct, const E: usize, const J: usize>(
-    _ value: T,
-    _ domain: Domain,
-    _ encode_type: [u8; E],
-    _ type_hash: u256,
-    _ hash: u256,
-    _ digest: u256,
-    _ json: [u8; J],
-) {
-    let eip712 = Eip712::new()
-    let expected = text<E, E>(encode_type)
-    assert!(must(eip712.encode_type<T, E>()).equals(expected))
-    assert!(must(eip712.type_hash<T>()) == type_hash)
-    assert!(must(eip712.hash_struct(value)) == hash)
-    assert!(must(eip712.signing_hash(domain, value)) == digest)
-    let request = must(eip712.typed_data_json<T, J>(domain, value))
-    assert!(request.equals(BoundedBuffer<J>::from_array(json)))
-    assert!(T::TYPE_HASH == type_hash)
-    assert!(value.hash_struct() == hash)
-    assert!(domain.digest(value.hash_struct()) == digest)
 }
 
 fn cow() -> Person {
@@ -161,12 +161,12 @@ fn partial_domain() -> Domain {
 
 #[test]
 fn matches_the_eip_reference_mail() {
-    check(mail(), mail_domain(), MAIL_ENCODE_TYPE, MAIL_TYPE_HASH, MAIL_HASH, MAIL_DIGEST, MAIL_JSON)
+    check_eip712(mail(), mail_domain(), MAIL_ENCODE_TYPE, MAIL_TYPE_HASH, MAIL_HASH, MAIL_DIGEST, MAIL_JSON)
 }
 
 #[test]
 fn hashes_arrays_of_structs() {
-    check(
+    check_eip712(
         Group { name: text("Team"), members: [cow(), bob()] },
         full_domain(),
         GROUP_ENCODE_TYPE,
@@ -188,7 +188,7 @@ fn hashes_nested_arrays() {
     cells[1][1] = 4
     cells[2][0] = 5
     cells[2][1] = 255
-    check(
+    check_eip712(
         Grid { cells },
         partial_domain(),
         GRID_ENCODE_TYPE,
@@ -201,7 +201,7 @@ fn hashes_nested_arrays() {
 
 #[test]
 fn includes_types_reachable_only_through_empty_arrays() {
-    check(
+    check_eip712(
         Inbox { owner: Address::new(COW), mails: [] },
         Domain::new(),
         INBOX_ENCODE_TYPE,
@@ -234,7 +234,7 @@ fn encodes_every_atomic_and_dynamic_type() {
         who: Address::new(BOB),
         level: Level::High,
     }
-    check(kinds, mail_domain(), KINDS_ENCODE_TYPE, KINDS_TYPE_HASH, KINDS_HASH, KINDS_DIGEST, KINDS_JSON)
+    check_eip712(kinds, mail_domain(), KINDS_ENCODE_TYPE, KINDS_TYPE_HASH, KINDS_HASH, KINDS_DIGEST, KINDS_JSON)
 }
 
 #[test]
@@ -244,7 +244,7 @@ fn sorts_referenced_types_by_name() {
         item: Asset { token: Address::new(1), amount: 1000000000000000000 },
         terms: Terms { deadline: 1700000000, partial: false },
     }
-    check(order, full_domain(), ORDER_ENCODE_TYPE, ORDER_TYPE_HASH, ORDER_HASH, ORDER_DIGEST, ORDER_JSON)
+    check_eip712(order, full_domain(), ORDER_ENCODE_TYPE, ORDER_TYPE_HASH, ORDER_HASH, ORDER_DIGEST, ORDER_JSON)
 }
 
 #[test]
@@ -325,4 +325,98 @@ fn respects_capacity_and_depth() {
         ErrorKind::DepthLimit,
     )
     expect_error(Eip712::new().typed_data_json<Mail, 100>(mail_domain(), mail()), ErrorKind::CapacityExceeded)
+}
+
+// A `List<T, N>` is a dynamic array, `T[]`, whatever its capacity.
+
+#[test]
+fn hashes_lists_as_dynamic_arrays() {
+    let squad = Squad {
+        name: text("Team"),
+        members: must(List<Person, 4>::from_array([cow(), bob()])),
+        scores: must(List<u8, 4>::from_array([1, 2, 255])),
+    }
+    check_eip712(squad, full_domain(), SQUAD_ENCODE_TYPE, SQUAD_TYPE_HASH, SQUAD_HASH, SQUAD_DIGEST, SQUAD_JSON)
+}
+
+#[test]
+fn hashes_empty_and_full_lists() {
+    let nobody = Squad { name: text("Nobody"), members: List<Person, 4>::new(), scores: List<u8, 4>::new() }
+    check_eip712(
+        nobody,
+        mail_domain(),
+        SQUAD_EMPTY_ENCODE_TYPE,
+        SQUAD_EMPTY_TYPE_HASH,
+        SQUAD_EMPTY_HASH,
+        SQUAD_EMPTY_DIGEST,
+        SQUAD_EMPTY_JSON,
+    )
+    let four = Squad {
+        name: text("Four"),
+        members: must(List<Person, 4>::from_array([cow(), bob(), cow(), bob()])),
+        scores: must(List<u8, 4>::from_array([0, 1, 2, 3])),
+    }
+    check_eip712(
+        four,
+        partial_domain(),
+        SQUAD_FULL_ENCODE_TYPE,
+        SQUAD_FULL_TYPE_HASH,
+        SQUAD_FULL_HASH,
+        SQUAD_FULL_DIGEST,
+        SQUAD_FULL_JSON,
+    )
+}
+
+#[test]
+fn hashes_lists_inside_arrays_and_arrays_inside_lists() {
+    let tiers = Tiers {
+        rows: must(List<[u8; 2], 3>::from_array([[1, 2], [3, 4]])),
+        columns: [must(List<u8, 2>::from_array([5])), must(List<u8, 2>::from_array([6, 7]))],
+        nested: must(List<List<u8, 2>, 3>::from_array([
+            must(List<u8, 2>::from_array([8])),
+            List<u8, 2>::new(),
+            must(List<u8, 2>::from_array([9, 10])),
+        ])),
+    }
+    check_eip712(tiers, partial_domain(), TIERS_ENCODE_TYPE, TIERS_TYPE_HASH, TIERS_HASH, TIERS_DIGEST, TIERS_JSON)
+    let none = Tiers {
+        rows: List<[u8; 2], 3>::new(),
+        columns: [List<u8, 2>::new(), List<u8, 2>::new()],
+        nested: List<List<u8, 2>, 3>::new(),
+    }
+    check_eip712(
+        none,
+        Domain::new(),
+        TIERS_EMPTY_ENCODE_TYPE,
+        TIERS_EMPTY_TYPE_HASH,
+        TIERS_EMPTY_HASH,
+        TIERS_EMPTY_DIGEST,
+        TIERS_EMPTY_JSON,
+    )
+}
+
+#[test]
+fn rejects_what_a_list_cannot_hold() {
+    let eip712 = Eip712::new()
+    // EIP-712 has no optional types, so a list of them has no type, and the error names the field.
+    expect_field(eip712.type_hash<Sparse>(), ErrorKind::Unsupported, "slots")
+    let sparse = Sparse { slots: must(List<Option<u8>, 2>::from_array([Option::Some(1)])) }
+    expect_field(eip712.hash_struct(sparse), ErrorKind::Unsupported, "slots")
+    // `Limits.max_items` counts a list's elements, as it counts the fields of a struct.
+    let narrow = Eip712::with_limits(Limits { max_depth: 32, max_items: 3 })
+    let crowded = Squad {
+        name: text("Team"),
+        members: must(List<Person, 4>::from_array([cow(), bob(), cow()])),
+        scores: must(List<u8, 4>::from_array([1, 2, 3, 4])),
+    }
+    expect_error(narrow.hash_struct(crowded), ErrorKind::CollectionLimit)
+    let fitting = Squad { name: text("Team"), members: crowded.members, scores: must(List<u8, 4>::from_array([1, 2, 3])) }
+    assert!(narrow.hash_struct(fitting).is_ok())
+    // The stack holds a list's words until it is hashed.
+    let squad = Squad {
+        name: text("Team"),
+        members: must(List<Person, 4>::from_array([cow(), bob()])),
+        scores: must(List<u8, 4>::from_array([1, 2, 255])),
+    }
+    expect_error(Eip712::new().with_capacity(160).hash_struct(squad), ErrorKind::CapacityExceeded)
 }

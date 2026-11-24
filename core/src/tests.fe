@@ -5,11 +5,14 @@ use ingot::{
     Decoder,
     Describe,
     Describer,
+    Deserialize,
     Encoder,
     ErrorKind,
     FieldCodec,
     Frame,
+    List,
     Schema,
+    Serialize,
     Text,
     TextWriter,
     Utf8,
@@ -128,7 +131,8 @@ fn errors_keep_the_innermost_field() {
 
 /// Records the calls a description makes: 1 for `bool`, the width of an integer, 100 + the arity
 /// for `begin_tuple`, 200 + the arity for `end_tuple`, 300 for `begin_option`, 400 for
-/// `end_option` and 500 + the capacity for `text`. Other calls are not made.
+/// `end_option`, 500 + the capacity for `text`, 600 + the capacity for `begin_list` and
+/// 700 + the capacity for `end_list`. Other calls are not made.
 struct Trace { events: [usize; 16], len: usize }
 
 impl Trace {
@@ -186,6 +190,14 @@ impl Describer for Trace {
 
     fn end_sequence(mut self, _ length: usize) -> CodecResult<()> {
         Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: 0))
+    }
+
+    fn begin_list(mut self, _ capacity: usize) -> CodecResult<()> {
+        self.push(600 + capacity)
+    }
+
+    fn end_list(mut self, _ capacity: usize) -> CodecResult<()> {
+        self.push(700 + capacity)
     }
 
     fn begin_tuple(mut self, _ length: usize) -> CodecResult<()> {
@@ -421,4 +433,274 @@ fn utf8_validates_text_that_is_not_stored() {
     assert!(utf8.push(0xe2, 0).is_ok())
     invalid(utf8.finish(7), 7)
     invalid(utf8.push(0x28, 5), 5)
+}
+
+fn fails_with<T>(_ result: own CodecResult<T>, _ expected: ErrorKind, _ offset: usize) {
+    match result {
+        Result::Err(error) => assert!(error.kind == expected && error.offset == offset),
+        Result::Ok(_) => assert!(false),
+    }
+}
+
+#[test]
+fn lists_hold_up_to_their_capacity() {
+    var list = List<u16, 3>::new()
+    assert!(list.is_empty() && list.len() == 0 && list.capacity() == 3)
+    assert!(list.get(0).is_none())
+    assert!(list.push(7).is_ok() && list.push(8).is_ok())
+    assert!(!list.is_empty() && list.len() == 2)
+    assert!(list.get(0) == Option::Some(7) && list.get(1) == Option::Some(8))
+    assert!(list.get(2).is_none())
+    assert!(list.push(9).is_ok() && list.len() == 3)
+    // A full list rejects another element at offset N and keeps its contents.
+    fails_with(list.push(10), ErrorKind::CapacityExceeded, 3)
+    assert!(list.len() == 3 && list.get(2) == Option::Some(9) && list.get(3).is_none())
+}
+
+#[test]
+fn lists_are_built_from_arrays_that_fit() {
+    let partial = List<u8, 4>::from_array([1, 2]).unwrap()
+    assert!(partial.len() == 2 && partial.get(1) == Option::Some(2) && partial.get(2).is_none())
+    let full = List<u8, 2>::from_array([1, 2]).unwrap()
+    assert!(full.len() == 2)
+    let empty = List<u8, 2>::from_array([0; 0]).unwrap()
+    assert!(empty.is_empty())
+    fails_with(List<u8, 2>::from_array([1, 2, 3]), ErrorKind::CapacityExceeded, 2)
+    // A list with no capacity holds nothing.
+    assert!(List<u8, 0>::new().is_empty() && List<u8, 0>::from_array([0; 0]).is_ok())
+    fails_with(List<u8, 0>::new().push(1), ErrorKind::CapacityExceeded, 0)
+}
+
+#[test]
+fn lists_compare_by_their_elements() {
+    let a = List<u32, 4>::from_array([1, 2, 3]).unwrap()
+    let b = List<u32, 4>::from_array([1, 2, 3]).unwrap()
+    assert!(a == b)
+    assert!(a != List<u32, 4>::from_array([1, 2]).unwrap())
+    assert!(a != List<u32, 4>::from_array([1, 2, 4]).unwrap())
+    assert!(List<u32, 4>::new() == List<u32, 4>::new())
+    // A list built by pushes equals one built from an array.
+    var pushed = List<u32, 4>::new()
+    assert!(pushed.push(1).is_ok() && pushed.push(2).is_ok() && pushed.push(3).is_ok())
+    assert!(pushed == a)
+}
+
+#[test]
+fn lists_are_copied_by_value() {
+    var original = List<u8, 3>::from_array([1]).unwrap()
+    var copy = original
+    assert!(copy.push(2).is_ok())
+    assert!(original.len() == 1 && copy.len() == 2)
+}
+
+#[test]
+fn lists_describe_their_element_type_between_list_calls() {
+    var flat = Trace::new()
+    assert!(<List<u8, 5> as Describe>::describe(mut flat).is_ok())
+    assert!(flat.len == 3 && flat.events[0] == 605 && flat.events[1] == 8 && flat.events[2] == 705)
+
+    var nested = Trace::new()
+    assert!(<List<(bool, u16), 2> as Describe>::describe(mut nested).is_ok())
+    let expected: [usize; 6] = [602, 102, 1, 16, 202, 702]
+    var index: usize = 0
+    while index < 6 {
+        assert!(nested.events[index] == expected[index])
+        index += 1
+    }
+    assert!(nested.len == 6)
+}
+
+#[test]
+fn describers_reject_lists_unless_they_opt_in() {
+    var plain = NoTuples {}
+    assert!(kind(plain.begin_list(2)) == 16)
+    assert!(kind(plain.end_list(2)) == 16)
+    assert!(kind(<List<u8, 2> as Describe>::describe(mut plain)) == 16)
+    assert!(kind(<[List<u8, 2>; 2] as Describe>::describe(mut plain)) == 16)
+}
+
+/// An encoder that leaves `begin_list` at its default and records the length `begin_sequence`
+/// is given.
+struct Counting { sequence_length: usize }
+
+impl Encoder for Counting {
+    const OMIT_NONE: bool = false
+    type Record = Frame
+    type Sequence = Frame
+
+    fn offset(self) -> usize {
+        0
+    }
+
+    fn write_bool(mut self, _ value: bool) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_unsigned(mut self, _ value: u64, _ bits: u16) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_signed(mut self, _ value: i64, _ bits: u16) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_wide_unsigned(mut self, _ value: u256, _ bits: u16) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_wide_signed(mut self, _ value: i256, _ bits: u16) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_text<const N: usize>(mut self, _ value: Text<N>) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_bytes<const N: usize>(mut self, _ value: BoundedBuffer<N>) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_fixed_bytes<const N: usize>(mut self, _ value: core::bytes::PackedBytes<N>) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_address(mut self, _ value: std::evm::Address) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_none(mut self) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_some(mut self) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn write_variant<V: Schema>(mut self, _ index: usize) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn begin_record<R: Schema>(mut self, _ present: usize) -> CodecResult<Frame> {
+        Result::Ok(Frame::new(present))
+    }
+
+    fn field<R: Schema>(mut self, _ record: mut Frame, _ position: usize) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn end_record(mut self, _ record: own Frame) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn begin_sequence(mut self, _ length: usize) -> CodecResult<Frame> {
+        self.sequence_length = length
+        Result::Ok(Frame::new(length))
+    }
+
+    fn element(mut self, _ sequence: mut Frame) -> CodecResult<()> {
+        sequence.take(0)
+    }
+
+    fn end_sequence(mut self, _ sequence: own Frame) -> CodecResult<()> {
+        sequence.complete(0)
+    }
+}
+
+#[test]
+fn encoders_write_lists_as_sequences_unless_they_say_otherwise() {
+    var encoder = Counting { sequence_length: 99 }
+    let list = List<u8, 5>::from_array([4, 5, 6]).unwrap()
+    assert!(list.serialize(mut encoder).is_ok())
+    assert!(encoder.sequence_length == 3)
+    assert!(List<u8, 5>::new().serialize(mut encoder).is_ok())
+    assert!(encoder.sequence_length == 0)
+}
+
+/// A decoder that leaves the list methods at their defaults.
+struct NoLists { at: usize }
+
+impl Decoder for NoLists {
+    type Record = Frame
+    type Sequence = Frame
+
+    fn offset(self) -> usize {
+        self.at
+    }
+
+    fn read_bool(mut self) -> CodecResult<bool> {
+        Result::Ok(false)
+    }
+
+    fn read_unsigned(mut self, _ bits: u16) -> CodecResult<u64> {
+        Result::Ok(0)
+    }
+
+    fn read_signed(mut self, _ bits: u16) -> CodecResult<i64> {
+        Result::Ok(0)
+    }
+
+    fn read_wide_unsigned(mut self, _ bits: u16) -> CodecResult<u256> {
+        Result::Ok(0)
+    }
+
+    fn read_wide_signed(mut self, _ bits: u16) -> CodecResult<i256> {
+        Result::Ok(0)
+    }
+
+    fn read_text<const N: usize>(mut self) -> CodecResult<Text<N>> {
+        Text<N>::from_array([0; 0])
+    }
+
+    fn read_bytes<const N: usize>(mut self) -> CodecResult<BoundedBuffer<N>> {
+        Result::Ok(BoundedBuffer<N>::empty())
+    }
+
+    fn read_fixed_bytes<const N: usize>(mut self) -> CodecResult<core::bytes::PackedBytes<N>> {
+        Result::Ok(core::bytes::PackedBytes<N>::from_array([0; N]))
+    }
+
+    fn read_address(mut self) -> CodecResult<std::evm::Address> {
+        Result::Err(CodecError::at(kind: ErrorKind::Unsupported, offset: self.at))
+    }
+
+    fn read_some(mut self) -> CodecResult<bool> {
+        Result::Ok(false)
+    }
+
+    fn read_variant<V: Schema>(mut self) -> CodecResult<usize> {
+        Result::Ok(0)
+    }
+
+    fn begin_record<R: Schema>(mut self) -> CodecResult<Frame> {
+        Result::Ok(Frame::new(0))
+    }
+
+    fn next_field<R: Schema>(mut self, _ record: mut Frame) -> CodecResult<Option<ingot::FieldKey>> {
+        Result::Ok(Option::None)
+    }
+
+    fn end_record(mut self, _ record: own Frame) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn begin_sequence(mut self, _ length: usize) -> CodecResult<Frame> {
+        Result::Ok(Frame::new(length))
+    }
+
+    fn element(mut self, _ sequence: mut Frame) -> CodecResult<()> {
+        Result::Ok(())
+    }
+
+    fn end_sequence(mut self, _ sequence: own Frame) -> CodecResult<()> {
+        Result::Ok(())
+    }
+}
+
+#[test]
+fn decoders_reject_lists_unless_they_opt_in() {
+    var decoder = NoLists { at: 6 }
+    fails_with(decoder.begin_list(4), ErrorKind::Unsupported, 6)
+    var sequence = Frame::new(0)
+    fails_with(decoder.next_element(mut sequence), ErrorKind::Unsupported, 6)
+    fails_with(List<u8, 4>::deserialize(mut decoder), ErrorKind::Unsupported, 6)
 }

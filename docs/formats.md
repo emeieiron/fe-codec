@@ -12,8 +12,8 @@ only that encoding (JSON also accepts insignificant variations listed below).
   keys (JSON, CBOR). Decoders accept the field missing or present as `null`.
 - **Decoders reject** unknown fields (unless the record is marked `#[codec_skip_unknown]`; see
   [below](#ignoring-unknown-fields)), duplicate fields, missing required fields, trailing
-  data after the root value, sequences of the wrong length, and integers outside the
-  field's type.
+  data after the root value, sequences of the wrong length, lists longer than their capacity,
+  and integers outside the field's type.
 - **Limits** cap nesting depth and entries per container. `Limits::standard()` allows 32
   nested containers and 256 entries. Buffers have a fixed capacity `N`, and the encoder
   reports the first byte that does not fit.
@@ -37,6 +37,7 @@ Output is compact UTF-8 with no whitespace. [RFC 8259](https://www.rfc-editor.or
 | Unit enum variant | Its name as a string |
 | Record | An object keyed by field name |
 | Array `[T; N]` | An array of exactly `N` values |
+| List `List<T, N>` | An array of 0 to `N` values |
 | Tuple `(T0, ..., Tn)` | An array of its elements in order, of exactly its length |
 
 Decoding also accepts whitespace between tokens, members in any order, `\u` escapes
@@ -63,6 +64,7 @@ Deterministic encoding as specified by
 | Unit enum variant | Its ID as an unsigned integer |
 | Record | A definite-length map keyed by field ID, keys ascending |
 | Array `[T; N]` | A definite-length array of exactly `N` items |
+| List `List<T, N>` | A definite-length array of 0 to `N` items |
 | Tuple `(T0, ..., Tn)` | A definite-length array of its elements in order, of exactly its length |
 
 Fields of 64 bits or fewer accept only major types 0 and 1, so a bignum there is a
@@ -73,6 +75,24 @@ The profile has no floating-point values, other tags, or indefinite-length items
 
 The encoder and decoder share one function for head widths, and `femp prove` proves that
 every argument has exactly one accepted head (see [design](design.md#guarantees)).
+
+## Lists
+
+A `List<T, N>` is written as an array of its current length, so in JSON and CBOR a list and
+an array of the same elements have the same bytes, and either decodes the other's when the
+length fits. A decoder reads as many elements as the input holds, up to `N`, and rejects more
+with `CapacityExceeded`:
+
+- **JSON** reports the first element past `N`, where it starts. A trailing comma is
+  `InvalidSyntax`.
+- **CBOR** reports an array whose head counts more than `N` at the head, before reading any
+  element. An indefinite-length or non-shortest head is `NonCanonical`, as for any array.
+- **Compact** writes the length as a ULEB128 number in its shortest form before the elements,
+  which a fixed-length array leaves out, and reports a length over `N` at the length.
+
+`Limits.max_items` applies to the elements of a list as to any container, and is checked
+first: with `max_items` below `N`, a list of `max_items + 1` elements is `CollectionLimit`
+in every format. A list is one level of `Limits.max_depth`.
 
 ## Schema evolution
 

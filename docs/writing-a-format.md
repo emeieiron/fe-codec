@@ -43,6 +43,7 @@ Your encoder and decoder implement the data model:
 | none | `skip_value` | Discards one value; see below |
 | `begin_record`, `field`, `end_record` | `begin_record`, `next_field`, `end_record` | Records, described by `Schema::field` |
 | `begin_sequence`, `element`, `end_sequence` | `begin_sequence`, `element`, `end_sequence` | Fixed-length arrays, and tuples, which are sequences of their arity |
+| `begin_list` | `begin_list`, `next_element` | `List<T, N>`, a sequence whose length is part of the value; see below |
 
 Choose `OMIT_NONE`: `true` if your format identifies fields by a key and can leave out
 `None` fields, `false` if fields are positional.
@@ -56,6 +57,17 @@ Skip with the same checks as a value you read: keep `Structure` calls (`value`, 
 `begin`, `member` and `end`) and the limits, and check the bytes as strictly, so skipping never
 accepts input that reading would reject. Keep key-order and duplicate checks for the
 unknown keys too if the format has them.
+
+A list is written with `begin_list(length)`, then `element` for each element and
+`end_sequence`. The encoder's default calls `begin_sequence(length)`, which is right when your
+format writes a list and an array alike, as JSON and CBOR do. A format whose arrays carry no
+length, as the compact example's do, overrides it to write the length first. The decoder reads
+one with `begin_list(capacity)`, then `next_element` until it returns false, then
+`end_sequence`: `next_element` returns true when another element follows, leaving the decoder
+at it. Both decoder methods default to `Unsupported`. A decoder must fail with
+`CapacityExceeded` rather than return more than `capacity` elements, at the extra element or,
+if it learns the length first, at the start of the list. Check `Limits.max_items` before
+the capacity so that every format reports the same error, as the first-party ones do.
 
 ## Helpers from core
 
@@ -74,7 +86,8 @@ unknown keys too if the format has them.
 
 A format that reads types rather than values, as EIP-712 does, implements `Describer`. Its
 `begin_tuple` and `end_tuple` default to `Unsupported`, so a format with no tuple type needs
-no code to reject them.
+no code to reject them, and so do `begin_list` and `end_list` for a format with no dynamic
+arrays; EIP-712 writes lists as `T[]`.
 
 ## Rules a format must follow
 

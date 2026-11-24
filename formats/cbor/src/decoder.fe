@@ -473,4 +473,26 @@ impl<const N: usize> Decoder for CborDecoder<N> {
     fn end_sequence(mut self, _ sequence: own Frame) -> CodecResult<()> {
         self.end(sequence)
     }
+
+    /// The array head gives the length, so an array longer than `capacity` is
+    /// `CapacityExceeded` at the head, before any element is read. `Limits.max_items` is
+    /// checked first.
+    fn begin_list(mut self, _ capacity: usize) -> CodecResult<Frame> {
+        let offset = self.offset()
+        let frame = self.begin(4)?
+        if frame.remaining() > capacity {
+            return Result::Err(CodecError::at(kind: ErrorKind::CapacityExceeded, offset))
+        }
+        Result::Ok(frame)
+    }
+
+    fn next_element(mut self, _ sequence: mut Frame) -> CodecResult<bool> {
+        if sequence.remaining() == 0 {
+            return Result::Ok(false)
+        }
+        let offset = self.offset()
+        self.structure.member(offset)?
+        sequence.take(offset)?
+        Result::Ok(true)
+    }
 }

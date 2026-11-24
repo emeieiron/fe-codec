@@ -37,7 +37,7 @@ from fuzz import coverage  # noqa: E402
 from fuzz.fetests import Builder  # noqa: E402
 from fuzz.gen import make_spec  # noqa: E402
 from fuzz.source import Renderer, finalize, mix_fill, permutation  # noqa: E402
-from fuzz.spec import closure_models  # noqa: E402
+from fuzz.spec import closure_models, walk  # noqa: E402
 
 GENERATOR = os.path.join(ROOT, "tools", "fe_codec_gen")
 DEFAULT_SEEDS = 20
@@ -359,6 +359,8 @@ def check_seed(seed, args):
                             extra["eip712: array of structs"] += 1
                         if f.ty[0] == "arr" and f.ty[1][0] == "arr":
                             extra["eip712: nested arrays"] += 1
+                        if any(w[0] == "list" for w in walk(f.ty)):
+                            extra["eip712: list"] += 1
         if "missing_" in "".join(builder.fns):
             extra["test: missing required field"] += 1
         if "dropped_" in "".join(builder.fns):

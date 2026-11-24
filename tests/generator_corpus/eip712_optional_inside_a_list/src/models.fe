@@ -1,0 +1,5 @@
+#[serializable]
+#[eip712]
+pub struct A {
+    pub a: List<Option<u8>, 2>
+}

@@ -1,0 +1,6 @@
+use fe_codec_core::List
+
+#[serializable]
+pub struct Bag<T, const N: usize> {
+    pub items: List<T, N>,
+}

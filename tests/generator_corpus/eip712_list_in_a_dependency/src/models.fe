@@ -1,0 +1,8 @@
+use fe_codec_core::List
+
+#[serializable]
+#[eip712]
+pub struct Outer { pub inner: Inner, pub more: List<Inner, 2> }
+#[serializable]
+pub struct Inner { pub values: List<u16, 3> }
+impl Copy for Inner {}

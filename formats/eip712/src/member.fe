@@ -6,11 +6,13 @@
 //! generic `hash_struct` function gives the same results for any `Serialize + Describe` type,
 //! at a higher cost on the EVM.
 
+use core::MemBuffer
 use core::bytes::PackedBytes
+use core::marker::Copy
 use core::num::IntDowncast
-use fe_codec_core::{BoundedBuffer, Text}
+use fe_codec_core::{BoundedBuffer, List, Text}
 use std::evm::Address
-use std::evm::crypto::keccak_words
+use std::evm::crypto::{keccak256, keccak_words}
 use ingot::domain::hash_bytes
 
 /// An EIP-712 struct with its type hash known at compile time.
@@ -146,5 +148,21 @@ impl<T: Eip712Member, const N: usize> Eip712Member for [T; N] {
             index += 1
         }
         keccak_words(words)
+    }
+}
+
+/// `T[]`: the keccak256 of its elements' words, however many the list holds. The words are
+/// staged in memory, as `hash_bytes` stages bytes, since their count is known only at run
+/// time.
+impl<T: Eip712Member + Copy, const N: usize> Eip712Member for List<T, N> {
+    fn member(self) -> u256 {
+        let length = self.len()
+        var buffer = MemBuffer::new(if length == 0 { 32 } else { length * 32 })
+        var index: usize = 0
+        while index < length {
+            buffer.write_word(offset: index * 32, value: self.get(index).unwrap().member())
+            index += 1
+        }
+        keccak256(buffer.slice(offset: 0, len: length * 32))
     }
 }
