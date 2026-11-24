@@ -6,14 +6,23 @@ export const manifest = {
   "manifest_version": 1,
   "module": {
     "file": "fe_codec_playground.wasm",
-    "sha256": "23d938d9157fd3111f51937fbcbf2186c10fc67fac1402f45e489e2c378252c9",
-    "size": 817705,
+    "sha256": "508399a54e2936d247c8046aab7bf9ae256fc6b419c3fa6e5af204ae952edcd5",
+    "size": 368333,
     "initial_memory_pages": 18
   },
-  "contract_version": 1,
+  "contract_version": 3,
   "optimization": "s",
-  "compiler": "fe 26.6.0 (5b3f96a)",
+  "compiler": "fe 26.7.0 (e6e6342)",
   "imports": [
+    {
+      "module": "env",
+      "name": "__fe_revert",
+      "kind": "function",
+      "type": {
+        "params": ["i32", "i32"],
+        "results": []
+      }
+    },
     {
       "module": "env",
       "name": "sys_wasm_log_u64",
