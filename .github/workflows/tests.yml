@@ -1,5 +1,6 @@
-# Runs every check that needs only fe, Python and Node. The FeMP checks (femp test, prop and
-# prove, and tests/consumer.py) run locally; see README.md.
+# Runs the checks that need only fe, Python and Node. The FeMP checks (femp test, prop and
+# prove, and tests/consumer.py) and the generator fuzz test (tests/generator_fuzz.py), which
+# exhausts a hosted runner, run locally; see README.md.
 name: Tests
 
 on:
@@ -45,9 +46,6 @@ jobs:
         run: |
           fe build --backend native tools/syntax-dump --out-dir target/fe
           python3 tests/parser_vs_fe.py
-
-      - name: Generated code for random models
-        run: python3 tests/generator_fuzz.py --seeds 8 --jobs 4
 
       - name: Playground module matches the generator
         run: node tests/playground_parity.mjs

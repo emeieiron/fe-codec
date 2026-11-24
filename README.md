@@ -86,7 +86,7 @@ site/                    the documentation site and its playground (Astro)
 
 The [tests workflow](.github/workflows/tests.yml) runs the checks that need only `fe`, Python
 and Node on every push. [tools/README.md](tools/README.md) describes the generator's suites.
-The FeMP checks run locally:
+The FeMP checks and the generator fuzz test run locally:
 
 ```bash
 cd examples/transfer && femp test -t evm -t native -t wasm && femp prop -t evm -t native -t wasm && femp prove
@@ -94,6 +94,10 @@ cd examples/transfer && femp test -t evm -t native -t wasm && femp prop -t evm -
 
 ```bash
 python3 tests/consumer.py
+```
+
+```bash
+python3 tests/generator_fuzz.py
 ```
 
 After changing `tools/` or the codec ingots, rebuild the playground's WebAssembly module, which
